@@ -1,0 +1,98 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { FilesService } from '@/lib/services/files.service';
+import { withAuth, AuthenticatedRequest } from '@/lib/auth/middleware';
+import { writeFile, unlink } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
+
+/**
+ * @swagger
+ * /api/files/upload:
+ *   post:
+ *     summary: Upload a file
+ *     tags: [Files]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *               folder:
+ *                 type: string
+ *               bucket:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: File uploaded successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
+async function postHandler(req: AuthenticatedRequest) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get('file') as File;
+    const folder = (formData.get('folder') as string) || 'general';
+    const bucket = (formData.get('bucket') as string) || 'images';
+
+    if (!file) {
+      return NextResponse.json(
+        { success: false, message: 'No file provided' },
+        { status: 400 }
+      );
+    }
+
+    // Convert File to Buffer
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+
+    // Generate unique filename
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 15);
+    const fileExtension = file.name.split('.').pop() || '';
+    const filename = `${timestamp}-${randomStr}.${fileExtension}`;
+
+    // Upload file
+    const filesService = new FilesService();
+    const result = await filesService.uploadAndSave({
+      buffer,
+      filename: file.name,
+      folder,
+      mimetype: file.type,
+      size: file.size,
+      bucket,
+      isPublic: true,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'File uploaded successfully',
+      data: {
+        fileId: result.fileId,
+        url: result.url,
+        path: result.path,
+        filename: file.name,
+      },
+    });
+  } catch (error) {
+    console.error('File upload error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: 'Failed to upload file',
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export const POST = withAuth(postHandler);
+

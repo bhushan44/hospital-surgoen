@@ -1,0 +1,17 @@
+## Schema Review Complete
+
+**Key Findings:**
+
+1. **Hospitals**: phone→contact_phone, website→website_url, many fields missing
+2. **Doctors**: profilePhotoUrl→profilePhotoId (UUID), missing consultationFee/isAvailable
+3. **Specialties**: Missing isActive, createdAt
+4. **Bookings**: Table doesn't exist - use 'assignments' instead
+5. **Payments**: Table doesn't exist - use 'payment_transactions'/'assignment_payments'
+6. **Reviews**: Table doesn't exist - use 'assignment_ratings' instead
+7. **Notifications**: Different structure (recipientType/recipientId vs userId)
+
+**Files Created:**
+- SCHEMA_COMPARISON.md (detailed comparison)
+- EXACT_CHANGES_NEEDED.md (code changes with examples)
+
+**Next Step**: Update repositories to map fields correctly.
