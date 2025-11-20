@@ -135,8 +135,8 @@ export default function DoctorRegistrationPage() {
         <div className="max-w-2xl mx-auto">
           {/* Header Section */}
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-10 h-10 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
@@ -164,7 +164,7 @@ export default function DoctorRegistrationPage() {
                     key={index}
                     className={`text-sm ${
                       index + 1 === step
-                        ? 'text-purple-600 font-semibold'
+                        ? 'text-blue-600 font-semibold'
                         : index + 1 < step
                         ? 'text-gray-600'
                         : 'text-gray-400'
@@ -179,8 +179,8 @@ export default function DoctorRegistrationPage() {
             {/* Profile Picture Section */}
             {step === 1 && (
               <div className="mb-8 text-center">
-                <div className="w-32 h-32 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-4xl font-bold text-purple-600">
+                <div className="w-32 h-32 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-4xl font-bold text-blue-600">
                     {formData.firstName[0] || 'D'}{formData.lastName[0] || 'D'}
                   </span>
                 </div>
@@ -208,7 +208,7 @@ export default function DoctorRegistrationPage() {
                       value={formData.firstName}
                       onChange={handleInputChange}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="John"
                     />
                   </div>
@@ -224,7 +224,7 @@ export default function DoctorRegistrationPage() {
                       value={formData.lastName}
                       onChange={handleInputChange}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="Smith"
                     />
                   </div>
@@ -240,7 +240,7 @@ export default function DoctorRegistrationPage() {
                       value={formData.dentalLicenseNumber}
                       onChange={handleInputChange}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="DDS-12345"
                     />
                   </div>
@@ -254,7 +254,7 @@ export default function DoctorRegistrationPage() {
                       name="yearsOfPractice"
                       value={formData.yearsOfPractice}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">Select years of experience</option>
                       {Array.from({ length: 50 }, (_, i) => (
@@ -280,7 +280,7 @@ export default function DoctorRegistrationPage() {
                       value={formData.email}
                       onChange={handleInputChange}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
 
@@ -295,7 +295,7 @@ export default function DoctorRegistrationPage() {
                       value={formData.phone}
                       onChange={handleInputChange}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
 
@@ -310,7 +310,7 @@ export default function DoctorRegistrationPage() {
                       value={formData.password}
                       onChange={handleInputChange}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                 </div>
@@ -342,7 +342,7 @@ export default function DoctorRegistrationPage() {
                               type="checkbox"
                               checked={formData.specialties.includes(specialty.id)}
                               onChange={() => handleSpecialtyToggle(specialty.id)}
-                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                             />
                             <span className="text-sm text-gray-700">{specialty.name}</span>
                           </label>
@@ -383,7 +383,7 @@ export default function DoctorRegistrationPage() {
                     type="button"
                     onClick={handleNext}
                     disabled={step === 3 && formData.specialties.length === 0}
-                    className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
                   >
                     Next
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -394,7 +394,7 @@ export default function DoctorRegistrationPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:opacity-50"
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                   >
                     {loading ? 'Creating Profile...' : 'Complete Registration'}
                   </button>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Header from '../../components/Header';
 
 interface Patient {
   id: string;
@@ -83,13 +84,11 @@ export default function HospitalDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-blue-600 text-white p-4">
-        <h1 className="text-xl font-bold">DocSchedule</h1>
-      </div>
-
-      {/* Find Available Doctors Section */}
-      <div className="p-4 bg-white">
+      <Header />
+      
+      <div className="container mx-auto px-4 py-6">
+        {/* Find Available Doctors Section */}
+        <div className="bg-white rounded-xl shadow p-6 mb-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Find Available Doctors</h2>
 
         {/* Search Bar */}
@@ -136,13 +135,13 @@ export default function HospitalDashboardPage() {
         </div>
       </div>
 
-      {/* Patient Assignments Section */}
-      <div className="p-4 bg-white mt-4">
+        {/* Patient Assignments Section */}
+        <div className="bg-white rounded-xl shadow p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-gray-900">Patient Assignments</h2>
           <Link
             href="/hospital/patients/add"
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -154,7 +153,7 @@ export default function HospitalDashboardPage() {
         {/* Patient List */}
         <div className="space-y-4">
           {patients.map((patient) => (
-            <div key={patient.id} className="border border-gray-200 rounded-lg p-4">
+            <div key={patient.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
               <div className="flex items-start gap-4">
                 <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
                   <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -174,7 +173,7 @@ export default function HospitalDashboardPage() {
                     <span>(₹{patient.roomPrice.toLocaleString()} /day)</span>
                   </div>
                   {patient.status === 'pending' && (
-                    <button className="mt-3 w-full bg-blue-600 text-white py-2 rounded-lg font-medium">
+                    <button className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition-colors">
                       Assign Doctor
                     </button>
                   )}
@@ -196,8 +195,11 @@ export default function HospitalDashboardPage() {
         </div>
       </div>
 
+        </div>
+      </div>
+      
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-3 shadow-lg">
         <Link href="/hospital/dashboard" className="flex flex-col items-center gap-1">
           <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
