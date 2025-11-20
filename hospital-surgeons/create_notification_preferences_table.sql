@@ -26,3 +26,6 @@ ALTER TABLE notification_preferences
     UNIQUE (user_id);
 
 
+
+
+
