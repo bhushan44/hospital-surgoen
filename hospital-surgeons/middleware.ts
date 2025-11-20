@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { corsMiddleware } from './lib/middleware/cors';
+import { corsMiddleware } from '@/lib/middleware/cors';
 
 export function middleware(request: NextRequest) {
   // Apply CORS middleware for API routes

@@ -12,7 +12,7 @@ export default function RoleSelectionPage() {
     if (selectedRole === 'hospital') {
       router.push('/onboarding/hospital/step-3');
     } else if (selectedRole === 'doctor') {
-      router.push('/onboarding/doctor/step-2');
+      router.push('/onboarding/doctor');
     }
   };
 
