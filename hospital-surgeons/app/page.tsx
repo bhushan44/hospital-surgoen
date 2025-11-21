@@ -60,7 +60,7 @@ export default function Home() {
               </Link>
               <Link
                 href="/upload"
-                className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 font-medium flex items-center gap-2"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -92,7 +92,7 @@ export default function Home() {
             <div className="flex flex-wrap gap-4 mb-12">
               <Link
                 href="/register/doctor"
-                className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 font-semibold flex items-center gap-2"
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold flex items-center gap-2 transition-colors"
               >
                 Register as Surgeon
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -140,7 +140,7 @@ export default function Home() {
 
           {/* Right Column - Image Placeholder */}
           <div className="relative">
-            <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-2xl p-8 aspect-square flex items-center justify-center">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-8 aspect-square flex items-center justify-center">
               <div className="text-center">
                 <svg className="w-32 h-32 text-blue-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />

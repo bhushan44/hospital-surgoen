@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Header from '../../components/Header';
 
 interface Doctor {
   id: string;
@@ -43,14 +44,13 @@ export default function DoctorDashboardPage() {
   const timeSlots = ['9:00 AM', '10:30 AM', '1:00 PM', '2:30 PM', '4:00 PM'];
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      {/* Header */}
-      <div className="bg-blue-600 text-white p-4">
-        <h1 className="text-xl font-bold">DocSchedule</h1>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      
+      <div className="container mx-auto px-4 py-6">
 
-      {/* Find Available Doctors Section */}
-      <div className="p-4 bg-white">
+        {/* Find Available Doctors Section */}
+        <div className="bg-white rounded-xl shadow p-6 mb-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Find Available Doctors</h2>
 
         {/* Search Bar */}
@@ -97,10 +97,10 @@ export default function DoctorDashboardPage() {
         </div>
       </div>
 
-      {/* Doctors List */}
-      <div className="p-4 space-y-4">
-        {doctors.map((doctor) => (
-          <div key={doctor.id} className="bg-white rounded-lg p-4 shadow-sm">
+        {/* Doctors List */}
+        <div className="space-y-4">
+          {doctors.map((doctor) => (
+            <div key={doctor.id} className="bg-white rounded-xl shadow p-6">
             <div className="flex items-start gap-4">
               {/* Profile Picture */}
               <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
@@ -164,7 +164,7 @@ export default function DoctorDashboardPage() {
                         </button>
                       ))}
                     </div>
-                    <button className="w-full bg-green-600 text-white py-2 rounded-lg font-medium">
+                    <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition-colors">
                       Book Appointment
                     </button>
                   </div>
@@ -173,10 +173,11 @@ export default function DoctorDashboardPage() {
             </div>
           </div>
         ))}
+        </div>
       </div>
-
+      
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-3 shadow-lg">
         <Link href="/doctor/dashboard" className="flex flex-col items-center gap-1">
           <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
