@@ -194,8 +194,6 @@ export default function HospitalDashboardPage() {
           ))}
         </div>
       </div>
-
-        </div>
       </div>
       
       {/* Bottom Navigation */}

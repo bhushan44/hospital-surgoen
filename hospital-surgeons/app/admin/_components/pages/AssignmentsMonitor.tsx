@@ -1,50 +1,152 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PageHeader } from '../PageHeader';
 import { StatCard } from '../StatCard';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Search, Filter, Eye } from 'lucide-react';
+import { Search, Filter, Eye, Loader2 } from 'lucide-react';
 import { StatusBadge } from '../StatusBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { ClipboardList, CheckCircle, XCircle } from 'lucide-react';
+import { ClipboardList, CheckCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import { Label } from '../ui/label';
+import { Textarea } from '../ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { toast } from 'sonner';
 
-const assignments = [
-  {
-    id: 1,
-    hospital: 'City Medical Center',
-    doctor: 'Dr. Sarah Johnson',
-    patient: 'John Doe',
-    specialty: 'Cardiology',
-    dateTime: '2024-11-18 14:30',
-    priority: 'Urgent',
-    status: 'Accepted',
-  },
-  {
-    id: 2,
-    hospital: 'Sunrise Specialty Clinic',
-    doctor: 'Dr. Michael Chen',
-    patient: 'Jane Smith',
-    specialty: 'Pediatrics',
-    dateTime: '2024-11-18 15:00',
-    priority: 'Routine',
-    status: 'Pending',
-  },
-  {
-    id: 3,
-    hospital: 'City Medical Center',
-    doctor: 'Dr. Emily Rodriguez',
-    patient: 'Robert Johnson',
-    specialty: 'Neurology',
-    dateTime: '2024-11-18 10:00',
-    priority: 'Emergency',
-    status: 'Completed',
-  },
-];
+interface Assignment {
+  id: string;
+  hospital: { id: string; name: string };
+  doctor: { id: string; name: string };
+  patient: { id: string; name: string };
+  priority: string;
+  status: string;
+  requestedAt: string;
+  expiresAt?: string;
+  treatmentNotes?: string;
+  consultationFee?: number;
+}
 
 export function AssignmentsMonitor() {
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [statusUpdate, setStatusUpdate] = useState('');
+  const [treatmentNotes, setTreatmentNotes] = useState('');
+
+  useEffect(() => {
+    fetchAssignments();
+    fetchStats();
+  }, [statusFilter]);
+
+  const fetchAssignments = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (statusFilter !== 'all') {
+        params.append('status', statusFilter);
+      }
+      params.append('limit', '100');
+
+      const res = await fetch(`/api/admin/assignments?${params.toString()}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setAssignments(data.data || []);
+      } else {
+        toast.error(data.message || 'Failed to fetch assignments');
+      }
+    } catch (error) {
+      console.error('Error fetching assignments:', error);
+      toast.error('Failed to fetch assignments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const res = await fetch('/api/admin/assignments/stats');
+      const data = await res.json();
+
+      if (data.success) {
+        setStats(data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
+
+  const fetchAssignmentDetails = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/assignments/${id}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setSelectedAssignment(data.data);
+        setStatusUpdate(data.data.status);
+        setTreatmentNotes(data.data.treatmentNotes || '');
+        setShowDetailModal(true);
+      } else {
+        toast.error(data.message || 'Failed to fetch assignment details');
+      }
+    } catch (error) {
+      console.error('Error fetching assignment details:', error);
+      toast.error('Failed to fetch assignment details');
+    }
+  };
+
+  const handleUpdateStatus = async () => {
+    if (!selectedAssignment) return;
+
+    try {
+      setUpdating(true);
+      const res = await fetch(`/api/admin/assignments/${selectedAssignment.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: statusUpdate,
+          treatmentNotes: treatmentNotes || undefined,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        toast.success('Assignment updated successfully');
+        setShowDetailModal(false);
+        fetchAssignments();
+        fetchStats();
+      } else {
+        toast.error(data.message || 'Failed to update assignment');
+      }
+    } catch (error) {
+      console.error('Error updating assignment:', error);
+      toast.error('Failed to update assignment');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const filteredAssignments = assignments.filter((assignment) =>
+    assignment.hospital.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    assignment.doctor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    assignment.patient.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const statusCounts = {
+    all: assignments.length,
+    pending: assignments.filter(a => a.status === 'pending').length,
+    accepted: assignments.filter(a => a.status === 'accepted').length,
+    completed: assignments.filter(a => a.status === 'completed').length,
+    cancelled: assignments.filter(a => a.status === 'cancelled').length,
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -63,34 +165,34 @@ export function AssignmentsMonitor() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <StatCard
             title="Total Today"
-            value="24"
+            value={stats?.today?.total?.toString() || '0'}
             icon={ClipboardList}
-            trend={{ value: "15% from yesterday", isPositive: true }}
+            trend={{ value: "Today's assignments", isPositive: true }}
           />
           <StatCard
-            title="Acceptance Rate"
-            value="87%"
+            title="Pending"
+            value={stats?.today?.pending?.toString() || '0'}
             icon={CheckCircle}
-            trend={{ value: "3% from last week", isPositive: true }}
+            trend={{ value: "Awaiting response", isPositive: false }}
           />
           <StatCard
-            title="Completion Rate"
-            value="94%"
+            title="Completed"
+            value={stats?.today?.completed?.toString() || '0'}
             icon={CheckCircle}
-            trend={{ value: "2% from last week", isPositive: true }}
+            trend={{ value: "Today", isPositive: true }}
           />
         </div>
 
-        <Tabs defaultValue="all" className="space-y-6">
+        <Tabs value={statusFilter} onValueChange={setStatusFilter} className="space-y-6">
           <TabsList>
-            <TabsTrigger value="all">All (3)</TabsTrigger>
-            <TabsTrigger value="pending">Pending (1)</TabsTrigger>
-            <TabsTrigger value="accepted">Accepted (1)</TabsTrigger>
-            <TabsTrigger value="completed">Completed (1)</TabsTrigger>
-            <TabsTrigger value="cancelled">Cancelled (0)</TabsTrigger>
+            <TabsTrigger value="all">All ({statusCounts.all})</TabsTrigger>
+            <TabsTrigger value="pending">Pending ({statusCounts.pending})</TabsTrigger>
+            <TabsTrigger value="accepted">Accepted ({statusCounts.accepted})</TabsTrigger>
+            <TabsTrigger value="completed">Completed ({statusCounts.completed})</TabsTrigger>
+            <TabsTrigger value="cancelled">Cancelled ({statusCounts.cancelled})</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="all" className="space-y-4">
+          <TabsContent value={statusFilter} className="space-y-4">
             <div className="bg-white rounded-lg shadow">
               <div className="p-4 border-b border-slate-200">
                 <div className="relative">
@@ -104,72 +206,148 @@ export function AssignmentsMonitor() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-slate-600">Hospital</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Doctor</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Patient</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Specialty</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Date/Time</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Priority</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Status</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {assignments.map((assignment) => (
-                      <tr key={assignment.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-4 text-slate-900">{assignment.hospital}</td>
-                        <td className="px-6 py-4 text-slate-900">{assignment.doctor}</td>
-                        <td className="px-6 py-4 text-slate-600">{assignment.patient}</td>
-                        <td className="px-6 py-4 text-slate-900">{assignment.specialty}</td>
-                        <td className="px-6 py-4 text-slate-600">{assignment.dateTime}</td>
-                        <td className="px-6 py-4">
-                          <StatusBadge status={assignment.priority} />
-                        </td>
-                        <td className="px-6 py-4">
-                          <StatusBadge status={assignment.status} />
-                        </td>
-                        <td className="px-6 py-4">
-                          <Button size="sm" variant="ghost">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </td>
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-slate-600">Hospital</th>
+                        <th className="px-6 py-3 text-left text-slate-600">Doctor</th>
+                        <th className="px-6 py-3 text-left text-slate-600">Patient</th>
+                        <th className="px-6 py-3 text-left text-slate-600">Requested</th>
+                        <th className="px-6 py-3 text-left text-slate-600">Priority</th>
+                        <th className="px-6 py-3 text-left text-slate-600">Status</th>
+                        <th className="px-6 py-3 text-left text-slate-600">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="pending">
-            <div className="bg-white rounded-lg shadow p-8 text-center text-slate-600">
-              Pending assignments view
-            </div>
-          </TabsContent>
-
-          <TabsContent value="accepted">
-            <div className="bg-white rounded-lg shadow p-8 text-center text-slate-600">
-              Accepted assignments view
-            </div>
-          </TabsContent>
-
-          <TabsContent value="completed">
-            <div className="bg-white rounded-lg shadow p-8 text-center text-slate-600">
-              Completed assignments view
-            </div>
-          </TabsContent>
-
-          <TabsContent value="cancelled">
-            <div className="bg-white rounded-lg shadow p-8 text-center text-slate-600">
-              Cancelled assignments view
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {filteredAssignments.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                            No assignments found
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredAssignments.map((assignment) => (
+                          <tr key={assignment.id} className="hover:bg-slate-50">
+                            <td className="px-6 py-4 text-slate-900">{assignment.hospital.name}</td>
+                            <td className="px-6 py-4 text-slate-900">{assignment.doctor.name}</td>
+                            <td className="px-6 py-4 text-slate-600">{assignment.patient.name}</td>
+                            <td className="px-6 py-4 text-slate-600">
+                              {new Date(assignment.requestedAt).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-4">
+                              <StatusBadge status={assignment.priority} />
+                            </td>
+                            <td className="px-6 py-4">
+                              <StatusBadge status={assignment.status} />
+                            </td>
+                            <td className="px-6 py-4">
+                              <Button 
+                                size="sm" 
+                                variant="ghost"
+                                onClick={() => fetchAssignmentDetails(assignment.id)}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Detail Modal */}
+      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+        <DialogContent aria-describedby={undefined} className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Assignment Details</DialogTitle>
+          </DialogHeader>
+          {selectedAssignment && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Hospital</Label>
+                  <p className="text-slate-900 mt-1">{selectedAssignment.hospital.name}</p>
+                </div>
+                <div>
+                  <Label>Doctor</Label>
+                  <p className="text-slate-900 mt-1">{selectedAssignment.doctor.name}</p>
+                </div>
+                <div>
+                  <Label>Patient</Label>
+                  <p className="text-slate-900 mt-1">{selectedAssignment.patient.name}</p>
+                </div>
+                <div>
+                  <Label>Priority</Label>
+                  <p className="mt-1">
+                    <StatusBadge status={selectedAssignment.priority} />
+                  </p>
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={statusUpdate} onValueChange={setStatusUpdate}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="accepted">Accepted</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Requested At</Label>
+                  <p className="text-slate-600 mt-1">
+                    {new Date(selectedAssignment.requestedAt).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              <div>
+                <Label>Treatment Notes</Label>
+                <Textarea
+                  value={treatmentNotes}
+                  onChange={(e) => setTreatmentNotes(e.target.value)}
+                  rows={4}
+                  className="mt-1"
+                  placeholder="Add treatment notes..."
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDetailModal(false)} disabled={updating}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateStatus} 
+              disabled={updating}
+              className="bg-navy-600 hover:bg-navy-700"
+            >
+              {updating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Update'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

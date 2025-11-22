@@ -1,74 +1,208 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PageHeader } from '../PageHeader';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Search, Filter, Eye, Check, X, MessageSquare, Download, ZoomIn, ZoomOut } from 'lucide-react';
+import { Search, Filter, Eye, Check, X, MessageSquare, Download, ZoomIn, ZoomOut, Loader2 } from 'lucide-react';
 import { StatusBadge } from '../StatusBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../ui/dialog';
 import { Textarea } from '../ui/textarea';
+import { toast } from 'sonner';
 
-const pendingHospitals = [
-  {
-    id: 1,
-    name: 'City Medical Center',
-    email: 'admin@citymedical.com',
-    type: 'General Hospital',
-    registrationNumber: 'HOS-2024-001',
-    submittedDate: '2024-11-14',
-    status: 'Pending',
-    logo: 'https://api.dicebear.com/7.x/initials/svg?seed=CMC',
-    address: '123 Healthcare Blvd, Medical District, CA 90001',
-    beds: 250,
-    departments: 'Cardiology, Neurology, Pediatrics, Emergency, Surgery',
-    documents: [
-      { name: 'Hospital License', type: 'PDF', verified: false },
-      { name: 'Accreditation Certificate', type: 'PDF', verified: false },
-    ]
-  },
-  {
-    id: 2,
-    name: 'Sunrise Specialty Clinic',
-    email: 'contact@sunriseclinic.com',
-    type: 'Specialty Clinic',
-    registrationNumber: 'HOS-2024-002',
-    submittedDate: '2024-11-16',
-    status: 'Pending',
-    logo: 'https://api.dicebear.com/7.x/initials/svg?seed=SSC',
-    address: '456 Wellness Way, Health Plaza, CA 90002',
-    beds: 50,
-    departments: 'Orthopedics, Physical Therapy, Sports Medicine',
-    documents: [
-      { name: 'Clinic License', type: 'PDF', verified: false },
-      { name: 'Registration Certificate', type: 'PDF', verified: false },
-    ]
-  },
-];
+interface Hospital {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  registrationNumber: string;
+  licenseVerificationStatus: string;
+  hospitalType: string | null;
+  address: string;
+  city: string;
+  numberOfBeds: number | null;
+  documentsCount: number;
+  pendingDocumentsCount: number;
+  createdAt: string;
+}
+
+interface HospitalDetail extends Hospital {
+  userId: string;
+  latitude: string | null;
+  longitude: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  websiteUrl: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  documents: Array<{
+    id: string;
+    documentType: string;
+    verificationStatus: string;
+    uploadedAt: string;
+    file: {
+      id: string;
+      filename: string;
+      url: string;
+      mimetype: string;
+      size: number;
+    };
+  }>;
+  departments: Array<{
+    id: string;
+    name: string;
+  }>;
+  verificationHistory: Array<{
+    id: string;
+    action: string;
+    details: any;
+    createdAt: string;
+  }>;
+}
 
 export function HospitalVerifications() {
-  const [selectedHospital, setSelectedHospital] = useState<typeof pendingHospitals[0] | null>(null);
+  const [hospitals, setHospitals] = useState<Hospital[]>([]);
+  const [selectedHospital, setSelectedHospital] = useState<HospitalDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [notes, setNotes] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('pending');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [updating, setUpdating] = useState<string | null>(null);
 
-  const handleApprove = () => {
-    console.log('Approving hospital:', selectedHospital?.id);
-    setSelectedHospital(null);
-    setNotes('');
+  useEffect(() => {
+    fetchHospitals();
+  }, [page, searchQuery, activeTab]);
+
+  const fetchHospitals = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '10',
+        status: activeTab === 'pending' ? 'pending' : activeTab === 'approved' ? 'verified' : 'rejected',
+      });
+
+      if (searchQuery) {
+        params.append('search', searchQuery);
+      }
+
+      const response = await fetch(`/api/admin/verifications/hospitals?${params.toString()}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setHospitals(data.data);
+        setTotalPages(data.pagination.totalPages);
+      } else {
+        toast.error('Failed to fetch hospitals');
+      }
+    } catch (error) {
+      console.error('Error fetching hospitals:', error);
+      toast.error('Failed to fetch hospitals');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleReject = () => {
-    console.log('Rejecting hospital:', selectedHospital?.id);
-    setSelectedHospital(null);
-    setNotes('');
+  const fetchHospitalDetail = async (hospitalId: string) => {
+    try {
+      setLoadingDetail(true);
+      const response = await fetch(`/api/admin/verifications/hospitals/${hospitalId}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setSelectedHospital(data.data);
+      } else {
+        toast.error('Failed to fetch hospital details');
+      }
+    } catch (error) {
+      console.error('Error fetching hospital details:', error);
+      toast.error('Failed to fetch hospital details');
+    } finally {
+      setLoadingDetail(false);
+    }
   };
 
-  const handleRequestInfo = () => {
-    console.log('Requesting more info:', selectedHospital?.id);
-    setSelectedHospital(null);
-    setNotes('');
+  const handleVerify = async () => {
+    if (!selectedHospital) return;
+
+    try {
+      setUpdating(selectedHospital.id);
+      const response = await fetch(`/api/admin/verifications/hospitals/${selectedHospital.id}/verify`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success('Hospital verified successfully');
+        setSelectedHospital(null);
+        setNotes('');
+        fetchHospitals();
+      } else {
+        toast.error(data.message || 'Failed to verify hospital');
+      }
+    } catch (error) {
+      console.error('Error verifying hospital:', error);
+      toast.error('Failed to verify hospital');
+    } finally {
+      setUpdating(null);
+    }
   };
+
+  const handleReject = async () => {
+    if (!selectedHospital || !rejectReason.trim()) {
+      toast.error('Please provide a rejection reason');
+      return;
+    }
+
+    try {
+      setUpdating(selectedHospital.id);
+      const response = await fetch(`/api/admin/verifications/hospitals/${selectedHospital.id}/reject`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: rejectReason, notes }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success('Hospital verification rejected');
+        setSelectedHospital(null);
+        setNotes('');
+        setRejectReason('');
+        setShowRejectDialog(false);
+        fetchHospitals();
+      } else {
+        toast.error(data.message || 'Failed to reject hospital');
+      }
+    } catch (error) {
+      console.error('Error rejecting hospital:', error);
+      toast.error('Failed to reject hospital');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const pendingCount = hospitals.filter(h => h.licenseVerificationStatus === 'pending').length;
+  const verifiedCount = hospitals.filter(h => h.licenseVerificationStatus === 'verified').length;
+  const rejectedCount = hospitals.filter(h => h.licenseVerificationStatus === 'rejected').length;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -84,90 +218,129 @@ export function HospitalVerifications() {
       />
 
       <div className="p-8">
-        <Tabs defaultValue="pending" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList>
-            <TabsTrigger value="pending">Pending (2)</TabsTrigger>
-            <TabsTrigger value="approved">Approved</TabsTrigger>
-            <TabsTrigger value="rejected">Rejected</TabsTrigger>
+            <TabsTrigger value="pending">Pending ({pendingCount})</TabsTrigger>
+            <TabsTrigger value="approved">Approved ({verifiedCount})</TabsTrigger>
+            <TabsTrigger value="rejected">Rejected ({rejectedCount})</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="pending" className="space-y-4">
+          <TabsContent value={activeTab} className="space-y-4">
             <div className="bg-white rounded-lg shadow">
               <div className="p-4 border-b border-slate-200">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                  <Input
-                    placeholder="Search by name, type, or registration number..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <Input
+                      placeholder="Search by name, type, or registration number..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setPage(1);
+                      }}
+                      className="pl-10"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-slate-600">Hospital</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Email</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Type</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Beds</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Submitted</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Status</th>
-                      <th className="px-6 py-3 text-left text-slate-600">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {pendingHospitals.map((hospital) => (
-                      <tr key={hospital.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <img 
-                              src={hospital.logo} 
-                              alt={hospital.name}
-                              className="w-10 h-10 rounded"
-                            />
-                            <div>
-                              <div className="text-slate-900">{hospital.name}</div>
-                              <div className="text-slate-500">{hospital.registrationNumber}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-slate-600">{hospital.email}</td>
-                        <td className="px-6 py-4 text-slate-900">{hospital.type}</td>
-                        <td className="px-6 py-4 text-slate-600">{hospital.beds}</td>
-                        <td className="px-6 py-4 text-slate-600">{hospital.submittedDate}</td>
-                        <td className="px-6 py-4">
-                          <StatusBadge status={hospital.status} />
-                        </td>
-                        <td className="px-6 py-4">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setSelectedHospital(hospital)}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            Review
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </TabsContent>
+              {loading ? (
+                <div className="p-8 text-center">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
+                  <p className="text-slate-600">Loading hospitals...</p>
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-slate-600">Hospital</th>
+                          <th className="px-6 py-3 text-left text-slate-600">Email</th>
+                          <th className="px-6 py-3 text-left text-slate-600">Type</th>
+                          <th className="px-6 py-3 text-left text-slate-600">Beds</th>
+                          <th className="px-6 py-3 text-left text-slate-600">Documents</th>
+                          <th className="px-6 py-3 text-left text-slate-600">Submitted</th>
+                          <th className="px-6 py-3 text-left text-slate-600">Status</th>
+                          <th className="px-6 py-3 text-left text-slate-600">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {hospitals.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="px-6 py-8 text-center text-slate-500">
+                              No hospitals found
+                            </td>
+                          </tr>
+                        ) : (
+                          hospitals.map((hospital) => (
+                            <tr key={hospital.id} className="hover:bg-slate-50">
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded bg-navy-100 flex items-center justify-center text-navy-700 font-semibold">
+                                    {hospital.name.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <div className="text-slate-900">{hospital.name}</div>
+                                    <div className="text-slate-500 text-sm">{hospital.registrationNumber}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-slate-600 text-sm">{hospital.email}</td>
+                              <td className="px-6 py-4 text-slate-900">{hospital.hospitalType || 'N/A'}</td>
+                              <td className="px-6 py-4 text-slate-600">{hospital.numberOfBeds || 'N/A'}</td>
+                              <td className="px-6 py-4 text-slate-600">
+                                {hospital.documentsCount} ({hospital.pendingDocumentsCount} pending)
+                              </td>
+                              <td className="px-6 py-4 text-slate-600 text-sm">{formatDate(hospital.createdAt)}</td>
+                              <td className="px-6 py-4">
+                                <StatusBadge status={hospital.licenseVerificationStatus} />
+                              </td>
+                              <td className="px-6 py-4">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => fetchHospitalDetail(hospital.id)}
+                                  disabled={loadingDetail}
+                                >
+                                  <Eye className="w-4 h-4 mr-1" />
+                                  Review
+                                </Button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
 
-          <TabsContent value="approved">
-            <div className="bg-white rounded-lg shadow p-8 text-center text-slate-600">
-              No approved verifications to display
-            </div>
-          </TabsContent>
-
-          <TabsContent value="rejected">
-            <div className="bg-white rounded-lg shadow p-8 text-center text-slate-600">
-              No rejected verifications to display
+                  {totalPages > 1 && (
+                    <div className="p-4 border-t border-slate-200 flex items-center justify-between">
+                      <div className="text-sm text-slate-600">
+                        Page {page} of {totalPages}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(p => Math.max(1, p - 1))}
+                          disabled={page === 1}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                          disabled={page === totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </TabsContent>
         </Tabs>
@@ -175,116 +348,178 @@ export function HospitalVerifications() {
 
       {/* Verification Detail Modal */}
       <Dialog open={!!selectedHospital} onOpenChange={() => setSelectedHospital(null)}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col" aria-describedby={undefined}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Hospital Verification Review</DialogTitle>
+            <DialogDescription>
+              Review hospital documents and information before verification
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-2 gap-6 flex-1 overflow-auto">
-            {/* Left Panel - Profile */}
-            <div className="space-y-6">
-              <div className="bg-slate-50 rounded-lg p-6">
-                <div className="flex items-start gap-4">
-                  <img 
-                    src={selectedHospital?.logo} 
-                    alt={selectedHospital?.name}
-                    className="w-20 h-20 rounded"
-                  />
-                  <div className="flex-1">
-                    <h3 className="text-slate-900">{selectedHospital?.name}</h3>
-                    <p className="text-slate-600 mt-1">{selectedHospital?.email}</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <StatusBadge status={selectedHospital?.status || 'Pending'} />
+          {loadingDetail ? (
+            <div className="p-8 text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
+              <p className="text-slate-600">Loading hospital details...</p>
+            </div>
+          ) : selectedHospital ? (
+            <div className="grid grid-cols-2 gap-6 flex-1 overflow-auto">
+              {/* Left Panel - Profile */}
+              <div className="space-y-6">
+                <div className="bg-slate-50 rounded-lg p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-20 h-20 rounded bg-navy-100 flex items-center justify-center text-navy-700 font-bold text-xl">
+                      {selectedHospital.name.charAt(0)}
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-slate-900">{selectedHospital.name}</h3>
+                      <p className="text-slate-600 mt-1">{selectedHospital.email}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <StatusBadge status={selectedHospital.licenseVerificationStatus} />
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Registration Number</label>
+                    <p className="text-slate-900 mt-1">{selectedHospital.registrationNumber}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Hospital Type</label>
+                    <p className="text-slate-900 mt-1">{selectedHospital.hospitalType || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Address</label>
+                    <p className="text-slate-900 mt-1">{selectedHospital.address}, {selectedHospital.city}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Number of Beds</label>
+                    <p className="text-slate-900 mt-1">{selectedHospital.numberOfBeds || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Contact</label>
+                    <p className="text-slate-900 mt-1">
+                      {selectedHospital.contactPhone || selectedHospital.phone || 'N/A'}
+                    </p>
+                    <p className="text-slate-900 mt-1">
+                      {selectedHospital.contactEmail || selectedHospital.email}
+                    </p>
+                  </div>
+                  {selectedHospital.websiteUrl && (
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Website</label>
+                      <p className="text-slate-900 mt-1">
+                        <a href={selectedHospital.websiteUrl} target="_blank" rel="noopener noreferrer" className="text-teal-600 hover:underline">
+                          {selectedHospital.websiteUrl}
+                        </a>
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Departments</label>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {selectedHospital.departments.length === 0 ? (
+                        <span className="text-slate-500">No departments</span>
+                      ) : (
+                        selectedHospital.departments.map((dept) => (
+                          <span key={dept.id} className="px-2 py-1 bg-navy-100 text-navy-700 rounded text-sm">
+                            {dept.name}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-slate-600 mb-2 block">Admin Notes</label>
+                  <Textarea
+                    placeholder="Add notes about this verification..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={4}
+                  />
+                </div>
               </div>
 
+              {/* Right Panel - Documents */}
               <div className="space-y-4">
                 <div>
-                  <label className="text-slate-600">Registration Number</label>
-                  <p className="text-slate-900 mt-1">{selectedHospital?.registrationNumber}</p>
-                </div>
-                <div>
-                  <label className="text-slate-600">Type</label>
-                  <p className="text-slate-900 mt-1">{selectedHospital?.type}</p>
-                </div>
-                <div>
-                  <label className="text-slate-600">Address</label>
-                  <p className="text-slate-900 mt-1">{selectedHospital?.address}</p>
-                </div>
-                <div>
-                  <label className="text-slate-600">Number of Beds</label>
-                  <p className="text-slate-900 mt-1">{selectedHospital?.beds}</p>
-                </div>
-                <div>
-                  <label className="text-slate-600">Departments</label>
-                  <p className="text-slate-900 mt-1">{selectedHospital?.departments}</p>
-                </div>
-                <div>
-                  <label className="text-slate-600">Submitted Date</label>
-                  <p className="text-slate-900 mt-1">{selectedHospital?.submittedDate}</p>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-600 mb-2 block">Admin Notes</label>
-                <Textarea
-                  placeholder="Add notes about this verification..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={4}
-                />
-              </div>
-            </div>
-
-            {/* Right Panel - Documents */}
-            <div className="space-y-4">
-              <div className="bg-slate-100 rounded-lg p-6 h-96 flex items-center justify-center border-2 border-dashed border-slate-300">
-                <div className="text-center">
-                  <Download className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-                  <p className="text-slate-600">Document Preview</p>
-                  <p className="text-slate-500 mt-1">PDF viewer would display here</p>
-                  <div className="flex items-center justify-center gap-2 mt-4">
-                    <Button size="sm" variant="outline">
-                      <ZoomIn className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="outline">
-                      <ZoomOut className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="outline">
-                      <Download className="w-4 h-4" />
-                    </Button>
+                  <label className="text-sm font-medium text-slate-600 mb-2 block">Documents</label>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {selectedHospital.documents.length === 0 ? (
+                      <p className="text-slate-500 text-center py-8">No documents uploaded</p>
+                    ) : (
+                      selectedHospital.documents.map((doc) => (
+                        <div key={doc.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className="w-8 h-8 bg-red-100 rounded flex items-center justify-center">
+                              <span className="text-red-600 text-xs">PDF</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-slate-900 font-medium">{doc.documentType}</p>
+                              <p className="text-slate-500 text-sm">{doc.file.filename}</p>
+                              <p className="text-slate-400 text-xs mt-1">
+                                {formatDate(doc.uploadedAt)} • <StatusBadge status={doc.verificationStatus} variant="small" />
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              onClick={() => window.open(doc.file.url, '_blank')}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              onClick={() => {
+                                const link = document.createElement('a');
+                                link.href = doc.file.url;
+                                link.download = doc.file.filename;
+                                link.click();
+                              }}
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <label className="text-slate-600">Documents</label>
-                {selectedHospital?.documents.map((doc, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-red-100 rounded flex items-center justify-center">
-                        <span className="text-red-600">PDF</span>
-                      </div>
-                      <div>
-                        <p className="text-slate-900">{doc.name}</p>
-                        <p className="text-slate-500">Document {idx + 1}</p>
-                      </div>
+                {selectedHospital.verificationHistory.length > 0 && (
+                  <div>
+                    <label className="text-sm font-medium text-slate-600 mb-2 block">Verification History</label>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {selectedHospital.verificationHistory.map((log) => (
+                        <div key={log.id} className="p-2 bg-slate-50 rounded text-sm">
+                          <p className="text-slate-900">
+                            <span className="font-medium">{log.action}</span> - {formatDate(log.createdAt)}
+                          </p>
+                          {log.details?.notes && (
+                            <p className="text-slate-600 mt-1">{log.details.notes}</p>
+                          )}
+                          {log.details?.reason && (
+                            <p className="text-red-600 mt-1">Reason: {log.details.reason}</p>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                    <Button size="sm" variant="ghost">
-                      <Eye className="w-4 h-4" />
-                    </Button>
                   </div>
-                ))}
+                )}
               </div>
             </div>
-          </div>
+          ) : null}
 
           <DialogFooter className="flex items-center justify-between border-t pt-4">
             <Button
               variant="outline"
-              onClick={handleRequestInfo}
+              onClick={() => setSelectedHospital(null)}
               className="border-amber-600 text-amber-600 hover:bg-amber-50"
             >
               <MessageSquare className="w-4 h-4 mr-2" />
@@ -293,20 +528,76 @@ export function HospitalVerifications() {
             <div className="flex items-center gap-3">
               <Button
                 variant="outline"
-                onClick={handleReject}
+                onClick={() => setShowRejectDialog(true)}
                 className="border-red-600 text-red-600 hover:bg-red-50"
+                disabled={updating === selectedHospital?.id}
               >
                 <X className="w-4 h-4 mr-2" />
                 Reject
               </Button>
               <Button
-                onClick={handleApprove}
+                onClick={handleVerify}
                 className="bg-green-600 hover:bg-green-700"
+                disabled={updating === selectedHospital?.id}
               >
-                <Check className="w-4 h-4 mr-2" />
+                {updating === selectedHospital?.id ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4 mr-2" />
+                )}
                 Approve
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Confirmation Dialog */}
+      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Hospital Verification</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejecting this hospital's verification.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-slate-600 mb-2 block">Rejection Reason *</label>
+              <Textarea
+                placeholder="Enter the reason for rejection..."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={4}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-600 mb-2 block">Additional Notes</label>
+              <Textarea
+                placeholder="Optional additional notes..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRejectDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleReject}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={!rejectReason.trim() || updating === selectedHospital?.id}
+            >
+              {updating === selectedHospital?.id ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <X className="w-4 h-4 mr-2" />
+              )}
+              Reject
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

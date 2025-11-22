@@ -9,6 +9,8 @@
     "lint": "eslint",
     "test:api": "node scripts/test-all-apis.mjs",
     "db:seed": "tsx scripts/seed-database.ts",
+    "db:seed:admin": "tsx scripts/seed-admin-dashboard.ts",
+    "db:clear:seed": "tsx scripts/clear-and-seed.ts",
     "db:generate": "drizzle-kit generate --config=./src/drizzle/drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config=./src/drizzle/drizzle.config.ts",
     "db:introspect": "drizzle-kit introspect --config=./src/drizzle/drizzle.config.ts",
