@@ -59,6 +59,7 @@
     "drizzle-orm": "^0.44.7",
     "embla-carousel-react": "^8.6.0",
     "get-nonce": "^1.0.1",
+    "immutable": "^3.8.2",
     "input-otp": "^1.4.2",
     "jsonwebtoken": "^9.0.2",
     "lodash.get": "^4.4.2",
