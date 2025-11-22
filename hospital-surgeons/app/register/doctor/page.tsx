@@ -22,10 +22,126 @@ export default function DoctorRegistrationPage() {
   const [specialtiesList, setSpecialtiesList] = useState<Array<{ id: string; name: string }>>([]);
   const [loadingSpecialties, setLoadingSpecialties] = useState(false);
 
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validateField = (field: string, value: any): string | null => {
+    switch (field) {
+      case 'firstName':
+        if (!value || !value.trim()) {
+          return 'First name is required';
+        }
+        if (value.trim().length < 2) {
+          return 'First name must be at least 2 characters';
+        }
+        return null;
+      
+      case 'lastName':
+        if (!value || !value.trim()) {
+          return 'Last name is required';
+        }
+        if (value.trim().length < 2) {
+          return 'Last name must be at least 2 characters';
+        }
+        return null;
+      
+      case 'dentalLicenseNumber':
+        if (!value || !value.trim()) {
+          return 'License number is required';
+        }
+        if (value.trim().length < 3) {
+          return 'License number must be at least 3 characters';
+        }
+        return null;
+      
+      case 'email':
+        if (!value || !value.trim()) {
+          return 'Email is required';
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) {
+          return 'Please enter a valid email address';
+        }
+        return null;
+      
+      case 'phone':
+        if (!value || !value.trim()) {
+          return 'Phone number is required';
+        }
+        const phoneRegex = /^[\d\s\-\+\(\)]+$/;
+        if (!phoneRegex.test(value) || value.replace(/\D/g, '').length < 10) {
+          return 'Please enter a valid phone number';
+        }
+        return null;
+      
+      case 'password':
+        if (!value) {
+          return 'Password is required';
+        }
+        if (value.length < 8) {
+          return 'Password must be at least 8 characters';
+        }
+        if (!/(?=.*[a-z])/.test(value)) {
+          return 'Password must contain at least one lowercase letter';
+        }
+        if (!/(?=.*[A-Z])/.test(value)) {
+          return 'Password must contain at least one uppercase letter';
+        }
+        if (!/(?=.*\d)/.test(value)) {
+          return 'Password must contain at least one number';
+        }
+        return null;
+      
+      case 'yearsOfPractice':
+        if (!value) {
+          return 'Years of practice is required';
+        }
+        const years = parseInt(value);
+        if (isNaN(years) || years < 0) {
+          return 'Please enter a valid number of years';
+        }
+        if (years > 50) {
+          return 'Years of practice cannot exceed 50';
+        }
+        return null;
+      
+      default:
+        return null;
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const field = e.target.name;
+    const value = e.target.value;
+    
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [field]: value,
+    });
+    
+    // Validate field immediately
+    const error = validateField(field, value);
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      if (error) {
+        newErrors[field] = error;
+      } else {
+        delete newErrors[field];
+      }
+      return newErrors;
+    });
+  };
+
+  const handleBlur = (field: string, value: any) => {
+    // Re-validate on blur for better UX
+    const error = validateField(field, value);
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      if (error) {
+        newErrors[field] = error;
+      } else {
+        delete newErrors[field];
+      }
+      return newErrors;
     });
   };
 
@@ -52,17 +168,34 @@ export default function DoctorRegistrationPage() {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/users/signup', {
+      // Validate specialties
+      if (formData.specialties.length === 0) {
+        alert('Please select at least one specialty');
+        setLoading(false);
+        return;
+      }
+
+      // Prepare specialties array for API
+      const specialtiesArray = formData.specialties.map((specialtyId, index) => ({
+        specialtyId,
+        isPrimary: index === 0, // First specialty is primary
+      }));
+
+      // Use the new single API endpoint
+      const response = await fetch('/api/doctors/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          phone: formData.phone,
           firstName: formData.firstName,
           lastName: formData.lastName,
-          email: formData.email,
-          phone: formData.phone,
-          password: formData.password,
+          medicalLicenseNumber: formData.dentalLicenseNumber, // Note: using dentalLicenseNumber from form
+          yearsOfExperience: parseInt(formData.yearsOfPractice) || 0,
+          specialties: specialtiesArray,
           device: {
             device_token: 'web-token-' + Date.now(),
             device_type: 'web',
@@ -76,11 +209,10 @@ export default function DoctorRegistrationPage() {
       const data = await response.json();
 
       if (data.success) {
-        // Store token if provided
-        if (data.data?.accessToken) {
-          localStorage.setItem('accessToken', data.data.accessToken);
-        }
-        router.push('/doctor/dashboard');
+        // Don't store token from registration - user must log in explicitly
+        // This ensures proper authentication flow and correct navigation
+        // Redirect to login page with success message and email pre-filled
+        router.push(`/login?role=doctor&registered=true&email=${encodeURIComponent(formData.email)}`);
       } else {
         alert(data.message || 'Registration failed');
       }
@@ -207,10 +339,14 @@ export default function DoctorRegistrationPage() {
                       name="firstName"
                       value={formData.firstName}
                       onChange={handleInputChange}
+                      onBlur={(e) => handleBlur('firstName', e.target.value)}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.firstName ? 'border-red-500' : 'border-gray-300'
+                      }`}
                       placeholder="John"
                     />
+                    {errors.firstName && <p className="mt-1 text-sm text-red-500">{errors.firstName}</p>}
                   </div>
 
                   <div>
@@ -223,10 +359,14 @@ export default function DoctorRegistrationPage() {
                       name="lastName"
                       value={formData.lastName}
                       onChange={handleInputChange}
+                      onBlur={(e) => handleBlur('lastName', e.target.value)}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.lastName ? 'border-red-500' : 'border-gray-300'
+                      }`}
                       placeholder="Smith"
                     />
+                    {errors.lastName && <p className="mt-1 text-sm text-red-500">{errors.lastName}</p>}
                   </div>
 
                   <div>
@@ -239,10 +379,14 @@ export default function DoctorRegistrationPage() {
                       name="dentalLicenseNumber"
                       value={formData.dentalLicenseNumber}
                       onChange={handleInputChange}
+                      onBlur={(e) => handleBlur('dentalLicenseNumber', e.target.value)}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.dentalLicenseNumber ? 'border-red-500' : 'border-gray-300'
+                      }`}
                       placeholder="DDS-12345"
                     />
+                    {errors.dentalLicenseNumber && <p className="mt-1 text-sm text-red-500">{errors.dentalLicenseNumber}</p>}
                   </div>
 
                   <div>
@@ -254,7 +398,10 @@ export default function DoctorRegistrationPage() {
                       name="yearsOfPractice"
                       value={formData.yearsOfPractice}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      onBlur={(e) => handleBlur('yearsOfPractice', e.target.value)}
+                      className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.yearsOfPractice ? 'border-red-500' : 'border-gray-300'
+                      }`}
                     >
                       <option value="">Select years of experience</option>
                       {Array.from({ length: 50 }, (_, i) => (
@@ -263,6 +410,7 @@ export default function DoctorRegistrationPage() {
                         </option>
                       ))}
                     </select>
+                    {errors.yearsOfPractice && <p className="mt-1 text-sm text-red-500">{errors.yearsOfPractice}</p>}
                   </div>
                 </div>
               )}
@@ -279,9 +427,13 @@ export default function DoctorRegistrationPage() {
                       name="email"
                       value={formData.email}
                       onChange={handleInputChange}
+                      onBlur={(e) => handleBlur('email', e.target.value)}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.email ? 'border-red-500' : 'border-gray-300'
+                      }`}
                     />
+                    {errors.email && <p className="mt-1 text-sm text-red-500">{errors.email}</p>}
                   </div>
 
                   <div>
@@ -294,9 +446,13 @@ export default function DoctorRegistrationPage() {
                       name="phone"
                       value={formData.phone}
                       onChange={handleInputChange}
+                      onBlur={(e) => handleBlur('phone', e.target.value)}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.phone ? 'border-red-500' : 'border-gray-300'
+                      }`}
                     />
+                    {errors.phone && <p className="mt-1 text-sm text-red-500">{errors.phone}</p>}
                   </div>
 
                   <div>
@@ -309,9 +465,13 @@ export default function DoctorRegistrationPage() {
                       name="password"
                       value={formData.password}
                       onChange={handleInputChange}
+                      onBlur={(e) => handleBlur('password', e.target.value)}
                       required
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.password ? 'border-red-500' : 'border-gray-300'
+                      }`}
                     />
+                    {errors.password && <p className="mt-1 text-sm text-red-500">{errors.password}</p>}
                   </div>
                 </div>
               )}

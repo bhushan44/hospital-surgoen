@@ -354,7 +354,7 @@ export function SubscriptionPlans() {
 
       {/* Add/Edit Modal */}
       <Dialog open={showAddModal} onOpenChange={handleCloseModal}>
-        <DialogContent aria-describedby={undefined} className="max-w-2xl">
+        <DialogContent aria-describedby={undefined} className="max-w-2xl bg-white dark:bg-gray-900">
           <DialogHeader>
             <DialogTitle>{editingPlan ? 'Edit Subscription Plan' : 'Create New Subscription Plan'}</DialogTitle>
           </DialogHeader>

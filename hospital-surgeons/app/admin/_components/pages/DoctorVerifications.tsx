@@ -354,21 +354,22 @@ export function DoctorVerifications() {
 
       {/* Verification Detail Modal */}
       <Dialog open={!!selectedDoctor} onOpenChange={() => setSelectedDoctor(null)}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col bg-white dark:bg-gray-900 p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-200 flex-shrink-0">
             <DialogTitle>Doctor Verification Review</DialogTitle>
             <DialogDescription>
               Review doctor credentials and documents before verification
             </DialogDescription>
           </DialogHeader>
 
-          {loadingDetail ? (
-            <div className="p-8 text-center">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
-              <p className="text-slate-600">Loading doctor details...</p>
-            </div>
-          ) : selectedDoctor ? (
-            <div className="grid grid-cols-2 gap-6 flex-1 overflow-auto">
+          <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+            {loadingDetail ? (
+              <div className="p-8 text-center">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
+                <p className="text-slate-600">Loading doctor details...</p>
+              </div>
+            ) : selectedDoctor ? (
+              <div className="grid grid-cols-2 gap-6">
               {/* Left Panel - Profile */}
               <div className="space-y-6">
                 <div className="bg-slate-50 rounded-lg p-6">
@@ -502,9 +503,10 @@ export function DoctorVerifications() {
                 )}
               </div>
             </div>
-          ) : null}
+            ) : null}
+          </div>
 
-          <DialogFooter className="flex items-center justify-between border-t pt-4">
+          <DialogFooter className="flex items-center justify-between border-t border-gray-200 px-6 py-4 flex-shrink-0 bg-gray-50">
             <Button
               variant="outline"
               onClick={() => setSelectedDoctor(null)}
@@ -542,7 +544,7 @@ export function DoctorVerifications() {
 
       {/* Reject Confirmation Dialog */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-        <DialogContent>
+        <DialogContent className="bg-white dark:bg-gray-900">
           <DialogHeader>
             <DialogTitle>Reject Doctor Verification</DialogTitle>
             <DialogDescription>

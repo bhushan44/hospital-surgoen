@@ -1,20 +1,44 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Header from '../components/Header';
+import { isAuthenticated, getUserRole, getDashboardPath, decodeToken } from '@/lib/auth/utils';
 
 type AccountType = 'doctor' | 'hospital' | 'admin';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [accountType, setAccountType] = useState<AccountType>('doctor');
-  const [email, setEmail] = useState('');
+  const searchParams = useSearchParams();
+  const roleParam = searchParams.get('role') as AccountType | null;
+  
+  const [accountType, setAccountType] = useState<AccountType>(roleParam || 'doctor');
+  const registeredParam = searchParams.get('registered');
+  const emailParam = searchParams.get('email');
+  const [email, setEmail] = useState(emailParam || '');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(registeredParam === 'true');
+
+  // Check if user is already logged in
+  useEffect(() => {
+    if (isAuthenticated()) {
+      const role = getUserRole();
+      const dashboardPath = getDashboardPath(role);
+      // If user is logged in, redirect to their dashboard
+      router.push(dashboardPath);
+    }
+  }, [router]);
+
+  // Pre-fill email if coming from registration
+  useEffect(() => {
+    if (emailParam) {
+      setEmail(emailParam);
+    }
+  }, [emailParam]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,13 +73,17 @@ export default function LoginPage() {
           localStorage.setItem('rememberMe', 'true');
         }
 
-        // Redirect based on account type
-        if (accountType === 'doctor') {
-          router.push('/doctor/dashboard');
-        } else if (accountType === 'hospital') {
-          router.push('/hospital/dashboard');
-        } else if (accountType === 'admin') {
-          router.push('/admin');
+        // Decode token to get user role
+        const decoded = decodeToken(data.data.accessToken);
+        const userRole = decoded?.userRole;
+        
+        // Redirect based on actual user role from token
+        // This ensures users go to the correct dashboard based on their actual role
+        if (userRole) {
+          router.push(getDashboardPath(userRole));
+        } else {
+          // Fallback to selected account type if role not found
+          router.push(getDashboardPath(accountType));
         }
       } else {
         alert(data.message || 'Login failed');
@@ -135,6 +163,20 @@ export default function LoginPage() {
         <div className="grid md:grid-cols-2 gap-8 max-w-6xl w-full">
           {/* Left Panel - Login Form */}
           <div className="bg-white rounded-2xl shadow-xl p-8">
+            {/* Success Message */}
+            {showSuccessMessage && (
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm text-green-800 font-medium">
+                    Registration successful! Please log in to continue.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Logo */}
             <div className="text-center mb-8">
               <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">

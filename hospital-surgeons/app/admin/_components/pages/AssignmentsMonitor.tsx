@@ -269,7 +269,7 @@ export function AssignmentsMonitor() {
 
       {/* Detail Modal */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
-        <DialogContent aria-describedby={undefined} className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent aria-describedby={undefined} className="max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900">
           <DialogHeader>
             <DialogTitle>Assignment Details</DialogTitle>
           </DialogHeader>

@@ -300,7 +300,7 @@ export function Affiliations() {
 
       {/* Add Modal */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent aria-describedby={undefined}>
+        <DialogContent aria-describedby={undefined} className="bg-white dark:bg-gray-900">
           <DialogHeader>
             <DialogTitle>Add New Affiliation</DialogTitle>
           </DialogHeader>

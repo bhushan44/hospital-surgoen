@@ -600,7 +600,7 @@ export function UsersManagement() {
 
       {/* User Detail Modal */}
       <Dialog open={showUserDetail} onOpenChange={setShowUserDetail}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900">
           <DialogHeader>
             <DialogTitle>User Details</DialogTitle>
             <DialogDescription>

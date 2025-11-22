@@ -61,16 +61,120 @@ export default function DoctorRegistrationPage() {
       });
   }, []);
 
+  const validateField = (field: string, value: any): string | null => {
+    switch (field) {
+      case 'firstName':
+        if (!value || !value.trim()) {
+          return 'First name is required';
+        }
+        if (value.trim().length < 2) {
+          return 'First name must be at least 2 characters';
+        }
+        return null;
+      
+      case 'lastName':
+        if (!value || !value.trim()) {
+          return 'Last name is required';
+        }
+        if (value.trim().length < 2) {
+          return 'Last name must be at least 2 characters';
+        }
+        return null;
+      
+      case 'medicalLicenseNumber':
+        if (!value || !value.trim()) {
+          return 'Medical license number is required';
+        }
+        if (value.trim().length < 3) {
+          return 'License number must be at least 3 characters';
+        }
+        return null;
+      
+      case 'email':
+        if (!value || !value.trim()) {
+          return 'Email is required';
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) {
+          return 'Please enter a valid email address';
+        }
+        return null;
+      
+      case 'phone':
+        if (!value || !value.trim()) {
+          return 'Phone number is required';
+        }
+        const phoneRegex = /^[\d\s\-\+\(\)]+$/;
+        if (!phoneRegex.test(value) || value.replace(/\D/g, '').length < 10) {
+          return 'Please enter a valid phone number';
+        }
+        return null;
+      
+      case 'password':
+        if (!value) {
+          return 'Password is required';
+        }
+        if (value.length < 8) {
+          return 'Password must be at least 8 characters';
+        }
+        if (!/(?=.*[a-z])/.test(value)) {
+          return 'Password must contain at least one lowercase letter';
+        }
+        if (!/(?=.*[A-Z])/.test(value)) {
+          return 'Password must contain at least one uppercase letter';
+        }
+        if (!/(?=.*\d)/.test(value)) {
+          return 'Password must contain at least one number';
+        }
+        return null;
+      
+      case 'yearsOfExperience':
+      case 'yearsOfPractice':
+        if (!value) {
+          return 'Years of experience is required';
+        }
+        const years = parseInt(value);
+        if (isNaN(years) || years < 0) {
+          return 'Please enter a valid number of years';
+        }
+        if (years > 50) {
+          return 'Years of experience cannot exceed 50';
+        }
+        return null;
+      
+      default:
+        return null;
+    }
+  };
+
   const handleInputChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    // Clear error for this field
-    if (errors[field]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
+    
+    // Validate field immediately
+    const error = validateField(field, value);
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      if (error) {
+        newErrors[field] = error;
+      } else {
         delete newErrors[field];
-        return newErrors;
-      });
-    }
+      }
+      return newErrors;
+    });
+  };
+
+  const handleBlur = (field: string, value: any) => {
+    // Re-validate on blur for better UX
+    const error = validateField(field, value);
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      if (error) {
+        newErrors[field] = error;
+      } else {
+        delete newErrors[field];
+      }
+      return newErrors;
+    });
   };
 
   const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -89,40 +193,32 @@ export default function DoctorRegistrationPage() {
     const newErrors: Record<string, string> = {};
 
     if (step === 1) {
-      if (!formData.firstName.trim()) {
-        newErrors.firstName = 'First name is required';
-      }
-      if (!formData.lastName.trim()) {
-        newErrors.lastName = 'Last name is required';
-      }
-      if (!formData.medicalLicenseNumber.trim()) {
-        newErrors.medicalLicenseNumber = 'Medical license number is required';
-      }
+      const firstNameError = validateField('firstName', formData.firstName);
+      const lastNameError = validateField('lastName', formData.lastName);
+      const licenseError = validateField('medicalLicenseNumber', formData.medicalLicenseNumber);
+      
+      if (firstNameError) newErrors.firstName = firstNameError;
+      if (lastNameError) newErrors.lastName = lastNameError;
+      if (licenseError) newErrors.medicalLicenseNumber = licenseError;
     } else if (step === 2) {
-      if (!formData.email.trim()) {
-        newErrors.email = 'Email is required';
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-        newErrors.email = 'Please enter a valid email address';
-      }
-      if (!formData.phone.trim()) {
-        newErrors.phone = 'Phone number is required';
-      }
-      if (!formData.password) {
-        newErrors.password = 'Password is required';
-      } else if (formData.password.length < 8) {
-        newErrors.password = 'Password must be at least 8 characters';
-      }
+      const emailError = validateField('email', formData.email);
+      const phoneError = validateField('phone', formData.phone);
+      const passwordError = validateField('password', formData.password);
+      
+      if (emailError) newErrors.email = emailError;
+      if (phoneError) newErrors.phone = phoneError;
+      if (passwordError) newErrors.password = passwordError;
     } else if (step === 3) {
-      if (!formData.yearsOfExperience) {
-        newErrors.yearsOfExperience = 'Years of experience is required';
-      }
+      const years = formData.yearsOfExperience || formData.yearsOfPractice;
+      const yearsError = validateField('yearsOfExperience', years);
+      if (yearsError) newErrors.yearsOfExperience = yearsError;
     } else if (step === 4) {
       if (formData.selectedSpecialties.length === 0) {
         newErrors.specialties = 'Please select at least one specialty';
       }
     }
 
-    setErrors(newErrors);
+    setErrors((prev) => ({ ...prev, ...newErrors }));
     return Object.keys(newErrors).length === 0;
   };
 
@@ -131,36 +227,52 @@ export default function DoctorRegistrationPage() {
       return;
     }
 
-    // If on step 2, create account
-    if (currentStep === 2) {
+    // If on step 4 (final step), submit everything at once using the new single API
+    if (currentStep === 4) {
       setIsSubmitting(true);
       try {
-        const response = await fetch('/api/users/signup', {
+        // Prepare specialties array for API
+        const specialtiesArray = formData.selectedSpecialties.map((specialtyId) => ({
+          specialtyId,
+          isPrimary: specialtyId === formData.primarySpecialty,
+        }));
+
+        // Use the new single API endpoint
+        const response = await fetch('/api/doctors/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: formData.email,
-            phone: formData.phone,
             password: formData.password,
+            phone: formData.phone,
             firstName: formData.firstName,
             lastName: formData.lastName,
-            role: 'doctor',
+            medicalLicenseNumber: formData.medicalLicenseNumber,
+            yearsOfExperience: parseInt(formData.yearsOfExperience) || parseInt(formData.yearsOfPractice) || 0,
+            bio: formData.bio || null,
+            specialties: specialtiesArray,
+            device: {
+              device_token: `web-token-${Date.now()}`,
+              device_type: 'web',
+              app_version: '1.0.0',
+              os_version: '1.0.0',
+              is_active: true,
+            },
           }),
         });
 
         const data = await response.json();
 
         if (data.success) {
-          localStorage.setItem('userId', data.data.user.id);
-          localStorage.setItem('token', data.data.accessToken);
-          localStorage.setItem('firstName', formData.firstName);
-          localStorage.setItem('lastName', formData.lastName);
-          setCurrentStep(3);
+          // Don't store token from registration - user must log in explicitly
+          // This ensures proper authentication flow and correct navigation
+          // Redirect to login page with success message and email pre-filled
+          router.push(`/login?role=doctor&registered=true&email=${encodeURIComponent(formData.email)}`);
         } else {
           setErrors({ submit: data.message || data.error || 'Registration failed' });
         }
       } catch (error) {
-        console.error('Signup error:', error);
+        console.error('Registration error:', error);
         setErrors({ submit: 'An error occurred. Please try again.' });
       } finally {
         setIsSubmitting(false);
@@ -168,89 +280,9 @@ export default function DoctorRegistrationPage() {
       return;
     }
 
-    // If on step 3, create doctor profile
-    if (currentStep === 3) {
-      setIsSubmitting(true);
-      try {
-        const userId = localStorage.getItem('userId');
-        const token = localStorage.getItem('token');
-        if (!userId || !token) {
-          setErrors({ submit: 'Please complete step 2 first' });
-          setIsSubmitting(false);
-          return;
-        }
-
-        const response = await fetch('/api/doctors/profile', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            firstName: formData.firstName,
-            lastName: formData.lastName,
-            medicalLicenseNumber: formData.medicalLicenseNumber,
-            yearsOfExperience: parseInt(formData.yearsOfExperience),
-            bio: formData.bio,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-          localStorage.setItem('doctorId', data.data.id);
-          setCurrentStep(4);
-        } else {
-          setErrors({ submit: data.message || 'Failed to create doctor profile' });
-        }
-      } catch (error) {
-        console.error('Error:', error);
-        setErrors({ submit: 'An error occurred. Please try again.' });
-      } finally {
-        setIsSubmitting(false);
-      }
-      return;
-    }
-
-    // If on step 4, save specialties and complete
-    if (currentStep === 4) {
-      setIsSubmitting(true);
-      try {
-        const doctorId = localStorage.getItem('doctorId');
-        if (!doctorId) {
-          setErrors({ submit: 'Please complete previous steps first' });
-          setIsSubmitting(false);
-          return;
-        }
-
-        // Add specialties
-        for (const specialtyId of formData.selectedSpecialties) {
-          await fetch(`/api/doctors/${doctorId}/specialties`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${localStorage.getItem('token')}`,
-            },
-            body: JSON.stringify({
-              specialtyId,
-              isPrimary: specialtyId === formData.primarySpecialty,
-            }),
-          });
-        }
-
-        // Redirect to success/dashboard
-        router.push('/onboarding/doctor/step-5');
-      } catch (error) {
-        console.error('Error:', error);
-        setErrors({ submit: 'An error occurred. Please try again.' });
-        setIsSubmitting(false);
-      }
-      return;
-    }
-
-    // For step 1, just move to next step
-    if (currentStep === 1) {
-      setCurrentStep(2);
+    // For steps 1-3, just move to next step (no API calls)
+    if (currentStep < 4) {
+      setCurrentStep(currentStep + 1);
     }
   };
 
@@ -382,6 +414,7 @@ export default function DoctorRegistrationPage() {
                   type="text"
                   value={formData.firstName}
                   onChange={(e) => handleInputChange('firstName', e.target.value)}
+                  onBlur={(e) => handleBlur('firstName', e.target.value)}
                   className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
                     errors.firstName ? 'border-red-500' : 'border-gray-300'
                   }`}
@@ -398,6 +431,7 @@ export default function DoctorRegistrationPage() {
                   type="text"
                   value={formData.lastName}
                   onChange={(e) => handleInputChange('lastName', e.target.value)}
+                  onBlur={(e) => handleBlur('lastName', e.target.value)}
                   className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
                     errors.lastName ? 'border-red-500' : 'border-gray-300'
                   }`}
@@ -414,6 +448,7 @@ export default function DoctorRegistrationPage() {
                   type="text"
                   value={formData.medicalLicenseNumber}
                   onChange={(e) => handleInputChange('medicalLicenseNumber', e.target.value)}
+                  onBlur={(e) => handleBlur('medicalLicenseNumber', e.target.value)}
                   className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
                     errors.medicalLicenseNumber ? 'border-red-500' : 'border-gray-300'
                   }`}
@@ -458,6 +493,7 @@ export default function DoctorRegistrationPage() {
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
+                  onBlur={(e) => handleBlur('email', e.target.value)}
                   className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
                     errors.email ? 'border-red-500' : 'border-gray-300'
                   }`}
@@ -474,6 +510,7 @@ export default function DoctorRegistrationPage() {
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => handleInputChange('phone', e.target.value)}
+                  onBlur={(e) => handleBlur('phone', e.target.value)}
                   className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
                     errors.phone ? 'border-red-500' : 'border-gray-300'
                   }`}
@@ -491,6 +528,7 @@ export default function DoctorRegistrationPage() {
                     type={showPassword ? 'text' : 'password'}
                     value={formData.password}
                     onChange={(e) => handleInputChange('password', e.target.value)}
+                    onBlur={(e) => handleBlur('password', e.target.value)}
                     className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
                       errors.password ? 'border-red-500' : 'border-gray-300'
                     }`}
@@ -527,8 +565,18 @@ export default function DoctorRegistrationPage() {
                 <input
                   type="number"
                   min="0"
-                  value={formData.yearsOfExperience}
-                  onChange={(e) => handleInputChange('yearsOfExperience', e.target.value)}
+                  max="50"
+                  value={formData.yearsOfExperience || formData.yearsOfPractice}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    handleInputChange('yearsOfExperience', value);
+                    handleInputChange('yearsOfPractice', value);
+                  }}
+                  onBlur={(e) => {
+                    const value = e.target.value;
+                    handleBlur('yearsOfExperience', value);
+                  }}
+                  placeholder="Enter years of experience"
                   className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 ${
                     errors.yearsOfExperience ? 'border-red-500' : 'border-gray-300'
                   }`}

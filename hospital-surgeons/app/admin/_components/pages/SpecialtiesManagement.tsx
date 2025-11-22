@@ -246,7 +246,7 @@ export function SpecialtiesManagement() {
 
       {/* Add/Edit Modal */}
       <Dialog open={showAddModal} onOpenChange={handleCloseModal}>
-        <DialogContent aria-describedby={undefined}>
+        <DialogContent aria-describedby={undefined} className="bg-white dark:bg-gray-900">
           <DialogHeader>
             <DialogTitle>{editingSpecialty ? 'Edit Specialty' : 'Add New Specialty'}</DialogTitle>
           </DialogHeader>
