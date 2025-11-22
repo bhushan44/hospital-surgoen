@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react';
 import dynamicImport from 'next/dynamic';
 
-// Force dynamic rendering for this page - prevents static generation
+// Force dynamic rendering - prevents static generation
 export const dynamic = 'force-dynamic';
 export const dynamicParams = true;
 
-// Dynamically import SwaggerUI to avoid SSR issues
+// Dynamically import SwaggerUI - only loads on client side
 const SwaggerUI = dynamicImport(
   () => import('swagger-ui-react'),
   {
@@ -25,32 +25,28 @@ const SwaggerUI = dynamicImport(
 
 export default function ApiDocsPage() {
   const [spec, setSpec] = useState<any>(null);
-  const [cssLoaded, setCssLoaded] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  // Load CSS on client side only using link tag
+  // Only render SwaggerUI after component mounts (client-side only)
   useEffect(() => {
-    if (typeof window !== 'undefined' && !cssLoaded) {
+    setMounted(true);
+    
+    // Load CSS dynamically
+    if (typeof window !== 'undefined') {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
-      link.href = '/swagger-ui.css';
-      link.onload = () => setCssLoaded(true);
+      link.href = 'https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui.css';
       document.head.appendChild(link);
-      
-      // Fallback: try to load from node_modules if the above fails
-      return () => {
-        // Cleanup if needed
-      };
     }
-  }, [cssLoaded]);
-
-  useEffect(() => {
+    
+    // Fetch API spec
     fetch('/api/docs')
       .then((res) => res.json())
       .then((data) => setSpec(data))
       .catch((err) => console.error('Error loading Swagger spec:', err));
   }, []);
 
-  if (!spec) {
+  if (!mounted || !spec) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -62,7 +58,7 @@ export default function ApiDocsPage() {
   }
 
   return (
-    <div className="swagger-container">
+    <div className="swagger-container p-4">
       <SwaggerUI spec={spec} />
     </div>
   );
