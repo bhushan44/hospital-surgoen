@@ -3,6 +3,7 @@ import { BookingsRepository, CreateBookingData, BookingQuery } from '@/lib/repos
 export interface CreateBookingDto {
   hospitalId: string;
   doctorId: string;
+  patientId: string; // Required for assignments
   specialtyId: string;
   bookingDate: string;
   startTime: string;
@@ -55,7 +56,17 @@ export class BookingsService {
         };
       }
 
-      const booking = await this.bookingsRepository.createBooking(createBookingDto);
+      // Map CreateBookingDto to CreateBookingData
+      const bookingData: CreateBookingData = {
+        hospitalId: createBookingDto.hospitalId,
+        doctorId: createBookingDto.doctorId,
+        patientId: createBookingDto.patientId,
+        priority: 'medium',
+        consultationFee: createBookingDto.doctorFee,
+        treatmentNotes: createBookingDto.specialRequirements,
+      };
+      
+      const booking = await this.bookingsRepository.createBooking(bookingData);
 
       return {
         success: true,

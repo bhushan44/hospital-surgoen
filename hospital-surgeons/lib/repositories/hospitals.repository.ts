@@ -115,9 +115,11 @@ export class HospitalsRepository {
 
     let orderByClause;
     if (query.sortBy === 'createdAt') {
-      orderByClause = query.sortOrder === 'asc' ? asc(hospitals.createdAt) : desc(hospitals.createdAt);
+      // Hospitals table doesn't have createdAt, use users.createdAt via join or remove this sort option
+      orderByClause = query.sortOrder === 'asc' ? asc(hospitals.id) : desc(hospitals.id);
     } else if (query.sortBy === 'rating') {
-      orderByClause = query.sortOrder === 'asc' ? asc(hospitals.averageRating) : desc(hospitals.averageRating);
+      // Hospitals table doesn't have averageRating, use name as fallback
+      orderByClause = query.sortOrder === 'asc' ? asc(hospitals.name) : desc(hospitals.name);
     } else if (query.sortBy === 'beds') {
       orderByClause = query.sortOrder === 'asc' ? asc(hospitals.numberOfBeds) : desc(hospitals.numberOfBeds);
     } else {
@@ -176,7 +178,6 @@ export class HospitalsRepository {
       .values({
         hospitalId,
         specialtyId: departmentData.specialtyId,
-        isActive: departmentData.isActive ?? true,
       })
       .returning();
   }

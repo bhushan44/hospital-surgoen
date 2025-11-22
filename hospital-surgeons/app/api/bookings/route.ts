@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
       doctorId: searchParams.get('doctorId') || undefined,
       specialtyId: searchParams.get('specialtyId') || undefined,
       status: searchParams.get('status') || undefined,
-      sortBy: searchParams.get('sortBy') as 'createdAt' | 'totalAmount' | 'status' | 'bookingDate' | undefined,
+      sortBy: searchParams.get('sortBy') as 'status' | 'priority' | 'requestedAt' | undefined,
       sortOrder: searchParams.get('sortOrder') as 'asc' | 'desc' | undefined,
     };
 

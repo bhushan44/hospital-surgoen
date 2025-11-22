@@ -54,19 +54,15 @@ export class SubscriptionsRepository {
         name: dto.name,
         tier: dto.tier as any,
         userRole: dto.userRole as any,
-        price: dto.price.toString(),
-        billingCycle: dto.billingCycle,
-        maxBookings: dto.maxBookings,
-        commissionRate: dto.commissionRate.toString(),
-        features: dto.features,
-        isActive: dto.isActive ?? true,
+        price: Math.round(dto.price * 100), // Convert to cents (bigint with mode: "number" accepts number)
+        currency: 'USD', // Default currency
       })
       .returning();
     return row;
   }
 
   async listPlans() {
-    return this.db.select().from(subscriptionPlans).orderBy(desc(subscriptionPlans.createdAt));
+    return this.db.select().from(subscriptionPlans).orderBy(desc(subscriptionPlans.id)); // subscriptionPlans doesn't have createdAt
   }
 
   async getPlan(id: string) {
@@ -109,7 +105,6 @@ export class SubscriptionsRepository {
         startDate: dto.startDate,
         endDate: dto.endDate,
         autoRenew: dto.autoRenew ?? true,
-        bookingsUsed: dto.bookingsUsed ?? 0,
       })
       .returning();
     return row;

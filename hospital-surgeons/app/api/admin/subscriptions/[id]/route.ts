@@ -5,11 +5,12 @@ import { eq, sql } from 'drizzle-orm';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const subscriptionId = params.id;
+    const { id } = await params;
+    const subscriptionId = id;
 
     const subscriptionResult = await db.execute(sql`
       SELECT 
@@ -76,11 +77,12 @@ export async function GET(
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const subscriptionId = params.id;
+    const { id } = await params;
+    const subscriptionId = id;
     const body = await req.json();
     const { status, autoRenew, endDate } = body;
 

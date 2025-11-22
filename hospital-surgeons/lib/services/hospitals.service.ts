@@ -324,12 +324,10 @@ export class HospitalsService {
         };
       }
 
-      const staff = await this.hospitalsRepository.addStaff(staffDto, hospitalId);
-
+      // hospitalStaff table doesn't exist - use doctorHospitalAffiliations instead
       return {
-        success: true,
-        message: 'Staff added successfully',
-        data: staff[0],
+        success: false,
+        message: 'hospitalStaff table not found in database. Use doctorHospitalAffiliations instead.',
       };
     } catch (error) {
       return {
@@ -360,12 +358,10 @@ export class HospitalsService {
 
   async updateStaff(staffId: string, updateData: Partial<CreateHospitalStaffData>) {
     try {
-      const staff = await this.hospitalsRepository.updateStaff(staffId, updateData);
-
+      // hospitalStaff table doesn't exist - use doctorHospitalAffiliations instead
       return {
-        success: true,
-        message: 'Staff updated successfully',
-        data: staff[0],
+        success: false,
+        message: 'hospitalStaff table not found in database. Use doctorHospitalAffiliations instead.',
       };
     } catch (error) {
       return {
@@ -404,12 +400,10 @@ export class HospitalsService {
         };
       }
 
-      const favorite = await this.hospitalsRepository.addFavoriteDoctor(favoriteDto, hospitalId);
-
+      // hospitalFavoriteDoctors table doesn't exist - use hospitalPreferences instead
       return {
-        success: true,
-        message: 'Favorite doctor added successfully',
-        data: favorite[0],
+        success: false,
+        message: 'hospitalFavoriteDoctors table not found in database. Use hospitalPreferences instead.',
       };
     } catch (error) {
       return {

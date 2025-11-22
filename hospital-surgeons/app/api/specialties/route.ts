@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     const query = {
       page: searchParams.get('page') ? parseInt(searchParams.get('page')!) : 1,
       limit: searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 10,
-      sortBy: searchParams.get('sortBy') as 'name' | 'createdAt' | undefined,
+      sortBy: searchParams.get('sortBy') as 'name' | undefined,
       sortOrder: searchParams.get('sortOrder') as 'asc' | 'desc' | undefined,
     };
 

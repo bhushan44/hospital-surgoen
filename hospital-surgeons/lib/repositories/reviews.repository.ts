@@ -1,7 +1,6 @@
 import { getDb } from '@/lib/db';
 import { 
-  reviews, // Keep for backward compatibility
-  assignmentRatings, // Use assignmentRatings instead
+  assignmentRatings, // Use assignmentRatings instead of reviews
   users, 
   assignments,
   hospitals,

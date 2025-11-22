@@ -170,7 +170,7 @@ export class SpecialtiesService {
       if (usageInfo.isInUse) {
         return {
           success: false,
-          message: `Cannot delete specialty. It is currently being used by ${usageInfo.doctorCount} doctors, ${usageInfo.hospitalCount} hospitals, and ${usageInfo.bookingCount} bookings.`,
+          message: `Cannot delete specialty. It is currently being used by ${usageInfo.doctorCount} doctors, ${usageInfo.hospitalCount} hospitals, and ${usageInfo.assignmentCount} assignments.`,
         };
       }
 
@@ -199,19 +199,11 @@ export class SpecialtiesService {
         };
       }
 
-      const updatedSpecialty = await this.specialtiesRepository.toggleSpecialtyStatus(id);
-
-      if (!updatedSpecialty || updatedSpecialty.length === 0) {
-        return {
-          success: false,
-          message: 'Failed to update specialty',
-        };
-      }
-
+      // toggleSpecialtyStatus doesn't exist - specialties table doesn't have isActive field
+      // Return error or implement alternative logic
       return {
-        success: true,
-        message: `Specialty ${updatedSpecialty[0].isActive ? 'activated' : 'deactivated'} successfully`,
-        data: updatedSpecialty[0],
+        success: false,
+        message: 'Specialty status toggle is not supported. The specialties table does not have an isActive field.',
       };
     } catch (error) {
       return {

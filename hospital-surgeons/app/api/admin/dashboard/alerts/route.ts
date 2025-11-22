@@ -28,8 +28,8 @@ export async function GET(req: NextRequest) {
     `);
 
     const totalPendingVerifications = 
-      (pendingDoctorVerifications.rows[0]?.count || 0) + 
-      (pendingHospitalVerifications.rows[0]?.count || 0);
+      Number(pendingDoctorVerifications.rows[0]?.count || 0) + 
+      Number(pendingHospitalVerifications.rows[0]?.count || 0);
 
     if (totalPendingVerifications > 0) {
       alerts.push({
@@ -56,14 +56,15 @@ export async function GET(req: NextRequest) {
         AND end_date <= ${nextWeek.toISOString()}
     `);
 
-    if (expiringSubscriptions.rows[0]?.count > 0) {
+    const expiringCount = Number(expiringSubscriptions.rows[0]?.count || 0);
+    if (expiringCount > 0) {
       alerts.push({
         id: 'expiring-subscriptions',
-        message: `${expiringSubscriptions.rows[0].count} subscription plan${expiringSubscriptions.rows[0].count !== 1 ? 's' : ''} expiring in the next 7 days`,
-        priority: expiringSubscriptions.rows[0].count > 10 ? 'high' : 'medium',
+        message: `${expiringCount} subscription plan${expiringCount !== 1 ? 's' : ''} expiring in the next 7 days`,
+        priority: expiringCount > 10 ? 'high' : 'medium',
         time: 'This Week',
         type: 'subscription',
-        count: expiringSubscriptions.rows[0].count,
+        count: expiringCount,
       });
     }
 
@@ -80,14 +81,15 @@ export async function GET(req: NextRequest) {
         AND end_date <= ${tomorrowEnd.toISOString()}
     `);
 
-    if (expiringTomorrow.rows[0]?.count > 0) {
+    const expiringTomorrowCount = Number(expiringTomorrow.rows[0]?.count || 0);
+    if (expiringTomorrowCount > 0) {
       alerts.push({
         id: 'expiring-tomorrow',
-        message: `${expiringTomorrow.rows[0].count} subscription plan${expiringTomorrow.rows[0].count !== 1 ? 's' : ''} expiring tomorrow`,
+        message: `${expiringTomorrowCount} subscription plan${expiringTomorrowCount !== 1 ? 's' : ''} expiring tomorrow`,
         priority: 'high',
         time: 'Tomorrow',
         type: 'subscription',
-        count: expiringTomorrow.rows[0].count,
+        count: expiringTomorrowCount,
       });
     }
 
@@ -99,14 +101,15 @@ export async function GET(req: NextRequest) {
         AND priority = 'high'
     `);
 
-    if (highPriorityAssignments.rows[0]?.count > 0) {
+    const highPriorityCount = Number(highPriorityAssignments.rows[0]?.count || 0);
+    if (highPriorityCount > 0) {
       alerts.push({
         id: 'high-priority-assignments',
-        message: `${highPriorityAssignments.rows[0].count} high priority assignment${highPriorityAssignments.rows[0].count !== 1 ? 's' : ''} pending`,
+        message: `${highPriorityCount} high priority assignment${highPriorityCount !== 1 ? 's' : ''} pending`,
         priority: 'high',
         time: 'Today',
         type: 'assignment',
-        count: highPriorityAssignments.rows[0].count,
+        count: highPriorityCount,
       });
     }
 
@@ -118,14 +121,15 @@ export async function GET(req: NextRequest) {
         AND priority = 'high'
     `);
 
-    if (urgentTickets.rows[0]?.count > 0) {
+    const urgentTicketsCount = Number(urgentTickets.rows[0]?.count || 0);
+    if (urgentTicketsCount > 0) {
       alerts.push({
         id: 'urgent-tickets',
-        message: `${urgentTickets.rows[0].count} urgent support ticket${urgentTickets.rows[0].count !== 1 ? 's' : ''} require attention`,
+        message: `${urgentTicketsCount} urgent support ticket${urgentTicketsCount !== 1 ? 's' : ''} require attention`,
         priority: 'high',
         time: 'Today',
         type: 'support',
-        count: urgentTickets.rows[0].count,
+        count: urgentTicketsCount,
       });
     }
 
@@ -139,14 +143,15 @@ export async function GET(req: NextRequest) {
         AND expires_at < ${now.toISOString()}
     `);
 
-    if (overdueAssignments.rows[0]?.count > 0) {
+    const overdueCount = Number(overdueAssignments.rows[0]?.count || 0);
+    if (overdueCount > 0) {
       alerts.push({
         id: 'overdue-assignments',
-        message: `${overdueAssignments.rows[0].count} assignment${overdueAssignments.rows[0].count !== 1 ? 's' : ''} overdue`,
+        message: `${overdueCount} assignment${overdueCount !== 1 ? 's' : ''} overdue`,
         priority: 'high',
         time: 'Today',
         type: 'assignment',
-        count: overdueAssignments.rows[0].count,
+        count: overdueCount,
       });
     }
 
@@ -180,5 +185,6 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
 
 

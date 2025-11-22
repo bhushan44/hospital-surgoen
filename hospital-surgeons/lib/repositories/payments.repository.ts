@@ -1,6 +1,5 @@
 import { getDb } from '@/lib/db';
 import { 
-  payments, // Keep for backward compatibility
   paymentTransactions, // For subscription payments
   assignmentPayments, // For assignment payments
   users, 
@@ -50,7 +49,7 @@ export class PaymentsRepository {
           orderId: dto.subscriptionId, // This should be orderId, may need mapping
           paymentGateway: dto.paymentGateway || 'unknown',
           paymentId: dto.gatewayTransactionId || '',
-          amount: BigInt(Math.round(dto.amount * 100)), // Convert to cents (bigint)
+          amount: Math.round(dto.amount * 100), // Convert to cents (bigint with mode: "number" accepts number)
           currency: 'USD',
           status: dto.status || 'pending',
           verifiedAt: dto.paidAt,
@@ -81,22 +80,8 @@ export class PaymentsRepository {
         .returning();
       return row;
     } else {
-      // Fallback to old payments table for backward compatibility
-      const [row] = await this.db
-        .insert(payments)
-        .values({
-          userId: dto.userId || '',
-          subscriptionId: dto.subscriptionId,
-          bookingId: dto.assignmentId, // Map assignmentId to bookingId for compatibility
-          paymentType: dto.paymentType as any,
-          amount: dto.amount.toString(),
-          status: (dto.status || 'pending') as any,
-          paymentGateway: dto.paymentGateway,
-          gatewayTransactionId: dto.gatewayTransactionId,
-          paidAt: dto.paidAt,
-        })
-        .returning();
-      return row;
+      // No fallback table - throw error for unsupported payment types
+      throw new Error(`Payment type '${dto.paymentType}' requires subscriptionId or assignmentId`);
     }
   }
 
@@ -172,18 +157,8 @@ export class PaymentsRepository {
     
     if (assignmentPayment[0]) return assignmentPayment[0];
 
-    // Fallback to old payments table
-    const [row] = await this.db
-      .select({
-        payment: payments,
-        type: sql<string>`'legacy'`.as('paymentType'),
-      })
-      .from(payments)
-      .leftJoin(users, eq(users.id, payments.userId))
-      .leftJoin(subscriptions, eq(subscriptions.id, payments.subscriptionId))
-      .where(eq(payments.id, id))
-      .limit(1);
-    return row;
+    // Payment not found in either table
+    return undefined;
   }
 
   async update(id: string, dto: Partial<CreatePaymentData>) {
@@ -217,39 +192,29 @@ export class PaymentsRepository {
         .returning();
       if (row) return row;
     } catch (e) {
-      // Not an assignmentPayment, try old payments table
+      // Not an assignmentPayment
     }
 
-    // Fallback to old payments table
-    const updateFields: any = {};
-    if (dto.userId) updateFields.userId = dto.userId;
-    if (dto.subscriptionId !== undefined) updateFields.subscriptionId = dto.subscriptionId;
-    if (dto.assignmentId !== undefined) updateFields.bookingId = dto.assignmentId;
-    if (dto.paymentType) updateFields.paymentType = dto.paymentType as any;
-    if (dto.amount !== undefined) updateFields.amount = dto.amount.toString();
-    if (dto.status) updateFields.status = dto.status as any;
-    if (dto.paymentGateway) updateFields.paymentGateway = dto.paymentGateway;
-    if (dto.gatewayTransactionId) updateFields.gatewayTransactionId = dto.gatewayTransactionId;
-    if (dto.paidAt) updateFields.paidAt = dto.paidAt;
-
-    const [row] = await this.db
-      .update(payments)
-      .set(updateFields)
-      .where(eq(payments.id, id))
-      .returning();
-    return row;
+    // Payment not found in either table
+    throw new Error(`Payment with id ${id} not found`);
   }
 
   async remove(id: string) {
-    // Try to delete from all tables (cascade should handle it)
+    // Try to delete from paymentTransactions first
     try {
       await this.db.delete(paymentTransactions).where(eq(paymentTransactions.id, id));
+      return;
     } catch (e) {
-      try {
-        await this.db.delete(assignmentPayments).where(eq(assignmentPayments.id, id));
-      } catch (e2) {
-        await this.db.delete(payments).where(eq(payments.id, id));
-      }
+      // Not a paymentTransaction, try assignmentPayments
+    }
+
+    // Try to delete from assignmentPayments
+    try {
+      await this.db.delete(assignmentPayments).where(eq(assignmentPayments.id, id));
+      return;
+    } catch (e2) {
+      // Payment not found in either table
+      throw new Error(`Payment with id ${id} not found`);
     }
   }
 }

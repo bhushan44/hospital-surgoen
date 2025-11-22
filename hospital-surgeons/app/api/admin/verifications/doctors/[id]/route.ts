@@ -6,11 +6,12 @@ import { sql } from 'drizzle-orm';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const doctorId = params.id;
+    const { id } = await params;
+    const doctorId = id;
 
     // Get doctor with user info
     const doctorResult = await db

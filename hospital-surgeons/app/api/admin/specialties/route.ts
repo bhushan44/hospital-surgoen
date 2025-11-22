@@ -37,6 +37,14 @@ export async function GET(req: NextRequest) {
     
     const total = Number(countResult[0]?.count || 0);
 
+    // Map sortBy to actual column references
+    const sortColumnMap: Record<string, any> = {
+      name: specialties.name,
+      id: specialties.id,
+    };
+
+    const sortColumn = sortColumnMap[sortBy] || specialties.name;
+
     // Get specialties with usage counts
     const specialtiesList = await db
       .select({
@@ -58,7 +66,7 @@ export async function GET(req: NextRequest) {
       })
       .from(specialties)
       .where(whereClause)
-      .orderBy(sortOrder === 'asc' ? asc(specialties[sortBy as keyof typeof specialties] || specialties.name) : desc(specialties[sortBy as keyof typeof specialties] || specialties.name))
+      .orderBy(sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn))
       .limit(limit)
       .offset(offset);
 
@@ -152,5 +160,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
 
 

@@ -61,6 +61,18 @@ export async function GET(req: NextRequest) {
     
     const total = Number(countResult[0]?.count || 0);
 
+    // Map sortBy to actual column references
+    const sortColumnMap: Record<string, any> = {
+      requestedAt: assignments.requestedAt,
+      status: assignments.status,
+      priority: assignments.priority,
+      createdAt: assignments.requestedAt, // Use requestedAt as createdAt
+      completedAt: assignments.completedAt,
+      cancelledAt: assignments.cancelledAt,
+    };
+
+    const sortColumn = sortColumnMap[sortBy] || assignments.requestedAt;
+
     // Get assignments with related data
     const assignmentsList = await db
       .select({
@@ -91,7 +103,7 @@ export async function GET(req: NextRequest) {
       })
       .from(assignments)
       .where(whereClause)
-      .orderBy(sortOrder === 'asc' ? asc(assignments[sortBy as keyof typeof assignments] || assignments.requestedAt) : desc(assignments[sortBy as keyof typeof assignments] || assignments.requestedAt))
+      .orderBy(sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn))
       .limit(limit)
       .offset(offset);
 
@@ -158,5 +170,6 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
 
 

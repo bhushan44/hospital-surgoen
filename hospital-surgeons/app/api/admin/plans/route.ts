@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
         name: name.trim(),
         tier: tier,
         userRole: userRole,
-        price: BigInt(Math.round(price * 100)), // Convert to cents
+        price: Math.round(price * 100), // Convert to cents (bigint with mode: "number" accepts number)
         currency: currency,
       })
       .returning();

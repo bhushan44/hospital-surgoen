@@ -60,6 +60,17 @@ export async function GET(req: NextRequest) {
     
     const total = Number(countResult[0]?.count || 0);
 
+    // Map sortBy to actual column references
+    const sortColumnMap: Record<string, any> = {
+      createdAt: users.createdAt,
+      email: users.email,
+      status: users.status,
+      role: users.role,
+      id: users.id,
+    };
+
+    const sortColumn = sortColumnMap[sortBy] || users.createdAt;
+
     // Get users with related data
     const usersList = await db
       .select({
@@ -96,7 +107,7 @@ export async function GET(req: NextRequest) {
       ))
       .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
       .where(whereClause)
-      .orderBy(sortOrder === 'asc' ? asc(users[sortBy as keyof typeof users] || users.createdAt) : desc(users[sortBy as keyof typeof users] || users.createdAt))
+      .orderBy(sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn))
       .limit(limit)
       .offset(offset);
 

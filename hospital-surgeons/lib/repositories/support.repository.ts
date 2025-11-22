@@ -1,5 +1,5 @@
 import { getDb } from '@/lib/db';
-import { supportTickets, supportTicketMessages, users, assignments } from '@/src/db/drizzle/migrations/schema';
+import { supportTickets, users, assignments } from '@/src/db/drizzle/migrations/schema';
 import { eq, desc } from 'drizzle-orm';
 
 export interface CreateSupportTicketData {
@@ -101,28 +101,15 @@ export class SupportRepository {
   }
 
   async addMessage(dto: CreateSupportTicketMessageData) {
-    const [row] = await this.db
-      .insert(supportTicketMessages)
-      .values({
-        ticketId: dto.ticketId,
-        userId: dto.userId,
-        message: dto.message,
-        isInternal: dto.isInternal ?? false,
-      })
-      .returning();
-    return row;
+    // TODO: supportTicketMessages table does not exist in schema
+    // This functionality needs to be implemented when the table is added
+    throw new Error('Support ticket messages are not yet implemented. The supportTicketMessages table needs to be added to the schema.');
   }
 
   async listMessages(ticketId: string) {
-    return this.db
-      .select({
-        msg: supportTicketMessages,
-        user: { id: users.id, email: users.email },
-      })
-      .from(supportTicketMessages)
-      .leftJoin(users, eq(users.id, supportTicketMessages.userId))
-      .where(eq(supportTicketMessages.ticketId, ticketId))
-      .orderBy(desc(supportTicketMessages.createdAt));
+    // TODO: supportTicketMessages table does not exist in schema
+    // This functionality needs to be implemented when the table is added
+    return [];
   }
 }
 

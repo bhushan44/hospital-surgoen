@@ -195,7 +195,7 @@ async function seedDatabase() {
             name: `${tier.charAt(0).toUpperCase() + tier.slice(1)} ${role.charAt(0).toUpperCase() + role.slice(1)} Plan`,
             tier: tier,
             userRole: role,
-            price: BigInt(tier === 'free' ? 0 : tier === 'basic' ? 29 : tier === 'premium' ? 99 : 299),
+            price: (tier === 'free' ? 0 : tier === 'basic' ? 29 : tier === 'premium' ? 99 : 299) * 100, // Convert to cents (bigint with mode: "number" accepts number)
             currency: 'USD',
           }).returning();
           planIds.push(plan.id);
@@ -250,7 +250,7 @@ async function seedDatabase() {
         filename: `file-${i + 1}.${mimeType.includes('pdf') ? 'pdf' : 'jpg'}`,
         url: `https://example.com/files/file-${i + 1}`,
         mimetype: mimeType,
-        size: BigInt(randomInt(10000, 5000000)),
+        size: randomInt(10000, 5000000), // bigint with mode: "number" accepts number
         isPublic: Math.random() > 0.5,
         createdAt: new Date(Date.now() - randomInt(0, 180) * 24 * 60 * 60 * 1000).toISOString(),
       }).returning();
@@ -535,7 +535,7 @@ async function seedDatabase() {
         userId: randomChoice(userIds),
         orderType: randomChoice(orderTypes),
         planId: Math.random() > 0.3 ? randomChoice(planIds) : null,
-        amount: BigInt(randomInt(1000, 50000)),
+        amount: randomInt(1000, 50000) * 100, // Convert to cents (bigint with mode: "number" accepts number)
         currency: 'USD',
         description: `Order ${i + 1} description`,
         status: status,
@@ -568,7 +568,7 @@ async function seedDatabase() {
           paymentGateway: randomChoice(['stripe', 'paypal', 'razorpay']),
           paymentId: `PAY-${timestamp}-${randomInt(100000, 999999)}`,
           paymentMethod: randomChoice(['credit_card', 'debit_card', 'net_banking', 'wallet']),
-          amount: BigInt(randomInt(1000, 50000)),
+          amount: randomInt(1000, 50000) * 100, // Convert to cents (bigint with mode: "number" accepts number)
           currency: 'USD',
           status: status,
           gatewayResponse: { success: status === 'success', transactionId: `TXN-${timestamp}` },

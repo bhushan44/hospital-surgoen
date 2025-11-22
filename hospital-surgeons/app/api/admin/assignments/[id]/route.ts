@@ -5,11 +5,12 @@ import { eq, sql } from 'drizzle-orm';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const assignmentId = params.id;
+    const { id } = await params;
+    const assignmentId = id;
 
     // Get assignment with all related data
     const assignmentResult = await db.execute(sql`
@@ -109,13 +110,14 @@ export async function GET(
         paidAt: assignment.paid_at,
         rating: ratingResult.length > 0 ? {
           rating: ratingResult[0].rating,
-          comment: ratingResult[0].comment,
+          comment: ratingResult[0].reviewText,
         } : null,
         payment: paymentResult.length > 0 ? {
-          amount: Number(paymentResult[0].amount),
-          currency: paymentResult[0].currency,
-          status: paymentResult[0].status,
-          paidAt: paymentResult[0].paidAt,
+          consultationFee: Number(paymentResult[0].consultationFee),
+          platformCommission: Number(paymentResult[0].platformCommission),
+          doctorPayout: Number(paymentResult[0].doctorPayout),
+          paymentStatus: paymentResult[0].paymentStatus,
+          paidToDoctorAt: paymentResult[0].paidToDoctorAt,
         } : null,
         history: (historyResult.rows || []).map((log: any) => ({
           id: log.id,
@@ -140,11 +142,12 @@ export async function GET(
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const assignmentId = params.id;
+    const { id } = await params;
+    const assignmentId = id;
     const body = await req.json();
     const { status, treatmentNotes, cancellationReason, cancelledBy } = body;
 

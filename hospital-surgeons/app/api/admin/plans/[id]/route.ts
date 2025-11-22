@@ -5,11 +5,12 @@ import { eq, sql } from 'drizzle-orm';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const planId = params.id;
+    const { id } = await params;
+    const planId = id;
 
     // Get plan with subscriber count
     const planResult = await db
@@ -104,11 +105,12 @@ export async function GET(
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const planId = params.id;
+    const { id } = await params;
+    const planId = id;
     const body = await req.json();
     const { name, tier, price, currency } = body;
 
@@ -193,11 +195,12 @@ export async function PUT(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const planId = params.id;
+    const { id } = await params;
+    const planId = id;
 
     // Check if plan exists
     const existing = await db

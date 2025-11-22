@@ -24,12 +24,12 @@ const cities = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Phi
 const specialties = ['Cardiology', 'Neurology', 'Orthopedics', 'Pediatrics', 'Dermatology', 'Oncology', 'Psychiatry', 'Radiology', 'Surgery', 'Emergency Medicine', 'Internal Medicine', 'Gynecology', 'Urology', 'Ophthalmology', 'ENT', 'Pulmonology', 'Gastroenterology', 'Endocrinology', 'Rheumatology', 'Nephrology', 'Hematology', 'Infectious Disease', 'Allergy', 'Anesthesiology', 'Pathology', 'Physical Medicine', 'Preventive Medicine', 'Sports Medicine', 'Geriatrics', 'Family Medicine'];
 // Allowed hospital types from database constraint
 const hospitalTypes = ['general', 'specialty', 'clinic', 'trauma_center', 'teaching', 'other'];
-const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
-const priorities = ['low', 'medium', 'high'] as const;
-const statuses = ['pending', 'confirmed', 'completed', 'cancelled'] as const;
-const paymentStatuses = ['pending', 'completed', 'failed', 'refunded'] as const;
-const subscriptionTiers = ['free', 'basic', 'premium', 'enterprise'] as const;
-const subscriptionStatuses = ['active', 'expired', 'cancelled', 'suspended'] as const;
+const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] ;
+const priorities: string[] = ['low', 'medium', 'high'];
+const statuses = ['pending', 'confirmed', 'completed', 'cancelled'] ;
+const paymentStatuses = ['pending', 'completed', 'failed', 'refunded'] ;
+const subscriptionTiers = ['free', 'basic', 'premium', 'enterprise'] ;
+const subscriptionStatuses = ['active', 'expired', 'cancelled', 'suspended'] ;
 
 async function seedDatabase() {
   console.log('🌱 Starting database seeding...\n');
@@ -176,9 +176,7 @@ async function seedDatabase() {
         filename: `file-${i + 1}.jpg`,
         url: `https://example.com/files/file-${i + 1}.jpg`,
         mimetype: mimeType,
-        size: BigInt(randomInt(10000, 5000000)),
-        uploadedBy: randomChoice(userIds),
-        createdAt: new Date(Date.now() - randomInt(0, 180 * 24 * 60 * 60 * 1000)).toISOString(),
+        size: randomInt(10000, 5000000), // bigint with mode: "number" accepts number
       }).returning();
       
       fileIds.push(file.id);
@@ -422,7 +420,7 @@ async function seedDatabase() {
           userId: userId,
           orderType: randomChoice(['subscription', 'consultation', 'other']),
           planId: planId,
-          amount: BigInt(randomInt(1000, 50000)), // in cents
+          amount: randomInt(1000, 50000) * 100, // in cents (bigint with mode: "number" accepts number)
           currency: 'USD',
           description: `Order for ${randomString(10)}`,
           status: status,
@@ -474,7 +472,7 @@ async function seedDatabase() {
           paymentGateway: randomChoice(['stripe', 'paypal', 'razorpay']),
           paymentId: `PAY-${timestamp}-${randomInt(100000, 999999)}`,
           paymentMethod: randomChoice(['credit_card', 'debit_card', 'net_banking']),
-          amount: BigInt(randomInt(1000, 50000)),
+          amount: randomInt(1000, 50000) * 100, // Convert to cents (bigint with mode: "number" accepts number)
           currency: 'USD',
           status: status,
           createdAt: createdAt.toISOString(),
@@ -517,10 +515,9 @@ async function seedDatabase() {
         hospitalId: randomChoice(hospitalIds),
         doctorId: randomChoice(doctorIds),
         rating: randomInt(1, 5),
-        comment: i % 2 === 0 ? `Rating comment ${i + 1}` : null,
+        reviewText: i % 2 === 0 ? `Rating comment ${i + 1}` : null,
         positiveTags: i % 3 === 0 ? ['professional', 'punctual', 'helpful'] : [],
         negativeTags: i % 5 === 0 ? ['delayed'] : [],
-        createdAt: new Date(Date.now() - randomInt(0, 20) * 24 * 60 * 60 * 1000).toISOString(),
       });
     }
     console.log(`✅ Created 30 assignment ratings\n`);
@@ -636,12 +633,11 @@ async function seedDatabase() {
     for (let i = 0; i < 30; i++) {
       await db.insert(schema.doctorCredentials).values({
         doctorId: randomChoice(doctorIds),
+        fileId: randomChoice(fileIds),
         credentialType: randomChoice(['degree', 'certification', 'license', 'award']),
         title: randomChoice(['MD', 'PhD', 'Board Certified', 'Fellow']),
         institution: `Institution ${i + 1}`,
-        issueDate: new Date(2000 + randomInt(0, 24), randomInt(0, 11), randomInt(1, 28)).toISOString().split('T')[0],
         verificationStatus: randomChoice(['pending', 'verified', 'rejected']),
-        createdAt: new Date(Date.now() - randomInt(0, 365) * 24 * 60 * 60 * 1000).toISOString(),
       });
     }
     console.log(`✅ Created 30 doctor credentials\n`);
@@ -653,7 +649,7 @@ async function seedDatabase() {
         userId: randomChoice(userIds),
         orderType: randomChoice(['subscription', 'consultation', 'other']),
         planId: randomChoice(planIds),
-        amount: BigInt(randomInt(29, 299)),
+        amount: randomInt(29, 299) * 100, // Convert to cents (bigint with mode: "number" accepts number)
         currency: 'USD',
         description: `Order ${i + 1} description`,
         status: randomChoice(['pending', 'paid', 'failed', 'expired', 'refunded']),
@@ -697,9 +693,10 @@ async function seedDatabase() {
         patientId: randomChoice(patientIds),
         consentType: randomChoice(['treatment', 'data_sharing', 'research', 'photography', 'other']),
         granted: Math.random() > 0.3,
-        grantedAt: Math.random() > 0.3 ? new Date(Date.now() - randomInt(0, 30) * 24 * 60 * 60 * 1000).toISOString() : null,
-        revokedAt: Math.random() > 0.8 ? new Date(Date.now() - randomInt(0, 10) * 24 * 60 * 60 * 1000).toISOString() : null,
-        createdAt: new Date(Date.now() - randomInt(0, 60) * 24 * 60 * 60 * 1000).toISOString(),
+        grantedBy: randomChoice(['patient', 'guardian', 'family_member', 'self']),
+        relationToPatient: Math.random() > 0.5 ? randomChoice(['spouse', 'child', 'parent', 'sibling']) : undefined,
+        digitalSignature: Math.random() > 0.5 ? `signature-${i + 1}` : undefined,
+        grantedAt: new Date(Date.now() - randomInt(0, 30) * 24 * 60 * 60 * 1000).toISOString(),
       });
     }
     console.log(`✅ Created 30 patient consents\n`);

@@ -151,14 +151,14 @@ export class BookingsRepository {
         sql`(${doctorAvailability.startTime} < ${endTime} AND ${doctorAvailability.endTime} > ${startTime})`
       ));
 
-    const dayOfWeek = new Date(bookingDate).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+    // Check availability for the specific date
     const regularAvailability = await this.db
       .select()
       .from(doctorAvailability)
       .where(and(
         eq(doctorAvailability.doctorId, doctorId),
-        eq(doctorAvailability.dayOfWeek, dayOfWeek),
-        eq(doctorAvailability.isActive, true)
+        eq(doctorAvailability.slotDate, bookingDate),
+        eq(doctorAvailability.status, 'available')
       ));
 
     const unavailability = await this.db

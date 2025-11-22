@@ -5,11 +5,12 @@ import { eq } from 'drizzle-orm';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const ticketId = params.id;
+    const { id } = await params;
+    const ticketId = id;
     const body = await req.json();
     const { assignedTo } = body;
 

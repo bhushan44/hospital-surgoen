@@ -166,7 +166,7 @@ export function Analytics() {
                     fill="#8884d8"
                     dataKey="value"
                   >
-                    {statusDistributionData.map((entry, index) => (
+                    {statusDistributionData.map((entry: { name: string; value: number; color: string }, index: number) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>

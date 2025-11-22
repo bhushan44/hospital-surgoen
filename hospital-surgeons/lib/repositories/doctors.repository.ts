@@ -22,10 +22,10 @@ export interface CreateDoctorData {
 }
 
 export interface CreateDoctorCredentialData {
+  fileId: string;
   credentialType: string;
   title: string;
   institution: string;
-  issueDate?: string;
   verificationStatus?: 'pending' | 'verified' | 'rejected';
 }
 
@@ -36,13 +36,13 @@ export interface CreateDoctorSpecialtyData {
 }
 
 export interface CreateDoctorAvailabilityData {
-  dayOfWeek: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+  slotDate: string;
   startTime: string;
   endTime: string;
-  isRecurring?: boolean;
-  effectiveFrom?: string;
-  effectiveUntil?: string;
-  isActive?: boolean;
+  templateId?: string;
+  status?: string;
+  isManual?: boolean;
+  notes?: string;
 }
 
 export interface CreateDoctorUnavailabilityData {
@@ -127,7 +127,7 @@ export class DoctorsRepository {
       })
       .from(doctors)
       .leftJoin(users, eq(doctors.userId, users.id))
-      .orderBy(desc(doctors.createdAt))
+      .orderBy(desc(users.createdAt))
       .limit(limit)
       .offset(offset);
   }
@@ -166,10 +166,10 @@ export class DoctorsRepository {
       .insert(doctorCredentials)
       .values({
         doctorId,
+        fileId: credentialData.fileId,
         credentialType: credentialData.credentialType,
         title: credentialData.title,
         institution: credentialData.institution,
-        issueDate: credentialData.issueDate,
         verificationStatus: credentialData.verificationStatus || 'pending',
       })
       .returning();
@@ -180,7 +180,7 @@ export class DoctorsRepository {
       .select()
       .from(doctorCredentials)
       .where(eq(doctorCredentials.doctorId, doctorId))
-      .orderBy(desc(doctorCredentials.createdAt));
+      .orderBy(desc(doctorCredentials.uploadedAt));
   }
 
   // Doctor Specialties
@@ -205,7 +205,7 @@ export class DoctorsRepository {
       .from(doctorSpecialties)
       .leftJoin(specialties, eq(doctorSpecialties.specialtyId, specialties.id))
       .where(eq(doctorSpecialties.doctorId, doctorId))
-      .orderBy(desc(doctorSpecialties.isPrimary), asc(doctorSpecialties.createdAt));
+      .orderBy(desc(doctorSpecialties.isPrimary));
   }
 
   async removeSpecialty(doctorId: string, specialtyId: string) {
@@ -224,13 +224,13 @@ export class DoctorsRepository {
       .insert(doctorAvailability)
       .values({
         doctorId,
-        dayOfWeek: availabilityData.dayOfWeek,
+        slotDate: availabilityData.slotDate,
         startTime: availabilityData.startTime,
         endTime: availabilityData.endTime,
-        isRecurring: availabilityData.isRecurring ?? true,
-        effectiveFrom: availabilityData.effectiveFrom,
-        effectiveUntil: availabilityData.effectiveUntil,
-        isActive: availabilityData.isActive ?? true,
+        templateId: availabilityData.templateId,
+        status: availabilityData.status || 'available',
+        isManual: availabilityData.isManual ?? false,
+        notes: availabilityData.notes,
       })
       .returning();
   }
@@ -239,11 +239,8 @@ export class DoctorsRepository {
     return await this.db
       .select()
       .from(doctorAvailability)
-      .where(and(
-        eq(doctorAvailability.doctorId, doctorId),
-        eq(doctorAvailability.isActive, true)
-      ))
-      .orderBy(asc(doctorAvailability.dayOfWeek), asc(doctorAvailability.startTime));
+      .where(eq(doctorAvailability.doctorId, doctorId))
+      .orderBy(asc(doctorAvailability.slotDate), asc(doctorAvailability.startTime));
   }
 
   async updateAvailability(id: string, updateData: Partial<CreateDoctorAvailabilityData>) {
@@ -298,7 +295,7 @@ export class DoctorsRepository {
     // Schema maps totalBookings to completed_assignments column
     const result = await this.db
       .select({
-        totalBookings: doctors.totalBookings, // Maps to completed_assignments in DB
+        totalBookings: doctors.completedAssignments, // Maps to completed_assignments in DB
         averageRating: doctors.averageRating,
         totalRatings: doctors.totalRatings,
       })

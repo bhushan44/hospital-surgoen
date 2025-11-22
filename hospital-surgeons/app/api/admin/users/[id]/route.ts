@@ -6,11 +6,12 @@ import { sql } from 'drizzle-orm';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const userId = params.id;
+    const { id } = await params;
+    const userId = id;
 
     // Get user with related data
     const userResult = await db
@@ -202,11 +203,12 @@ export async function GET(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const db = getDb();
-    const userId = params.id;
+    const { id } = await params;
+    const userId = id;
 
     // Check if user exists
     const existingUser = await db
