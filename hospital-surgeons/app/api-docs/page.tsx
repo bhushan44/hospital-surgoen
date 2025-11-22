@@ -1,8 +1,21 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import SwaggerUI from 'swagger-ui-react';
+import dynamic from 'next/dynamic';
 import 'swagger-ui-react/swagger-ui.css';
+
+// Dynamically import SwaggerUI to avoid SSR issues
+const SwaggerUI = dynamic(() => import('swagger-ui-react'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+        <p className="mt-4 text-gray-600">Loading API documentation...</p>
+      </div>
+    </div>
+  ),
+});
 
 export default function ApiDocsPage() {
   const [spec, setSpec] = useState<any>(null);
