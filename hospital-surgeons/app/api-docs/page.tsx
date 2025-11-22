@@ -1,65 +1,37 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import dynamicImport from 'next/dynamic';
-
-// Force dynamic rendering - prevents static generation
+// This page is completely client-side only - no server-side rendering
 export const dynamic = 'force-dynamic';
 export const dynamicParams = true;
-
-// Dynamically import SwaggerUI - only loads on client side
-const SwaggerUI = dynamicImport(
-  () => import('swagger-ui-react'),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading API documentation...</p>
-        </div>
-      </div>
-    ),
-  }
-);
+export const runtime = 'edge'; // Use edge runtime to avoid SSR issues
 
 export default function ApiDocsPage() {
-  const [spec, setSpec] = useState<any>(null);
-  const [mounted, setMounted] = useState(false);
-
-  // Only render SwaggerUI after component mounts (client-side only)
-  useEffect(() => {
-    setMounted(true);
-    
-    // Load CSS dynamically
-    if (typeof window !== 'undefined') {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui.css';
-      document.head.appendChild(link);
-    }
-    
-    // Fetch API spec
-    fetch('/api/docs')
-      .then((res) => res.json())
-      .then((data) => setSpec(data))
-      .catch((err) => console.error('Error loading Swagger spec:', err));
-  }, []);
-
-  if (!mounted || !spec) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading API documentation...</p>
-        </div>
-      </div>
-    );
+  // Only render on client - use useEffect to ensure we're in browser
+  if (typeof window === 'undefined') {
+    return null;
   }
 
   return (
-    <div className="swagger-container p-4">
-      <SwaggerUI spec={spec} />
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center max-w-2xl mx-auto p-8">
+        <h1 className="text-3xl font-bold mb-4">API Documentation</h1>
+        <p className="text-gray-600 mb-6">
+          API documentation is available at <code className="bg-gray-100 px-2 py-1 rounded">/api/docs</code>
+        </p>
+        <div className="mt-8">
+          <a 
+            href="/api/docs" 
+            target="_blank"
+            className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
+          >
+            View API Spec (JSON)
+          </a>
+        </div>
+        <p className="text-sm text-gray-500 mt-4">
+          Note: Swagger UI is temporarily disabled due to build compatibility issues.
+          The API specification is available as JSON for use with external tools.
+        </p>
+      </div>
     </div>
   );
 }
