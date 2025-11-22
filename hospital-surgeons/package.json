@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "postinstall": "npm list react-day-picker || true",
     "test:api": "node scripts/test-all-apis.mjs",
     "db:seed": "tsx scripts/seed-database.ts",
     "db:seed:admin": "tsx scripts/seed-admin-dashboard.ts",
@@ -68,7 +69,7 @@
     "node-fetch": "^2.7.0",
     "pg": "^8.16.3",
     "react": "^18.2.0",
-    "react-day-picker": "^9.4.4",
+    "react-day-picker": "9.4.4",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.55.0",
     "react-resizable-panels": "^2.1.7",
@@ -102,6 +103,6 @@
     "typescript": "^5"
   },
   "overrides": {
-    "react-day-picker": "^9.4.4"
+    "react-day-picker": "9.4.4"
   }
 }
