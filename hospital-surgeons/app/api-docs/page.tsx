@@ -1,24 +1,47 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
-import 'swagger-ui-react/swagger-ui.css';
+import dynamicImport from 'next/dynamic';
+
+// Force dynamic rendering for this page - prevents static generation
+export const dynamic = 'force-dynamic';
+export const dynamicParams = true;
 
 // Dynamically import SwaggerUI to avoid SSR issues
-const SwaggerUI = dynamic(() => import('swagger-ui-react'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Loading API documentation...</p>
+const SwaggerUI = dynamicImport(
+  () => import('swagger-ui-react'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading API documentation...</p>
+        </div>
       </div>
-    </div>
-  ),
-});
+    ),
+  }
+);
 
 export default function ApiDocsPage() {
   const [spec, setSpec] = useState<any>(null);
+  const [cssLoaded, setCssLoaded] = useState(false);
+
+  // Load CSS on client side only using link tag
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !cssLoaded) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/swagger-ui.css';
+      link.onload = () => setCssLoaded(true);
+      document.head.appendChild(link);
+      
+      // Fallback: try to load from node_modules if the above fails
+      return () => {
+        // Cleanup if needed
+      };
+    }
+  }, [cssLoaded]);
 
   useEffect(() => {
     fetch('/api/docs')
@@ -44,10 +67,3 @@ export default function ApiDocsPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
