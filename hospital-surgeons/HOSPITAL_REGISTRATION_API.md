@@ -168,3 +168,4 @@ The frontend form (`/register/hospital`) includes:
 - The API uses bcrypt for password hashing (10 rounds)
 - JWT token expiration is set to 7 days by default
 
+

@@ -205,3 +205,4 @@ if (data.success) {
 4. **Profile Photo Upload**: Handle file upload separately or via multipart form
 5. **Validation Service**: Extract validation logic to a separate service
 
+

@@ -66,7 +66,7 @@ export default function DoctorDashboardPage() {
       }
       
       // Fetch earnings (optional - don't fail if it returns 404)
-      let earningsResult = { success: false, data: null };
+      let earningsResult: any = { success: false, data: null };
       try {
         const earningsResponse = await fetch('/api/doctors/earnings', {
           headers: {
@@ -78,13 +78,13 @@ export default function DoctorDashboardPage() {
         console.log('Earnings endpoint not available:', err);
       }
 
-      if (dashboardResult.success) {
-        const data = dashboardResult.data;
+      if (dashboardResult.success && dashboardResult.data) {
+        const data = { ...dashboardResult.data };
         // Merge earnings data if available
         if (earningsResult.success && earningsResult.data) {
-          data.totalEarnings = earningsResult.data.totalEarnings || 0;
-          data.thisMonthEarnings = earningsResult.data.thisMonthEarnings || 0;
-          data.thisMonthAssignments = earningsResult.data.thisMonthAssignments || 0;
+          data.totalEarnings = (earningsResult.data as any).totalEarnings || 0;
+          data.thisMonthEarnings = (earningsResult.data as any).thisMonthEarnings || 0;
+          data.thisMonthAssignments = (earningsResult.data as any).thisMonthAssignments || 0;
         }
         setDashboardData(data);
       }

@@ -14,6 +14,7 @@ interface ManagementStatsProps {
 export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStatsProps) {
   const [showAddSlotModal, setShowAddSlotModal] = useState(false);
   const [showManageTemplates, setShowManageTemplates] = useState(false);
+  const [doctorId, setDoctorId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     completed: 0,
     acceptance: 0,
@@ -39,10 +40,11 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
       const profileData = await profileResponse.json();
       
       if (profileData.success && profileData.data) {
-        const doctorId = profileData.data.id;
+        const id = profileData.data.id;
+        setDoctorId(id);
 
         // Get stats
-        const statsResponse = await fetch(`/api/doctors/${doctorId}/stats`, {
+        const statsResponse = await fetch(`/api/doctors/${id}/stats`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const statsData = await statsResponse.json();
@@ -283,8 +285,15 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
       </div>
 
       {/* Modals */}
-      {showAddSlotModal && (
-        <AddSlotModal onClose={() => setShowAddSlotModal(false)} />
+      {showAddSlotModal && doctorId && (
+        <AddSlotModal 
+          doctorId={doctorId}
+          onClose={() => setShowAddSlotModal(false)}
+          onSuccess={() => {
+            setShowAddSlotModal(false);
+            fetchStats();
+          }}
+        />
       )}
 
       {showManageTemplates && (

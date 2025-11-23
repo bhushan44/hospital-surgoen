@@ -549,7 +549,7 @@ export function FindDoctors() {
                 <h3 className="text-gray-900 mb-2">Schedule Details</h3>
                 <div className="space-y-1 text-sm">
                   <p><span className="text-gray-500">Date:</span> {searchParams.date}</p>
-                  <p><span className="text-gray-500">Time:</span> {selectedSlot?.time || selectedSlot}</p>
+                  <p><span className="text-gray-500">Time:</span> {selectedSlot?.time || (typeof selectedSlot === 'string' ? selectedSlot : '')}</p>
                   <p><span className="text-gray-500">Priority:</span> <span className="capitalize">{searchParams.priority}</span></p>
                   <p><span className="text-gray-500">Response Deadline:</span> {getPriorityTimeout(searchParams.priority)}</p>
                 </div>
