@@ -172,7 +172,7 @@ export function TodaySchedule() {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <h2 className="text-gray-900 mb-3 font-semibold">Today's Schedule</h2>

@@ -1,10 +1,335 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import { Search, Clock, CheckCircle, XCircle, AlertCircle, Calendar, Building2, User, Loader2 } from 'lucide-react';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Badge } from '../../components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../../components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '../../components/ui/dialog';
+import { Alert, AlertDescription } from '../../components/ui/alert';
+import { Textarea } from '../../components/ui/textarea';
+import { Label } from '../../components/ui/label';
+import { useRouter } from 'next/navigation';
+import { isAuthenticated } from '@/lib/auth/utils';
+
+interface Assignment {
+  id: string;
+  patient: string;
+  condition: string;
+  hospital: string;
+  date: string;
+  time: string;
+  endTime: string | null;
+  status: string;
+  priority: string;
+  createdAt: string;
+  acceptedAt: string | null;
+  declinedAt: string | null;
+  completedAt: string | null;
+  expiresIn: string | null;
+  fee: number;
+  declineReason: string | null;
+  hospitalId: string;
+  patientId: string;
+}
 
 export default function AssignmentsPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'today' | 'all'>('today');
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showDeclineModal, setShowDeclineModal] = useState(false);
+  const [declineReason, setDeclineReason] = useState('');
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [doctorId, setDoctorId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  useEffect(() => {
+    if (isAuthenticated()) {
+      fetchDoctorProfile();
+    } else {
+      router.push('/login');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (doctorId) {
+      fetchAssignments();
+    }
+  }, [activeTab, doctorId, statusFilter]);
+
+  // Debounce search
+  useEffect(() => {
+    if (doctorId) {
+      const timeoutId = setTimeout(() => {
+        fetchAssignments();
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [searchQuery]);
+
+  const fetchDoctorProfile = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch('/api/doctors/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      
+      if (response.status === 404 || !data.success) {
+        setError('Please complete your profile first');
+        setLoading(false);
+        return;
+      }
+      
+      if (data.success && data.data && data.data.id) {
+        setDoctorId(data.data.id);
+      } else {
+        setError('Failed to load doctor profile');
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error('Error fetching doctor profile:', err);
+      setError('Failed to load doctor profile');
+      setLoading(false);
+    }
+  };
+
+  const fetchAssignments = async () => {
+    if (!doctorId) return;
+    
+    try {
+      setLoading(true);
+      setError(null);
+      const token = localStorage.getItem('accessToken');
+      const params = new URLSearchParams();
+      
+      if (activeTab === 'today') {
+        params.append('todayOnly', 'true');
+      }
+      
+      if (statusFilter !== 'all') {
+        params.append('status', statusFilter);
+      }
+      
+      if (searchQuery) {
+        params.append('search', searchQuery);
+      }
+      
+      const response = await fetch(`/api/doctors/${doctorId}/assignments?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        setAssignments(result.data);
+      } else {
+        setError(result.message || 'Failed to load assignments');
+        setAssignments([]);
+      }
+    } catch (error) {
+      console.error('Error fetching assignments:', error);
+      setError('Failed to load assignments');
+      setAssignments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return (
+          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100 gap-1">
+            <Clock className="w-3 h-3" />
+            Pending
+          </Badge>
+        );
+      case 'accepted':
+        return (
+          <Badge className="bg-green-100 text-green-800 hover:bg-green-100 gap-1">
+            <CheckCircle className="w-3 h-3" />
+            Accepted
+          </Badge>
+        );
+      case 'declined':
+        return (
+          <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100 gap-1">
+            <XCircle className="w-3 h-3" />
+            Declined
+          </Badge>
+        );
+      case 'completed':
+        return (
+          <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 gap-1">
+            <CheckCircle className="w-3 h-3" />
+            Completed
+          </Badge>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const getPriorityBadge = (priority: string) => {
+    const colors = {
+      routine: 'bg-gray-100 text-gray-800',
+      urgent: 'bg-orange-100 text-orange-800',
+      emergency: 'bg-red-100 text-red-800',
+    };
+    return (
+      <Badge variant="outline" className={colors[priority as keyof typeof colors] || ''}>
+        {priority.charAt(0).toUpperCase() + priority.slice(1)}
+      </Badge>
+    );
+  };
+
+  const handleViewDetails = (assignment: Assignment) => {
+    setSelectedAssignment(assignment);
+    setShowDetails(true);
+    setDeclineReason('');
+  };
+
+  const handleAcceptAssignment = async () => {
+    if (!selectedAssignment) return;
+
+    try {
+      setUpdatingStatus(true);
+      const token = localStorage.getItem('accessToken');
+      
+      const response = await fetch(`/api/assignments/${selectedAssignment.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status: 'accepted',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setShowDetails(false);
+        await fetchAssignments(); // Refresh the list
+        alert('Assignment accepted successfully!');
+      } else {
+        alert(result.message || 'Failed to accept assignment');
+      }
+    } catch (error) {
+      console.error('Error accepting assignment:', error);
+      alert('An error occurred while accepting the assignment');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  const handleDeclineAssignment = async () => {
+    if (!selectedAssignment) return;
+
+    try {
+      setUpdatingStatus(true);
+      const token = localStorage.getItem('accessToken');
+      
+      const response = await fetch(`/api/assignments/${selectedAssignment.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status: 'declined',
+          cancellationReason: declineReason || undefined,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setShowDetails(false);
+        setShowDeclineModal(false);
+        setDeclineReason('');
+        await fetchAssignments(); // Refresh the list
+        alert('Assignment declined successfully');
+      } else {
+        alert(result.message || 'Failed to decline assignment');
+      }
+    } catch (error) {
+      console.error('Error declining assignment:', error);
+      alert('An error occurred while declining the assignment');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  const openDeclineModal = () => {
+    setShowDeclineModal(true);
+  };
+
+  const closeDeclineModal = () => {
+    setShowDeclineModal(false);
+    setDeclineReason('');
+  };
+
+  const filteredAssignments = assignments.filter(assignment => {
+    if (statusFilter !== 'all' && assignment.status !== statusFilter) {
+      return false;
+    }
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return (
+        assignment.patient.toLowerCase().includes(query) ||
+        assignment.hospital.toLowerCase().includes(query) ||
+        assignment.condition.toLowerCase().includes(query)
+      );
+    }
+    return true;
+  });
+
+  if (loading && !doctorId) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
+          <p className="text-slate-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !doctorId) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-gray-900 mb-2 text-2xl font-bold">Assignments</h1>
+          <p className="text-gray-600">View and manage your assignments</p>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          {error}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -39,18 +364,346 @@ export default function AssignmentsPage() {
         </nav>
       </div>
 
-      {/* Tab Content */}
-      <div>
-        {activeTab === 'today' ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-            <p className="text-gray-500">Today's Assignments view</p>
+      {/* Search and Filters */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="flex items-center gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Search by patient, hospital, or condition..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
           </div>
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-            <p className="text-gray-500">All Assignments view</p>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+          >
+            <option value="all">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="accepted">Accepted</option>
+            <option value="completed">Completed</option>
+            <option value="declined">Declined</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* Assignments Table */}
+      <div className="bg-white border border-gray-200 rounded-lg">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Patient</TableHead>
+              <TableHead>Condition</TableHead>
+              <TableHead>Hospital</TableHead>
+              <TableHead>Date & Time</TableHead>
+              <TableHead>Priority</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8">
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
+                    <span className="text-gray-500">Loading assignments...</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : filteredAssignments.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-12 text-gray-500">
+                  {activeTab === 'today' ? "No assignments for today" : "No assignments found"}
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredAssignments.map((assignment) => (
+                <TableRow key={assignment.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4 text-gray-400" />
+                      <span>{assignment.patient}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{assignment.condition}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-gray-400" />
+                      <span>{assignment.hospital}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <p className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        {assignment.date ? new Date(assignment.date).toLocaleDateString() : 'TBD'}
+                      </p>
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {assignment.time}
+                        {assignment.endTime && ` - ${assignment.endTime}`}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell>{getPriorityBadge(assignment.priority)}</TableCell>
+                  <TableCell>
+                    <div>
+                      {getStatusBadge(assignment.status)}
+                      {assignment.status === 'pending' && assignment.expiresIn && (
+                        <p className="text-xs text-yellow-600 mt-1">Expires in {assignment.expiresIn}</p>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleViewDetails(assignment)}
+                    >
+                      View
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Assignment Details Modal */}
+      <Dialog open={showDetails} onOpenChange={setShowDetails}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Assignment Details</DialogTitle>
+            <DialogDescription>
+              View complete assignment information
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedAssignment && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-gray-900">Status</h3>
+                {getStatusBadge(selectedAssignment.status)}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-lg">
+                  <h3 className="text-gray-900 mb-2 flex items-center gap-2">
+                    <User className="w-4 h-4" />
+                    Patient Information
+                  </h3>
+                  <div className="space-y-1 text-sm">
+                    <p><span className="text-gray-500">Name:</span> {selectedAssignment.patient}</p>
+                    <p><span className="text-gray-500">Condition:</span> {selectedAssignment.condition}</p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-lg">
+                  <h3 className="text-gray-900 mb-2 flex items-center gap-2">
+                    <Building2 className="w-4 h-4" />
+                    Hospital Information
+                  </h3>
+                  <div className="space-y-1 text-sm">
+                    <p><span className="text-gray-500">Name:</span> {selectedAssignment.hospital}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-lg">
+                <h3 className="text-gray-900 mb-2 flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  Schedule
+                </h3>
+                <div className="space-y-1 text-sm">
+                  <p><span className="text-gray-500">Date:</span> {selectedAssignment.date ? new Date(selectedAssignment.date).toLocaleDateString() : 'TBD'}</p>
+                  <p><span className="text-gray-500">Time:</span> {selectedAssignment.time}{selectedAssignment.endTime ? ` - ${selectedAssignment.endTime}` : ''}</p>
+                  <p><span className="text-gray-500">Priority:</span> <span className="capitalize">{selectedAssignment.priority}</span></p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-lg">
+                <h3 className="text-gray-900 mb-2">Timeline</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-600"></div>
+                    <span className="text-gray-500">Created:</span>
+                    <span>{selectedAssignment.createdAt ? new Date(selectedAssignment.createdAt).toLocaleString() : 'N/A'}</span>
+                  </div>
+                  {selectedAssignment.acceptedAt && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-green-600"></div>
+                      <span className="text-gray-500">Accepted:</span>
+                      <span>{new Date(selectedAssignment.acceptedAt).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {selectedAssignment.declinedAt && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-600"></div>
+                      <span className="text-gray-500">Declined:</span>
+                      <span>{new Date(selectedAssignment.declinedAt).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {selectedAssignment.completedAt && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-blue-600"></div>
+                      <span className="text-gray-500">Completed:</span>
+                      <span>{new Date(selectedAssignment.completedAt).toLocaleString()}</span>
           </div>
         )}
       </div>
+              </div>
+
+              {selectedAssignment.status === 'declined' && selectedAssignment.declineReason && (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <span className="font-medium">Decline Reason:</span> {selectedAssignment.declineReason}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-blue-900">Consultation Fee</span>
+                  <span className="text-blue-900 font-semibold">₹{selectedAssignment.fee}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons for Pending Assignments */}
+              {selectedAssignment.status === 'pending' && (
+                <div className="space-y-3 pt-4 border-t">
+                  {selectedAssignment.expiresIn && (
+                    <Alert>
+                      <Clock className="h-4 w-4" />
+                      <AlertDescription>
+                        This assignment expires in {selectedAssignment.expiresIn}. Please respond before it expires.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <div className="flex gap-3">
+                    <Button
+                      onClick={handleAcceptAssignment}
+                      disabled={updatingStatus}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      {updatingStatus ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          Accepting...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Accept Assignment
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={openDeclineModal}
+                      disabled={updatingStatus}
+                      variant="destructive"
+                      className="flex-1"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Decline Assignment
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowDetails(false);
+              setDeclineReason('');
+            }}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Decline Assignment Modal */}
+      <Dialog open={showDeclineModal} onOpenChange={closeDeclineModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Decline Assignment</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for declining this assignment (optional)
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedAssignment && (
+            <div className="space-y-4">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Declining this assignment will notify the hospital and release the time slot for other assignments.
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-2">
+                <Label>Decline Reason (Optional)</Label>
+                <Textarea
+                  placeholder="e.g., Schedule conflict, Unable to accommodate on requested date..."
+                  rows={4}
+                  value={declineReason}
+                  onChange={(e) => setDeclineReason(e.target.value)}
+                  className="resize-none"
+                />
+                <p className="text-xs text-gray-500">
+                  Providing a reason helps hospitals understand and may improve future assignment matching.
+                </p>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-lg">
+                <div className="space-y-1 text-sm">
+                  <p><span className="text-gray-500">Patient:</span> {selectedAssignment.patient}</p>
+                  <p><span className="text-gray-500">Hospital:</span> {selectedAssignment.hospital}</p>
+                  <p><span className="text-gray-500">Date:</span> {selectedAssignment.date ? new Date(selectedAssignment.date).toLocaleDateString() : 'TBD'}</p>
+                  <p><span className="text-gray-500">Time:</span> {selectedAssignment.time}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDeclineModal} disabled={updatingStatus}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeclineAssignment}
+              disabled={updatingStatus}
+            >
+              {updatingStatus ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Declining...
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Confirm Decline
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

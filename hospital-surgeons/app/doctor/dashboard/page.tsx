@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { AlertCircle, TrendingUp, Calendar, CheckCircle, Star, Award, DollarSign, Activity } from 'lucide-react';
+import { AlertCircle, TrendingUp, Calendar, CheckCircle, Star, Award, DollarSign, Activity, LogOut } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ActionCenter } from '../_components/ActionCenter';
 import { TodaySchedule } from '../_components/TodaySchedule';
 import { ManagementStats } from '../_components/ManagementStats';
@@ -29,8 +30,15 @@ interface DashboardData {
 }
 
 export default function DoctorDashboardPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+
+  const handleLogout = () => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('rememberMe');
+    router.push('/login');
+  };
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -50,17 +58,29 @@ export default function DoctorDashboardPage() {
       });
       const dashboardResult = await dashboardResponse.json();
       
-      // Fetch earnings
-      const earningsResponse = await fetch('/api/doctors/earnings', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const earningsResult = await earningsResponse.json();
+      // If profile doesn't exist (404), show empty state
+      if (dashboardResponse.status === 404 || !dashboardResult.success) {
+        setDashboardData(null);
+        setLoading(false);
+        return;
+      }
+      
+      // Fetch earnings (optional - don't fail if it returns 404)
+      let earningsResult = { success: false, data: null };
+      try {
+        const earningsResponse = await fetch('/api/doctors/earnings', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        earningsResult = await earningsResponse.json();
+      } catch (err) {
+        console.log('Earnings endpoint not available:', err);
+      }
 
       if (dashboardResult.success) {
         const data = dashboardResult.data;
-        // Merge earnings data
+        // Merge earnings data if available
         if (earningsResult.success && earningsResult.data) {
           data.totalEarnings = earningsResult.data.totalEarnings || 0;
           data.thisMonthEarnings = earningsResult.data.thisMonthEarnings || 0;
@@ -70,6 +90,7 @@ export default function DoctorDashboardPage() {
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      setDashboardData(null);
     } finally {
       setLoading(false);
     }
@@ -89,7 +110,17 @@ export default function DoctorDashboardPage() {
   if (!dashboardData) {
     return (
       <div className="text-center py-12">
-        <p className="text-slate-600">Unable to load dashboard data</p>
+        <AlertCircle className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Profile Not Complete</h2>
+        <p className="text-slate-600 mb-6">
+          Please complete your doctor profile to access the dashboard.
+        </p>
+        <Link
+          href="/doctor/profile"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-[#2563EB] text-white rounded-lg hover:bg-[#1d4ed8] transition-colors font-medium"
+        >
+          Complete Profile
+        </Link>
       </div>
     );
   }
@@ -100,7 +131,17 @@ export default function DoctorDashboardPage() {
     : `${dashboardData.credentials.verified} Verified`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 bg-transparent">
+      {/* Logout Button */}
+      <div className="flex justify-end">
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 rounded-lg transition-colors font-medium"
+        >
+          <LogOut className="w-4 h-4" />
+          Logout
+        </button>
+      </div>
       {/* Profile Completion Alert */}
       {dashboardData.profileCompletion < 100 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -131,7 +172,7 @@ export default function DoctorDashboardPage() {
       )}
 
       {/* Verification Status */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-gray-200 rounded-lg p-6" style={{ backgroundImage: 'none' }}>
         <h3 className="text-gray-900 mb-4 font-semibold">Verification Status</h3>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -226,19 +267,19 @@ export default function DoctorDashboardPage() {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white border border-gray-200 rounded-lg p-4" style={{ backgroundImage: 'none' }}>
           <div className="text-2xl text-gray-900 mb-1 font-bold">{dashboardData.pendingAssignments}</div>
           <div className="text-sm text-gray-600">Pending Assignments</div>
           <div className="text-xs text-gray-500 mt-1">Awaiting your response</div>
         </div>
         
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white border border-gray-200 rounded-lg p-4" style={{ backgroundImage: 'none' }}>
           <div className="text-2xl text-gray-900 mb-1 font-bold">{dashboardData.upcomingSlots}</div>
           <div className="text-sm text-gray-600">Upcoming Slots</div>
           <div className="text-xs text-gray-500 mt-1">Available for booking</div>
         </div>
         
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white border border-gray-200 rounded-lg p-4" style={{ backgroundImage: 'none' }}>
           <div className="text-2xl text-gray-900 mb-1 font-bold">
             {dashboardData.totalAssignments > 0 
               ? Math.round((dashboardData.completedAssignments / dashboardData.totalAssignments) * 100)
@@ -250,7 +291,7 @@ export default function DoctorDashboardPage() {
           </div>
         </div>
         
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="bg-white border border-gray-200 rounded-lg p-4" style={{ backgroundImage: 'none' }}>
           <div className="text-2xl text-gray-900 mb-1 font-bold">{dashboardData.activeAffiliations}</div>
           <div className="text-sm text-gray-600">Hospital Affiliations</div>
           <div className="text-xs text-gray-500 mt-1">Active partnerships</div>

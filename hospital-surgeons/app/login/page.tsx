@@ -96,19 +96,6 @@ function LoginForm() {
     }
   };
 
-  const useDemoCredentials = () => {
-    if (accountType === 'doctor') {
-      setEmail('doctor@example.com');
-      setPassword('doctor123');
-    } else if (accountType === 'hospital') {
-      setEmail('hospital@example.com');
-      setPassword('hospital123');
-    } else if (accountType === 'admin') {
-      setEmail('admin@example.com');
-      setPassword('admin123');
-    }
-  };
-
   // Get preview content based on account type
   const getPreviewContent = () => {
     if (accountType === 'doctor') {
@@ -121,8 +108,6 @@ function LoginForm() {
           </svg>
         ),
         features: ['Set Availability', 'Accept Bookings', 'Track Schedule', 'View Earnings'],
-        demoEmail: 'doctor@example.com',
-        demoPassword: 'doctor123',
       };
     } else if (accountType === 'hospital') {
       return {
@@ -134,8 +119,6 @@ function LoginForm() {
           </svg>
         ),
         features: ['Find Surgeons', 'Book Appointments', 'Manage Operations', 'Track Bookings'],
-        demoEmail: 'hospital@example.com',
-        demoPassword: 'hospital123',
       };
     } else {
       return {
@@ -147,8 +130,6 @@ function LoginForm() {
           </svg>
         ),
         features: ['User Management', 'Booking Oversight', 'Platform Settings', 'Analytics & Reports'],
-        demoEmail: 'admin@example.com',
-        demoPassword: 'admin123',
       };
     }
   };
@@ -337,14 +318,26 @@ function LoginForm() {
                 {loading ? 'Logging in...' : 'Login'}
               </button>
 
-              {/* Demo Credentials Button */}
-              <button
-                type="button"
-                onClick={useDemoCredentials}
-                className="w-full bg-white border border-gray-300 text-gray-900 py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
-              >
-                Use Demo Credentials
-              </button>
+              {/* Register Links */}
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <p className="text-center text-sm text-gray-600 mb-4">
+                  Don't have an account? Register as:
+                </p>
+                <div className="flex gap-3">
+                  <Link
+                    href="/register/doctor"
+                    className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-center font-medium text-sm"
+                  >
+                    Doctor
+                  </Link>
+                  <Link
+                    href="/register/hospital"
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-center font-medium text-sm"
+                  >
+                    Hospital
+                  </Link>
+                </div>
+              </div>
             </form>
           </div>
 
@@ -378,25 +371,6 @@ function LoginForm() {
                   </li>
                 ))}
               </ul>
-            </div>
-
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <h4 className="font-bold">Demo Credentials</h4>
-              </div>
-              <div className="space-y-3">
-                <div className="bg-purple-500/30 rounded-lg p-3">
-                  <p className="text-sm text-blue-100 mb-1">Email:</p>
-                  <p className="font-mono font-semibold">{previewContent.demoEmail}</p>
-                </div>
-                <div className="bg-purple-500/30 rounded-lg p-3">
-                  <p className="text-sm text-blue-100 mb-1">Password:</p>
-                  <p className="font-mono font-semibold">{previewContent.demoPassword}</p>
-                </div>
-              </div>
             </div>
           </div>
         </div>

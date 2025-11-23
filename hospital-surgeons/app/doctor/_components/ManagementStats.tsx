@@ -91,9 +91,9 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
   const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 bg-transparent">
       {/* Quick Actions */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
         <div className="p-4 border-b border-gray-200">
           <h3 className="text-gray-900 font-semibold">AVAILABILITY</h3>
         </div>
@@ -123,7 +123,7 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
       </div>
 
       {/* Mini Calendar */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-gray-900 font-semibold">{currentMonth}</h3>
           <div className="flex gap-1">
@@ -195,7 +195,7 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
       </div>
 
       {/* Leave Management */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
         <div className="p-4 border-b border-gray-200">
           <h3 className="text-gray-900 font-semibold">LEAVE MANAGEMENT</h3>
         </div>
@@ -220,7 +220,7 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
       </div>
 
       {/* Performance Stats */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
         <div className="p-4 border-b border-gray-200">
           <h3 className="text-gray-900 font-semibold">THIS MONTH</h3>
         </div>
@@ -259,7 +259,7 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
       </div>
 
       {/* Affiliated Hospitals */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-gray-900 font-semibold">HOSPITALS (8/10)</h3>
           <Link href="/doctor/hospitals" className="text-[#0066CC] hover:underline">

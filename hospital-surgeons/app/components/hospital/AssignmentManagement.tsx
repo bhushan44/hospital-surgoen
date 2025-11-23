@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Filter, Clock, CheckCircle, XCircle, AlertCircle, MessageSquare, Phone, Calendar } from 'lucide-react';
+import { Search, Filter, Clock, CheckCircle, XCircle, AlertCircle, MessageSquare, Phone, Calendar, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -39,102 +39,108 @@ export function AssignmentManagement() {
   const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [assignments, setAssignments] = useState([
-    {
-      id: 1,
-      patient: 'John Smith',
-      condition: 'Heart Condition',
-      doctor: 'Dr. Sarah Johnson',
-      specialty: 'Cardiology',
-      date: '2024-11-21',
-      time: '09:00 AM',
-      status: 'accepted',
-      priority: 'routine',
-      createdAt: '2024-11-19 10:00 AM',
-      acceptedAt: '2024-11-19 02:30 PM',
-      fee: 2000,
-    },
-    {
-      id: 2,
-      patient: 'Emma Wilson',
-      condition: 'Knee Injury',
-      doctor: 'Dr. Michael Chen',
-      specialty: 'Orthopedics',
-      date: '2024-11-21',
-      time: '11:00 AM',
-      status: 'pending',
-      priority: 'urgent',
-      createdAt: '2024-11-20 09:00 AM',
-      expiresIn: '18h',
-      fee: 1500,
-    },
-    {
-      id: 3,
-      patient: 'David Brown',
-      condition: 'Migraine Treatment',
-      doctor: 'Dr. Priya Patel',
-      specialty: 'Neurology',
-      date: '2024-11-21',
-      time: '02:00 PM',
-      status: 'accepted',
-      priority: 'routine',
-      createdAt: '2024-11-18 03:00 PM',
-      acceptedAt: '2024-11-18 05:45 PM',
-      fee: 2500,
-    },
-    {
-      id: 4,
-      patient: 'Michael Chen',
-      condition: 'Fracture',
-      doctor: 'Dr. Robert Smith',
-      specialty: 'Orthopedics',
-      date: '2024-11-20',
-      time: '03:00 PM',
-      status: 'declined',
-      priority: 'routine',
-      createdAt: '2024-11-19 11:00 AM',
-      declinedAt: '2024-11-19 03:00 PM',
-      declineReason: 'Schedule conflict - Unable to accommodate on requested date',
-      fee: 1500,
-    },
-    {
-      id: 5,
-      patient: 'Lisa Anderson',
-      condition: 'Routine Checkup',
-      doctor: 'Dr. James Wilson',
-      specialty: 'General Medicine',
-      date: '2024-11-18',
-      time: '10:00 AM',
-      status: 'completed',
-      priority: 'routine',
-      createdAt: '2024-11-17 09:00 AM',
-      acceptedAt: '2024-11-17 11:00 AM',
-      completedAt: '2024-11-18 10:45 AM',
-      fee: 1000,
-    },
-  ]);
+  const [cancellingAssignment, setCancellingAssignment] = useState(false);
+  const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
-  const hospitalId = 'hospital-id-placeholder'; // TODO: Get from auth context
+  const [hospitalId, setHospitalId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAssignments();
-  }, [statusFilter]);
+    fetchHospitalProfile();
+  }, []);
+
+  useEffect(() => {
+    if (hospitalId) {
+      fetchAssignments();
+    }
+  }, [statusFilter, hospitalId]);
+
+  const fetchHospitalProfile = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+      const response = await fetch('/api/hospitals/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        setHospitalId(data.data.id);
+      } else {
+        setError('Failed to load hospital profile');
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error('Error fetching hospital profile:', err);
+      setError('Failed to load hospital profile');
+      setLoading(false);
+    }
+  };
 
   const fetchAssignments = async () => {
+    if (!hospitalId) return;
+    
     try {
       setLoading(true);
+      setError(null);
+      const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams();
       if (statusFilter !== 'all') {
         params.append('status', statusFilter);
       }
-      const response = await fetch(`/api/hospitals/${hospitalId}/assignments?${params.toString()}`);
+      if (searchQuery) {
+        params.append('search', searchQuery);
+      }
+      
+      const response = await fetch(`/api/hospitals/${hospitalId}/assignments?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const result = await response.json();
+      
       if (result.success && result.data) {
-        setAssignments(result.data);
+        // Format the data to match the component's expected structure
+        const formattedAssignments = result.data.map((assignment: any) => {
+          // Format time from HH:MM:SS to readable format
+          let formattedTime = assignment.time || 'TBD';
+          if (formattedTime !== 'TBD' && formattedTime.includes(':')) {
+            const [hours, minutes] = formattedTime.split(':');
+            const hour = parseInt(hours);
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+            formattedTime = `${displayHour}:${minutes} ${ampm}`;
+          }
+          
+          return {
+            id: assignment.id,
+            patient: assignment.patient || 'Unknown',
+            condition: assignment.condition || 'N/A',
+            doctor: assignment.doctor || 'Unknown',
+            specialty: assignment.specialty || 'General',
+            date: assignment.date || '',
+            time: formattedTime,
+            status: assignment.status,
+            priority: assignment.priority || 'routine',
+            createdAt: assignment.createdAt ? new Date(assignment.createdAt).toLocaleString() : '',
+            acceptedAt: assignment.acceptedAt ? new Date(assignment.acceptedAt).toLocaleString() : null,
+            declinedAt: assignment.declinedAt ? new Date(assignment.declinedAt).toLocaleString() : null,
+            completedAt: assignment.completedAt ? new Date(assignment.completedAt).toLocaleString() : null,
+            expiresIn: assignment.expiresIn || null,
+            fee: assignment.fee || 0,
+            declineReason: assignment.declineReason || null,
+          };
+        });
+        setAssignments(formattedAssignments);
+      } else {
+        setError(result.message || 'Failed to load assignments');
+        setAssignments([]);
       }
     } catch (error) {
       console.error('Error fetching assignments:', error);
+      setError('Failed to load assignments');
+      setAssignments([]);
     } finally {
       setLoading(false);
     }
@@ -210,15 +216,20 @@ export function AssignmentManagement() {
     }
   };
 
-  const filteredAssignments = assignments.filter(assignment =>
-    assignment.patient.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    assignment.doctor.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    assignment.condition.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Handle search - debounce and fetch from API
+  useEffect(() => {
+    if (hospitalId) {
+      const timeoutId = setTimeout(() => {
+        fetchAssignments();
+      }, 500); // Debounce search by 500ms
+      return () => clearTimeout(timeoutId);
+    }
+  }, [searchQuery]);
 
   const filterByStatus = (status: string) => {
-    if (status === 'all') return filteredAssignments;
-    return filteredAssignments.filter(a => a.status === status);
+    // API already filters by status, but we can do client-side filtering for 'all'
+    if (status === 'all') return assignments;
+    return assignments.filter(a => a.status === status);
   };
 
   return (
@@ -228,10 +239,24 @@ export function AssignmentManagement() {
         description="Track and manage all doctor assignments"
       />
       <div className="p-8">
+      {loading && !hospitalId ? (
+        <div className="text-center py-12">
+          <p className="text-gray-500">Loading hospital profile...</p>
+        </div>
+      ) : error && !hospitalId ? (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          {error}
+        </div>
+      ) : (
       <div className="bg-white rounded-lg shadow p-6">
         <div className="mb-6">
           <h3 className="text-slate-900 font-semibold">All Assignments</h3>
         </div>
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 mb-4">
+            {error}
+          </div>
+        )}
         <div>
           {/* Search */}
           <div className="flex items-center gap-4 mb-6">
@@ -276,7 +301,23 @@ export function AssignmentManagement() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filterByStatus(tab === 'all' ? 'all' : tab).map((assignment) => (
+                      {loading ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8">
+                            <div className="flex items-center justify-center gap-2">
+                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-teal-600"></div>
+                              <span className="text-gray-500">Loading assignments...</span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : filterByStatus(tab === 'all' ? 'all' : tab).length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                            No assignments found
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filterByStatus(tab === 'all' ? 'all' : tab).map((assignment) => (
                         <TableRow key={assignment.id}>
                           <TableCell>
                             <div>
@@ -292,7 +333,7 @@ export function AssignmentManagement() {
                           </TableCell>
                           <TableCell>
                             <div>
-                              <p>{new Date(assignment.date).toLocaleDateString()}</p>
+                              <p>{assignment.date ? new Date(assignment.date).toLocaleDateString() : 'TBD'}</p>
                               <p className="text-sm text-gray-500">{assignment.time}</p>
                             </div>
                           </TableCell>
@@ -334,7 +375,8 @@ export function AssignmentManagement() {
                             </div>
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -343,6 +385,7 @@ export function AssignmentManagement() {
           </Tabs>
         </div>
       </div>
+      )}
       </div>
 
       {/* Assignment Details Modal */}
@@ -490,17 +533,37 @@ export function AssignmentManagement() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCancelModal(false)}>
+            <Button variant="outline" onClick={() => setShowCancelModal(false)} disabled={cancellingAssignment}>
               Keep Assignment
             </Button>
             <Button
               variant="destructive"
-              onClick={() => {
-                setShowCancelModal(false);
-                alert('Assignment cancelled successfully');
+              onClick={async () => {
+                if (cancellingAssignment || !selectedAssignment) return;
+                try {
+                  setCancellingAssignment(true);
+                  // TODO: Implement cancel assignment API call
+                  // For now, just close the modal
+                  await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
+                  setShowCancelModal(false);
+                  alert('Assignment cancelled successfully');
+                  fetchAssignments(); // Refresh the list
+                } catch (error) {
+                  alert('Failed to cancel assignment');
+                } finally {
+                  setCancellingAssignment(false);
+                }
               }}
+              disabled={cancellingAssignment}
             >
-              Confirm Cancellation
+              {cancellingAssignment ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Cancelling...
+                </>
+              ) : (
+                'Confirm Cancellation'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

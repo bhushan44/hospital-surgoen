@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, ClipboardList, Calendar, TrendingUp, Plus, UserSearch, Eye, Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Users, ClipboardList, Calendar, TrendingUp, Plus, UserSearch, Eye, Clock, CheckCircle, AlertCircle, Loader2, LogOut } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -143,6 +143,12 @@ export function DashboardHome() {
     router.push(`/hospital/${page}`);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('rememberMe');
+    router.push('/login');
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -167,6 +173,10 @@ export function DashboardHome() {
             <Button className="bg-teal-600 hover:bg-teal-700" onClick={() => onNavigate('patients')}>
               <Plus className="w-4 h-4 mr-2" />
               Add Patient
+            </Button>
+            <Button variant="outline" onClick={handleLogout} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+              <LogOut className="w-4 h-4" />
+              Logout
             </Button>
           </>
         }

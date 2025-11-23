@@ -154,6 +154,27 @@ export async function POST(
     const db = getDb();
     const body = await req.json();
 
+    // Normalize room type to match database constraint
+    // Database allows: 'general', 'private', 'semi_private', 'icu', 'emergency'
+    const validRoomTypes = ['general', 'private', 'semi_private', 'icu', 'emergency'];
+    let roomType = body.roomType;
+    
+    // Convert hyphen to underscore for semi-private
+    if (roomType === 'semi-private') {
+      roomType = 'semi_private';
+    }
+    
+    // Validate room type
+    if (!validRoomTypes.includes(roomType)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Invalid room type. Allowed values: ${validRoomTypes.join(', ')}`,
+        },
+        { status: 400 }
+      );
+    }
+
     const newPatient = await db
       .insert(patients)
       .values({
@@ -165,7 +186,7 @@ export async function POST(
         emergencyContact: body.emergencyContact,
         address: body.address,
         medicalCondition: body.condition || body.medicalCondition,
-        roomType: body.roomType,
+        roomType: roomType,
         costPerDay: body.costPerDay ? String(body.costPerDay) : null,
         medicalNotes: body.medicalNotes,
       })

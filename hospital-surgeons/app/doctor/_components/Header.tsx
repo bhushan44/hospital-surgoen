@@ -191,3 +191,4 @@ export function DoctorHeader({ collapsed }: HeaderProps) {
   );
 }
 
+

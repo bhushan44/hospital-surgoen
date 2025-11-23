@@ -111,9 +111,9 @@ export function ActionCenter() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 bg-transparent">
       {/* Pending Requests */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-gray-900 font-semibold">ACTION REQUIRED ({pendingRequests.length})</h2>
           <button className="p-1 hover:bg-gray-100 rounded transition-colors">
@@ -190,7 +190,7 @@ export function ActionCenter() {
       </div>
 
       {/* Upcoming Assignments */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-gray-900 font-semibold">UPCOMING (5)</h2>
           <Link href="/doctor/assignments" className="text-sm text-[#0066CC] hover:underline font-medium">
@@ -223,7 +223,7 @@ export function ActionCenter() {
       </div>
 
       {/* Recent Activity */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-gray-900 font-semibold">RECENT ACTIVITY</h2>
         </div>

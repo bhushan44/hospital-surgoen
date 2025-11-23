@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../PageHeader';
 import { StatCard } from '../StatCard';
-import { Users, Building2, UserCheck, ClipboardList, TrendingUp, DollarSign, Loader2, UserCog, ArrowRight } from 'lucide-react';
+import { Users, Building2, UserCheck, ClipboardList, TrendingUp, DollarSign, Loader2, UserCog, ArrowRight, LogOut } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Button } from '../ui/button';
 import { StatusBadge } from '../StatusBadge';
@@ -66,6 +66,12 @@ export function Dashboard() {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const handleLogout = () => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('rememberMe');
+    router.push('/login');
+  };
 
   useEffect(() => {
     fetchDashboardData();
@@ -178,6 +184,10 @@ export function Dashboard() {
             </Button>
             <Button className="bg-navy-600 hover:bg-navy-700">
               Quick Actions
+            </Button>
+            <Button variant="outline" onClick={handleLogout} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+              <LogOut className="w-4 h-4" />
+              Logout
             </Button>
           </>
         }

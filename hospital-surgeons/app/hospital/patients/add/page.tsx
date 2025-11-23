@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
 
 export default function AddPatientPage() {
   const router = useRouter();
@@ -18,10 +19,101 @@ export default function AddPatientPage() {
     additionalNotes: '',
   });
 
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hospitalId, setHospitalId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchHospitalProfile();
+  }, []);
+
+  const fetchHospitalProfile = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+      const response = await fetch('/api/hospitals/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        setHospitalId(data.data.id);
+      } else {
+        setError('Failed to load hospital profile');
+      }
+    } catch (err) {
+      console.error('Error fetching hospital profile:', err);
+      setError('Failed to load hospital profile');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement patient creation API call
-    router.push('/hospital/dashboard');
+    
+    if (loading) return; // Prevent double-click
+    
+    if (!hospitalId) {
+      setError('Hospital ID not found. Please try again.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const token = localStorage.getItem('accessToken');
+
+      // Calculate cost per day based on room type
+      const costPerDayMap: Record<string, number> = {
+        'general': 5000,
+        'semi_private': 10000,
+        'private': 15000,
+        'icu': 20000,
+        'emergency': 12000,
+      };
+
+      // Calculate date of birth from age
+      const today = new Date();
+      const birthYear = today.getFullYear() - parseInt(formData.age);
+      const dateOfBirth = new Date(birthYear, today.getMonth(), today.getDate()).toISOString().split('T')[0];
+
+      const requestBody = {
+        fullName: formData.name,
+        dateOfBirth: dateOfBirth,
+        gender: formData.gender,
+        phone: formData.contactNumber,
+        emergencyContact: formData.emergencyContact || null,
+        address: null,
+        condition: formData.medicalCondition,
+        medicalCondition: formData.medicalCondition,
+        roomType: formData.roomType,
+        costPerDay: costPerDayMap[formData.roomType] || 5000,
+        medicalNotes: formData.additionalNotes || null,
+      };
+
+      const response = await fetch(`/api/hospitals/${hospitalId}/patients`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        router.push('/hospital/patients');
+      } else {
+        setError(data.message || 'Failed to create patient. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error creating patient:', err);
+      setError('Failed to create patient. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -39,6 +131,12 @@ export default function AddPatientPage() {
       {/* Form */}
       <div className="p-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Add New Patient</h2>
+
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Personal Information */}
@@ -186,8 +284,10 @@ export default function AddPatientPage() {
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { value: 'general', label: 'General', price: '₹5,000/day' },
-                    { value: 'deluxe', label: 'Deluxe', price: '₹10,000/day' },
-                    { value: 'suite', label: 'Suite', price: '₹15,000/day' },
+                    { value: 'semi_private', label: 'Semi-Private', price: '₹10,000/day' },
+                    { value: 'private', label: 'Private', price: '₹15,000/day' },
+                    { value: 'icu', label: 'ICU', price: '₹20,000/day' },
+                    { value: 'emergency', label: 'Emergency', price: '₹12,000/day' },
                   ].map((room) => (
                     <button
                       key={room.value}
@@ -232,9 +332,17 @@ export default function AddPatientPage() {
             </Link>
             <button
               type="submit"
-              className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold"
+              disabled={loading || !hospitalId}
+              className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Add Patient
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Creating Patient...
+                </>
+              ) : (
+                'Add Patient'
+              )}
             </button>
           </div>
         </form>

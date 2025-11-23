@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Edit, Eye, UserPlus, CheckCircle, AlertCircle, XCircle } from 'lucide-react';
+import { Plus, Search, Filter, Edit, Eye, UserPlus, CheckCircle, AlertCircle, XCircle, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -27,6 +27,7 @@ import { Separator } from '../../components/ui/separator';
 import { AddPatientWizard } from './AddPatientWizard';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
+import { isAuthenticated } from '@/lib/auth/utils';
 
 export function PatientManagement() {
   const router = useRouter();
@@ -39,91 +40,61 @@ export function PatientManagement() {
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [patients, setPatients] = useState([
-    {
-      id: 1,
-      name: 'John Smith',
-      age: 45,
-      gender: 'Male',
-      admissionDate: '2024-11-15',
-      condition: 'Heart Condition',
-      specialty: 'Cardiology',
-      assignedDoctor: 'Dr. Sarah Johnson',
-      status: 'assigned',
-    },
-    {
-      id: 2,
-      name: 'Emma Wilson',
-      age: 32,
-      gender: 'Female',
-      admissionDate: '2024-11-18',
-      condition: 'Knee Injury',
-      specialty: 'Orthopedics',
-      assignedDoctor: null,
-      status: 'unassigned',
-    },
-    {
-      id: 3,
-      name: 'David Brown',
-      age: 58,
-      gender: 'Male',
-      admissionDate: '2024-11-10',
-      condition: 'Migraine Treatment',
-      specialty: 'Neurology',
-      assignedDoctor: 'Dr. Priya Patel',
-      status: 'assigned',
-    },
-    {
-      id: 4,
-      name: 'Lisa Anderson',
-      age: 41,
-      gender: 'Female',
-      admissionDate: '2024-11-19',
-      condition: 'Routine Checkup',
-      specialty: 'General Medicine',
-      assignedDoctor: 'Dr. James Wilson',
-      status: 'assigned',
-    },
-    {
-      id: 5,
-      name: 'Michael Chen',
-      age: 29,
-      gender: 'Male',
-      admissionDate: '2024-11-20',
-      condition: 'Fracture',
-      specialty: 'Orthopedics',
-      assignedDoctor: null,
-      status: 'declined',
-    },
-    {
-      id: 6,
-      name: 'Sarah Parker',
-      age: 37,
-      gender: 'Female',
-      admissionDate: '2024-11-21',
-      condition: 'Diabetes Management',
-      specialty: 'Endocrinology',
-      assignedDoctor: null,
-      status: 'unassigned',
-    },
-  ]);
+  const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const hospitalId = 'hospital-id-placeholder'; // TODO: Get from auth context
+  const [hospitalId, setHospitalId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPatients();
+    if (isAuthenticated()) {
+      fetchHospitalProfile();
+    } else {
+      router.push('/login');
+    }
   }, []);
 
+  useEffect(() => {
+    if (hospitalId) {
+      fetchPatients();
+    }
+  }, [hospitalId]);
+
+  const fetchHospitalProfile = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch('/api/hospitals/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        setHospitalId(data.data.id);
+      } else {
+        setError('Failed to load hospital profile');
+      }
+    } catch (err) {
+      console.error('Error fetching hospital profile:', err);
+      setError('Failed to load hospital profile');
+    }
+  };
+
   const fetchPatients = async () => {
+    if (!hospitalId) return;
     try {
       setLoading(true);
-      const response = await fetch(`/api/hospitals/${hospitalId}/patients`);
+      setError(null);
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`/api/hospitals/${hospitalId}/patients`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const result = await response.json();
       if (result.success && result.data) {
         setPatients(result.data);
+      } else {
+        setError('Failed to load patients');
       }
     } catch (error) {
       console.error('Error fetching patients:', error);
+      setError('Failed to load patients');
     } finally {
       setLoading(false);
     }
@@ -169,9 +140,20 @@ export function PatientManagement() {
         onClose={() => setShowAddPatient(false)}
         onComplete={() => {
           setShowAddPatient(false);
-          router.push('/hospital/find-doctors');
+          fetchPatients(); // Refresh the patient list
         }}
       />
+    );
+  }
+
+  if (loading && !hospitalId) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
+          <p className="text-slate-600">Loading...</p>
+        </div>
+      </div>
     );
   }
 
@@ -188,6 +170,11 @@ export function PatientManagement() {
         }
       />
       <div className="p-8">
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+            {error}
+          </div>
+        )}
       <div className="bg-white rounded-lg shadow p-6">
         <div className="mb-6">
           <h3 className="text-slate-900 font-semibold">All Patients</h3>
@@ -212,21 +199,35 @@ export function PatientManagement() {
 
           {/* Patients Table */}
           <div className="border rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Patient Name</TableHead>
-                  <TableHead>Age / Gender</TableHead>
-                  <TableHead>Admission Date</TableHead>
-                  <TableHead>Medical Condition</TableHead>
-                  <TableHead>Specialty</TableHead>
-                  <TableHead>Assigned Doctor</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredPatients.map((patient) => (
+            {loading ? (
+              <div className="p-12 text-center">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
+                <p className="text-slate-600">Loading patients...</p>
+              </div>
+            ) : filteredPatients.length === 0 ? (
+              <div className="p-12 text-center">
+                <p className="text-slate-600 mb-4">No patients found</p>
+                <Button onClick={() => setShowAddPatient(true)} className="bg-teal-600 hover:bg-teal-700">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Your First Patient
+                </Button>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Patient Name</TableHead>
+                    <TableHead>Age / Gender</TableHead>
+                    <TableHead>Admission Date</TableHead>
+                    <TableHead>Medical Condition</TableHead>
+                    <TableHead>Specialty</TableHead>
+                    <TableHead>Assigned Doctor</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredPatients.map((patient) => (
                   <TableRow key={patient.id}>
                     <TableCell>{patient.name}</TableCell>
                     <TableCell>{patient.age} / {patient.gender}</TableCell>
@@ -275,9 +276,10 @@ export function PatientManagement() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </div>
         </div>
       </div>

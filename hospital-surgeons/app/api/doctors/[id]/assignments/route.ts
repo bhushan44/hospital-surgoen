@@ -1,38 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { assignments, doctors, patients, doctorAvailability, enumPriority } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, or, sql, desc, asc } from 'drizzle-orm';
+import { assignments, doctors, patients, hospitals, doctorAvailability, enumPriority } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, or, sql, desc, asc, gte, lte } from 'drizzle-orm';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
 /**
- * Get all assignments for a hospital
- * GET /api/hospitals/[id]/assignments
+ * Get all assignments for a doctor
+ * GET /api/doctors/[id]/assignments
  */
 async function getHandler(
   req: AuthenticatedRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    if (!context || !context.params) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Invalid request context',
-        },
-        { status: 400 }
-      );
-    }
-    
     const params = await context.params;
-    const hospitalId = params.id;
+    const doctorId = params.id;
     
-    // Validate UUID format - return empty data for placeholder
+    // Validate UUID format
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(hospitalId) || hospitalId === 'hospital-id-placeholder') {
+    if (!uuidRegex.test(doctorId)) {
       return NextResponse.json({
         success: true,
         data: [],
-        pagination: { page: 1, limit: 10, total: 0, totalPages: 0 },
       });
     }
     
@@ -41,11 +30,24 @@ async function getHandler(
 
     const status = searchParams.get('status') || undefined;
     const search = searchParams.get('search') || undefined;
+    const todayOnly = searchParams.get('todayOnly') === 'true';
 
     // Build where conditions
-    const conditions = [eq(assignments.hospitalId, hospitalId)];
+    const conditions = [eq(assignments.doctorId, doctorId)];
     if (status && status !== 'all') {
       conditions.push(eq(assignments.status, status));
+    }
+
+    // Filter by today's date if requested
+    if (todayOnly) {
+      const today = new Date().toISOString().split('T')[0];
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM doctor_availability 
+          WHERE id = ${assignments.availabilitySlotId} 
+          AND slot_date = ${today}::date
+        )`
+      );
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -55,7 +57,7 @@ async function getHandler(
       .select({
         id: assignments.id,
         patientId: assignments.patientId,
-        doctorId: assignments.doctorId,
+        hospitalId: assignments.hospitalId,
         priority: assignments.priority,
         status: assignments.status,
         requestedAt: assignments.requestedAt,
@@ -69,13 +71,12 @@ async function getHandler(
         // Patient info
         patientName: sql<string>`(SELECT full_name FROM patients WHERE id = ${assignments.patientId})`,
         patientCondition: sql<string>`(SELECT medical_condition FROM patients WHERE id = ${assignments.patientId})`,
-        // Doctor info
-        doctorFirstName: sql<string>`(SELECT first_name FROM doctors WHERE id = ${assignments.doctorId})`,
-        doctorLastName: sql<string>`(SELECT last_name FROM doctors WHERE id = ${assignments.doctorId})`,
-        specialtyName: sql<string>`(SELECT name FROM specialties WHERE id = (SELECT specialty_id FROM doctor_specialties WHERE doctor_id = ${assignments.doctorId} LIMIT 1))`,
+        // Hospital info
+        hospitalName: sql<string>`(SELECT name FROM hospitals WHERE id = ${assignments.hospitalId})`,
         // Slot info
         slotDate: sql<string>`(SELECT slot_date::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
         slotTime: sql<string>`(SELECT start_time::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
+        slotEndTime: sql<string>`(SELECT end_time::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
       })
       .from(assignments)
       .where(whereClause)
@@ -85,6 +86,17 @@ async function getHandler(
     let formattedAssignments = assignmentsList.map((assignment) => {
       const date = assignment.slotDate || (assignment.requestedAt ? new Date(assignment.requestedAt).toISOString().split('T')[0] : null);
       const time = assignment.slotTime || 'TBD';
+      const endTime = assignment.slotEndTime || null;
+
+      // Format time
+      let formattedTime = time;
+      if (time !== 'TBD' && time.includes(':')) {
+        const [hours, minutes] = time.split(':');
+        const hour = parseInt(hours);
+        const ampm = hour >= 12 ? 'PM' : 'AM';
+        const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+        formattedTime = `${displayHour}:${minutes} ${ampm}`;
+      }
 
       // Calculate expiresIn for pending assignments
       let expiresIn = null;
@@ -95,6 +107,11 @@ async function getHandler(
         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
         if (diffHours > 0) {
           expiresIn = `${diffHours}h`;
+        } else {
+          const diffMinutes = Math.floor(diffMs / (1000 * 60));
+          if (diffMinutes > 0) {
+            expiresIn = `${diffMinutes}m`;
+          }
         }
       }
 
@@ -102,10 +119,16 @@ async function getHandler(
         id: assignment.id,
         patient: assignment.patientName || 'Unknown',
         condition: assignment.patientCondition || 'N/A',
-        doctor: `Dr. ${assignment.doctorFirstName || ''} ${assignment.doctorLastName || ''}`.trim(),
-        specialty: assignment.specialtyName || 'General',
+        hospital: assignment.hospitalName || 'Unknown',
         date,
-        time,
+        time: formattedTime,
+        endTime: endTime ? (() => {
+          const [hours, minutes] = endTime.split(':');
+          const hour = parseInt(hours);
+          const ampm = hour >= 12 ? 'PM' : 'AM';
+          const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+          return `${displayHour}:${minutes} ${ampm}`;
+        })() : null,
         status: assignment.status,
         priority: assignment.priority || 'routine',
         createdAt: assignment.requestedAt,
@@ -115,6 +138,8 @@ async function getHandler(
         expiresIn,
         fee: assignment.consultationFee ? Number(assignment.consultationFee) : 0,
         declineReason: assignment.cancellationReason,
+        hospitalId: assignment.hospitalId,
+        patientId: assignment.patientId,
       };
     });
 
@@ -124,7 +149,7 @@ async function getHandler(
       formattedAssignments = formattedAssignments.filter(
         (a) =>
           a.patient.toLowerCase().includes(searchLower) ||
-          a.doctor.toLowerCase().includes(searchLower) ||
+          a.hospital.toLowerCase().includes(searchLower) ||
           a.condition.toLowerCase().includes(searchLower)
       );
     }
@@ -134,7 +159,7 @@ async function getHandler(
       data: formattedAssignments,
     });
   } catch (error) {
-    console.error('Error fetching assignments:', error);
+    console.error('Error fetching doctor assignments:', error);
     return NextResponse.json(
       {
         success: false,
@@ -146,5 +171,5 @@ async function getHandler(
   }
 }
 
-export const GET = withAuthAndContext(getHandler, ['hospital', 'admin']);
+export const GET = withAuthAndContext(getHandler, ['doctor', 'admin']);
 

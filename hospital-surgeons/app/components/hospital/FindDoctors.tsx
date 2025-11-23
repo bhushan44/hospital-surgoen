@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Calendar, Star, Award, Crown, Medal, Clock, CheckCircle2, Lock } from 'lucide-react';
+import { Search, Calendar, Star, Award, Crown, Medal, Clock, CheckCircle2, Lock, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -40,13 +40,9 @@ export function FindDoctors() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
-  const [selectedSlot, setSelectedSlot] = useState<string>('');
+  const [selectedSlot, setSelectedSlot] = useState<{ id: string; time: string } | null>(null);
   const [doctors, setDoctors] = useState<any[]>([]);
-  const [patients, setPatients] = useState([
-    { id: 1, name: 'Emma Wilson', condition: 'Knee Injury' },
-    { id: 2, name: 'Sarah Parker', condition: 'Diabetes Management' },
-    { id: 3, name: 'Michael Chen', condition: 'Fracture' },
-  ]);
+  const [patients, setPatients] = useState<any[]>([]);
   const [specialties, setSpecialties] = useState([
     'Cardiology',
     'Orthopedics',
@@ -59,26 +55,64 @@ export function FindDoctors() {
   ]);
   const [hospitalSubscription, setHospitalSubscription] = useState<'free' | 'gold' | 'premium'>('free');
   const [loading, setLoading] = useState(false);
-  const hospitalId = 'hospital-id-placeholder'; // TODO: Get from auth context
+  const [creatingAssignment, setCreatingAssignment] = useState(false);
+  const [hospitalId, setHospitalId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPatients();
+    fetchHospitalProfile();
     fetchSpecialties();
   }, []);
 
-  const fetchPatients = async () => {
+  useEffect(() => {
+    if (hospitalId) {
+      fetchPatients();
+    }
+  }, [hospitalId]);
+
+  const fetchHospitalProfile = async () => {
     try {
-      const response = await fetch(`/api/hospitals/${hospitalId}/patients`);
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+      const response = await fetch('/api/hospitals/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        setHospitalId(data.data.id);
+      } else {
+        setError('Failed to load hospital profile');
+      }
+    } catch (err) {
+      console.error('Error fetching hospital profile:', err);
+      setError('Failed to load hospital profile');
+    }
+  };
+
+  const fetchPatients = async () => {
+    if (!hospitalId) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`/api/hospitals/${hospitalId}/patients`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const result = await response.json();
       if (result.success && result.data) {
         setPatients(result.data.map((p: any) => ({
           id: p.id,
-          name: p.name,
-          condition: p.condition,
+          name: p.fullName || p.name,
+          condition: p.medicalCondition || p.condition,
         })));
+      } else {
+        setPatients([]);
       }
     } catch (error) {
       console.error('Error fetching patients:', error);
+      setError('Failed to load patients');
+      setPatients([]);
     }
   };
 
@@ -118,14 +152,18 @@ export function FindDoctors() {
   };
 
   // Show loading or empty state
-  if (loading && !showResults) {
+  if ((loading && !showResults) || !hospitalId) {
     return (
-      <div className="p-8">
-        <div className="mb-8">
-          <h1 className="text-gray-900 mb-1">Find Doctors</h1>
-          <p className="text-gray-500">Search for available doctors and create assignments</p>
+      <div className="min-h-screen bg-slate-50">
+        <PageHeader 
+          title="Find Doctors" 
+          description="Search for available doctors and create assignments"
+        />
+        <div className="p-8">
+          <div className="text-center py-12 text-gray-500">
+            {!hospitalId ? 'Loading hospital profile...' : 'Loading...'}
+          </div>
         </div>
-        <div className="text-center py-12 text-gray-500">Loading...</div>
       </div>
     );
   }
@@ -213,7 +251,7 @@ export function FindDoctors() {
     }
   };
 
-  const handleSlotSelect = (doctor: any, slot: string) => {
+  const handleSlotSelect = (doctor: any, slot: any) => {
     if (!hasAccessToDoctor(doctor.requiredPlan)) {
       setShowUpgradeModal(true);
       return;
@@ -229,21 +267,24 @@ export function FindDoctors() {
       return;
     }
 
+    if (creatingAssignment) {
+      return; // Prevent double-click
+    }
+
     try {
-      setLoading(true);
-      // Get availability slot ID for the selected time
-      // For now, we'll need to get it from the doctor's availability
-      // This is a simplified version - in production, you'd match the slot properly
+      setCreatingAssignment(true);
+      const token = localStorage.getItem('accessToken');
       
       const response = await fetch(`/api/hospitals/${hospitalId}/assignments/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           patientId: searchParams.patient,
           doctorId: selectedDoctor.id,
-          availabilitySlotId: selectedDoctor.availabilitySlotId || null, // TODO: Get actual slot ID
+          availabilitySlotId: selectedSlot.id,
           priority: searchParams.priority,
           consultationFee: selectedDoctor.fee,
         }),
@@ -263,7 +304,7 @@ export function FindDoctors() {
       console.error('Error creating assignment:', error);
       alert('An error occurred while creating the assignment');
     } finally {
-      setLoading(false);
+      setCreatingAssignment(false);
     }
   };
 
@@ -272,38 +313,47 @@ export function FindDoctors() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50" style={{ overflow: 'visible' }}>
       <PageHeader 
         title="Find Doctors" 
         description="Search for available doctors and create assignments"
       />
-      <div className="p-8">
+      <div className="p-8" style={{ overflow: 'visible' }}>
 
       {/* Search Form */}
-      <div className="bg-white rounded-lg shadow p-6 mb-8">
+      <div className="bg-white rounded-lg shadow p-6 mb-8" style={{ overflow: 'visible' }}>
         <div className="mb-6">
           <h3 className="text-slate-900 font-semibold">Search Criteria</h3>
         </div>
         <div>
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ overflow: 'visible' }}>
+              <div className="space-y-2" style={{ overflow: 'visible' }}>
                 <Label htmlFor="patient">Select Patient *</Label>
-                <Select value={searchParams.patient} onValueChange={(value) => setSearchParams({ ...searchParams, patient: value })}>
+                <Select 
+                  value={searchParams.patient} 
+                  onValueChange={(value) => setSearchParams({ ...searchParams, patient: value })}
+                  disabled={patients.length === 0}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose patient" />
+                    <SelectValue placeholder={patients.length === 0 ? "No patients available" : "Choose patient"} />
                   </SelectTrigger>
-                  <SelectContent>
-                    {patients.map((patient) => (
-                      <SelectItem key={patient.id} value={patient.id.toString()}>
-                        {patient.name} - {patient.condition}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+                  {patients.length > 0 && (
+                    <SelectContent>
+                      {patients.map((patient) => (
+                        <SelectItem key={patient.id} value={patient.id.toString()}>
+                          {patient.name} - {patient.condition}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  )}
                 </Select>
+                {patients.length === 0 && (
+                  <p className="text-sm text-amber-600 mt-1">No patients found. Please add a patient first.</p>
+                )}
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2" style={{ overflow: 'visible' }}>
                 <Label htmlFor="specialty">Specialty *</Label>
                 <Select value={searchParams.specialty} onValueChange={(value) => setSearchParams({ ...searchParams, specialty: value })}>
                   <SelectTrigger>
@@ -445,21 +495,25 @@ export function FindDoctors() {
 
                   <div>
                     <Label className="mb-2 block">Available Time Slots</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {doctor.availableSlots.map((slot: string) => (
-                        <Button
-                          key={slot}
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleSlotSelect(doctor, slot)}
-                          disabled={!hasAccess}
-                          className="gap-1"
-                        >
-                          <Clock className="w-3 h-3" />
-                          {slot}
-                        </Button>
-                      ))}
-                    </div>
+                    {doctor.availableSlots && doctor.availableSlots.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        {doctor.availableSlots.map((slot: any) => (
+                          <Button
+                            key={slot.id || slot.time}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSlotSelect(doctor, slot)}
+                            disabled={!hasAccess}
+                            className="gap-1"
+                          >
+                            <Clock className="w-3 h-3" />
+                            {slot.time || slot}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No available slots for this date</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -495,7 +549,7 @@ export function FindDoctors() {
                 <h3 className="text-gray-900 mb-2">Schedule Details</h3>
                 <div className="space-y-1 text-sm">
                   <p><span className="text-gray-500">Date:</span> {searchParams.date}</p>
-                  <p><span className="text-gray-500">Time:</span> {selectedSlot}</p>
+                  <p><span className="text-gray-500">Time:</span> {selectedSlot?.time || selectedSlot}</p>
                   <p><span className="text-gray-500">Priority:</span> <span className="capitalize">{searchParams.priority}</span></p>
                   <p><span className="text-gray-500">Response Deadline:</span> {getPriorityTimeout(searchParams.priority)}</p>
                 </div>
@@ -522,11 +576,18 @@ export function FindDoctors() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowConfirmation(false)}>
+            <Button variant="outline" onClick={() => setShowConfirmation(false)} disabled={creatingAssignment}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmAssignment}>
-              Confirm Assignment
+            <Button onClick={handleConfirmAssignment} disabled={creatingAssignment}>
+              {creatingAssignment ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Creating...
+                </>
+              ) : (
+                'Confirm Assignment'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

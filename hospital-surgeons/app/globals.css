@@ -55,6 +55,47 @@ body {
   background-color: var(--background);
   color: var(--foreground);
   font-feature-settings: "rlig" 1, "calt" 1;
+  background-image: none !important;
+}
+
+/* Remove any background patterns/images from doctor dashboard */
+.doctor-dashboard,
+.doctor-dashboard *,
+[class*="doctor"],
+[class*="dashboard"] {
+  background-image: none !important;
+}
+
+/* Ensure dropdown portals render above all content */
+[data-radix-portal] {
+  z-index: 99999 !important;
+}
+
+[data-radix-select-content],
+[data-radix-dropdown-menu-content],
+[data-radix-popover-content] {
+  z-index: 99999 !important;
+  position: fixed !important;
+}
+
+/* Prevent parent containers from clipping dropdowns */
+[data-radix-select-trigger],
+[data-radix-dropdown-menu-trigger] {
+  position: relative;
+}
+
+/* Ensure SelectContent is not clipped by overflow */
+[data-radix-select-content] {
+  position: fixed !important;
+  z-index: 99999 !important;
+  isolation: isolate;
+}
+
+/* Prevent overflow clipping on common container classes */
+.space-y-2,
+.space-y-4,
+.grid {
+  overflow: visible !important;
 }
 
 

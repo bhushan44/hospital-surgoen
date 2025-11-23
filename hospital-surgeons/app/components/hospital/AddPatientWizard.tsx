@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, User, Heart, FileText } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, ArrowRight, Check, User, Heart, FileText, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { Checkbox } from '../../components/ui/checkbox';
-
+import { isAuthenticated } from '@/lib/auth/utils';
 import { useRouter } from 'next/navigation';
 
 interface AddPatientWizardProps {
@@ -26,6 +26,10 @@ interface AddPatientWizardProps {
 export function AddPatientWizard({ onClose, onComplete }: AddPatientWizardProps) {
   const router = useRouter();
   const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     // Step 1: Personal Information
     fullName: '',
@@ -65,9 +69,10 @@ export function AddPatientWizard({ onClose, onComplete }: AddPatientWizardProps)
 
   const roomTypes = [
     { value: 'general', label: 'General Ward', cost: '₹1,500' },
-    { value: 'semi-private', label: 'Semi-Private', cost: '₹3,000' },
+    { value: 'semi_private', label: 'Semi-Private', cost: '₹3,000' },
     { value: 'private', label: 'Private Room', cost: '₹5,000' },
     { value: 'icu', label: 'ICU', cost: '₹10,000' },
+    { value: 'emergency', label: 'Emergency', cost: '₹8,000' },
   ];
 
   const steps = [
@@ -76,16 +81,125 @@ export function AddPatientWizard({ onClose, onComplete }: AddPatientWizardProps)
     { number: 3, title: 'Consent', icon: FileText },
   ];
 
-  const handleNext = () => {
+  useEffect(() => {
+    if (isAuthenticated()) {
+      fetchHospitalProfile();
+    }
+  }, []);
+
+  const fetchHospitalProfile = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch('/api/hospitals/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        setHospitalId(data.data.id);
+      } else {
+        setError('Failed to load hospital profile');
+      }
+    } catch (err) {
+      console.error('Error fetching hospital profile:', err);
+      setError('Failed to load hospital profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNext = async () => {
+    if (submitting) return; // Prevent double-click
+    
     if (step < 3) {
       setStep(step + 1);
     } else {
-      // Complete the wizard
-      if (onComplete) {
-        onComplete();
+      // Submit the form
+      await handleSubmit();
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (submitting) return; // Prevent double-click
+    
+    if (!hospitalId) {
+      setError('Hospital ID not found. Please try again.');
+      return;
+    }
+
+    // Validate all required fields
+    if (!formData.fullName || !formData.dateOfBirth || !formData.gender || !formData.phone) {
+      setError('Please fill in all required fields in Step 1');
+      setStep(1);
+      return;
+    }
+
+    if (!formData.condition || !formData.specialty || !formData.roomType) {
+      setError('Please fill in all required fields in Step 2');
+      setStep(2);
+      return;
+    }
+
+    if (!formData.dataPrivacy || !formData.doctorAssignment || !formData.treatmentConsent || 
+        !formData.consentGiverName || !formData.relationship) {
+      setError('Please complete all consent fields in Step 3');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setError(null);
+      const token = localStorage.getItem('accessToken');
+
+      // Calculate cost per day based on room type
+      const costPerDayMap: Record<string, number> = {
+        'general': 1500,
+        'semi_private': 3000,
+        'private': 5000,
+        'icu': 10000,
+        'emergency': 8000,
+      };
+
+      const requestBody = {
+        fullName: formData.fullName,
+        dateOfBirth: formData.dateOfBirth,
+        gender: formData.gender,
+        phone: formData.phone,
+        emergencyContact: formData.emergencyContact || null,
+        address: formData.address || null,
+        condition: formData.condition,
+        medicalCondition: formData.condition,
+        roomType: formData.roomType,
+        costPerDay: costPerDayMap[formData.roomType] || 1500,
+        medicalNotes: formData.medicalNotes || null,
+      };
+
+      const response = await fetch(`/api/hospitals/${hospitalId}/patients`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Success - call onComplete or navigate
+        if (onComplete) {
+          onComplete();
+        } else {
+          router.push('/hospital/find-doctors');
+        }
       } else {
-        router.push('/hospital/find-doctors');
+        setError(data.message || 'Failed to create patient. Please try again.');
       }
+    } catch (err) {
+      console.error('Error creating patient:', err);
+      setError('Failed to create patient. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -110,16 +224,35 @@ export function AddPatientWizard({ onClose, onComplete }: AddPatientWizardProps)
     }
   };
 
+  if (loading) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
+            <p className="text-slate-600">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <div className="mb-8">
-        <Button variant="ghost" onClick={onClose} className="mb-4 gap-2">
+        <Button variant="ghost" onClick={onClose} className="mb-4 gap-2" disabled={submitting}>
           <ArrowLeft className="w-4 h-4" />
           Back to Patients
         </Button>
         <h1 className="text-gray-900 mb-1">Add New Patient</h1>
         <p className="text-gray-500">Complete the form to register a new patient</p>
       </div>
+
+      {error && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Progress Steps */}
       <div className="mb-8">
@@ -379,13 +512,26 @@ export function AddPatientWizard({ onClose, onComplete }: AddPatientWizardProps)
 
           {/* Navigation Buttons */}
           <div className="flex items-center justify-between mt-8 pt-6 border-t">
-            <Button variant="outline" onClick={handleBack} className="gap-2">
+            <Button variant="outline" onClick={handleBack} className="gap-2" disabled={submitting}>
               <ArrowLeft className="w-4 h-4" />
               {step === 1 ? 'Cancel' : 'Back'}
             </Button>
-            <Button onClick={handleNext} disabled={!isStepValid()} className="gap-2">
-              {step === 3 ? 'Complete & Find Doctor' : 'Next'}
-              {step < 3 && <ArrowRight className="w-4 h-4" />}
+            <Button 
+              onClick={handleNext} 
+              disabled={!isStepValid() || submitting || !hospitalId} 
+              className="gap-2"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  {step === 3 ? 'Complete & Find Doctor' : 'Next'}
+                  {step < 3 && <ArrowRight className="w-4 h-4" />}
+                </>
+              )}
             </Button>
           </div>
         </CardContent>
