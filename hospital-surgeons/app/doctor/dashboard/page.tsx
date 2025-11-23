@@ -1,209 +1,302 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { AlertCircle, TrendingUp, Calendar, CheckCircle, Star, Award, DollarSign, Activity } from 'lucide-react';
 import Link from 'next/link';
-import Header from '../../components/Header';
+import { ActionCenter } from '../_components/ActionCenter';
+import { TodaySchedule } from '../_components/TodaySchedule';
+import { ManagementStats } from '../_components/ManagementStats';
+import { isAuthenticated } from '@/lib/auth/utils';
 
-interface Doctor {
-  id: string;
-  firstName: string;
-  lastName: string;
-  specialty: string;
-  rating: number;
-  availableToday: boolean;
-  nextAvailable: string;
+interface DashboardData {
+  totalAssignments: number;
+  pendingAssignments: number;
+  completedAssignments: number;
+  averageRating: number;
+  totalRatings: number;
+  totalEarnings: number;
+  thisMonthEarnings: number;
+  thisMonthAssignments: number;
+  upcomingSlots: number;
+  profileCompletion: number;
+  credentials: {
+    verified: number;
+    pending: number;
+    rejected: number;
+  };
+  activeAffiliations: number;
+  licenseVerificationStatus: string;
 }
 
 export default function DoctorDashboardPage() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSpecialty, setSelectedSpecialty] = useState('all');
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [expandedDoctor, setExpandedDoctor] = useState<string | null>(null);
-  const [specialties, setSpecialties] = useState<Array<{ id: string; name: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
-    // Fetch specialties
-    fetch('/api/specialties/active')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          setSpecialties(data.data || []);
-        }
-      });
-
-    // Fetch doctors
-    fetch('/api/doctors')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          setDoctors(data.data || []);
-        }
-      });
+    if (isAuthenticated()) {
+      fetchDashboardData();
+    }
   }, []);
 
-  const timeSlots = ['9:00 AM', '10:30 AM', '1:00 PM', '2:30 PM', '4:00 PM'];
+  const fetchDashboardData = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      
+      // Fetch dashboard stats
+      const dashboardResponse = await fetch('/api/doctors/dashboard', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const dashboardResult = await dashboardResponse.json();
+      
+      // Fetch earnings
+      const earningsResponse = await fetch('/api/doctors/earnings', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const earningsResult = await earningsResponse.json();
+
+      if (dashboardResult.success) {
+        const data = dashboardResult.data;
+        // Merge earnings data
+        if (earningsResult.success && earningsResult.data) {
+          data.totalEarnings = earningsResult.data.totalEarnings || 0;
+          data.thisMonthEarnings = earningsResult.data.thisMonthEarnings || 0;
+          data.thisMonthAssignments = earningsResult.data.thisMonthAssignments || 0;
+        }
+        setDashboardData(data);
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto"></div>
+          <p className="mt-4 text-slate-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!dashboardData) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-slate-600">Unable to load dashboard data</p>
+      </div>
+    );
+  }
+
+  const credentialsTotal = dashboardData.credentials.verified + dashboardData.credentials.pending + dashboardData.credentials.rejected;
+  const credentialsStatus = dashboardData.credentials.pending > 0 
+    ? `${dashboardData.credentials.pending} Pending, ${dashboardData.credentials.verified} Verified`
+    : `${dashboardData.credentials.verified} Verified`;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-      
-      <div className="container mx-auto px-4 py-6">
-
-        {/* Find Available Doctors Section */}
-        <div className="bg-white rounded-xl shadow p-6 mb-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Find Available Doctors</h2>
-
-        {/* Search Bar */}
-        <div className="relative mb-4">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search doctors by name"
-            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* Specialty Filters */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          <button
-            onClick={() => setSelectedSpecialty('all')}
-            className={`px-4 py-2 rounded-full whitespace-nowrap ${
-              selectedSpecialty === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700'
-            }`}
-          >
-            All
-          </button>
-          {specialties.map((specialty) => (
-            <button
-              key={specialty.id}
-              onClick={() => setSelectedSpecialty(specialty.id)}
-              className={`px-4 py-2 rounded-full whitespace-nowrap ${
-                selectedSpecialty === specialty.id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-700'
-              }`}
-            >
-              {specialty.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-        {/* Doctors List */}
-        <div className="space-y-4">
-          {doctors.map((doctor) => (
-            <div key={doctor.id} className="bg-white rounded-xl shadow p-6">
-            <div className="flex items-start gap-4">
-              {/* Profile Picture */}
-              <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
+    <div className="space-y-6">
+      {/* Profile Completion Alert */}
+      {dashboardData.profileCompletion < 100 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-amber-900 mb-2 font-semibold">Complete Your Profile</h3>
+              <div className="mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-amber-800 font-medium">Progress: {dashboardData.profileCompletion}%</span>
+                </div>
+                <div className="w-full bg-amber-200 rounded-full h-2">
+                  <div 
+                    className="bg-amber-600 h-2 rounded-full transition-all" 
+                    style={{ width: `${dashboardData.profileCompletion}%` }} 
+                  />
+                </div>
               </div>
-
-              {/* Doctor Info */}
-              <div className="flex-1">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className="font-bold text-gray-900">
-                      Dr. {doctor.firstName} {doctor.lastName}
-                    </h3>
-                    <p className="text-sm text-gray-600">{doctor.specialty || 'General Practitioner'}</p>
-                  </div>
-                  <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                    Available Today
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                  </svg>
-                  <span className="text-sm font-semibold text-gray-900">{doctor.rating || '4.8'}</span>
-                </div>
-
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Next available: {doctor.nextAvailable || '10:00 AM Today'}</span>
-                </div>
-
-                {/* Schedule Toggle */}
-                <button
-                  onClick={() => setExpandedDoctor(expandedDoctor === doctor.id ? null : doctor.id)}
-                  className="text-blue-600 text-sm font-medium mb-3"
-                >
-                  {expandedDoctor === doctor.id ? 'Hide Schedule' : 'Show Schedule'}
-                </button>
-
-                {/* Expanded Schedule */}
-                {expandedDoctor === doctor.id && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-semibold text-gray-900">Available Slots</h4>
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 mb-4">
-                      {timeSlots.map((time) => (
-                        <button
-                          key={time}
-                          className="px-3 py-2 border border-blue-500 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50"
-                        >
-                          {time}
-                        </button>
-                      ))}
-                    </div>
-                    <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition-colors">
-                      Book Appointment
-                    </button>
-                  </div>
-                )}
-              </div>
+              <Link 
+                href="/doctor/profile"
+                className="inline-block px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm transition-colors font-medium"
+              >
+                Complete Now
+              </Link>
             </div>
           </div>
-        ))}
+        </div>
+      )}
+
+      {/* Verification Status */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h3 className="text-gray-900 mb-4 font-semibold">Verification Status</h3>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-gray-700">Profile</span>
+            <span className="flex items-center gap-1 text-green-600">
+              <CheckCircle className="w-4 h-4" /> Verified
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-700">Medical License</span>
+            <span className={`flex items-center gap-1 ${
+              dashboardData.licenseVerificationStatus === 'verified' ? 'text-green-600' :
+              dashboardData.licenseVerificationStatus === 'pending' ? 'text-amber-600' :
+              'text-red-600'
+            }`}>
+              <CheckCircle className="w-4 h-4" /> 
+              {dashboardData.licenseVerificationStatus === 'verified' ? 'Verified' :
+               dashboardData.licenseVerificationStatus === 'pending' ? 'Pending' :
+               'Rejected'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-700">Credentials</span>
+            <span className={`flex items-center gap-1 ${
+              dashboardData.credentials.pending > 0 ? 'text-amber-600' : 'text-green-600'
+            }`}>
+              <AlertCircle className="w-4 h-4" /> {credentialsStatus}
+            </span>
+          </div>
+        </div>
+        <Link 
+          href="/doctor/profile"
+          className="mt-4 w-full inline-block px-4 py-2 border border-gray-300 hover:bg-gray-50 rounded-lg text-sm transition-colors text-center font-medium"
+        >
+          View Details
+        </Link>
+      </div>
+
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Profile Strength */}
+        <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg p-6 text-white">
+          <div className="flex items-center justify-between mb-2">
+            <Award className="w-6 h-6" />
+            <TrendingUp className="w-4 h-4" />
+          </div>
+          <div className="text-3xl mb-1 font-bold">{dashboardData.profileCompletion}</div>
+          <div className="text-purple-100 text-sm">Profile Strength</div>
+          <div className="text-xs text-purple-200 mt-2">Out of 100</div>
+        </div>
+
+        {/* Total Assignments */}
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-6 text-white">
+          <div className="flex items-center justify-between mb-2">
+            <Activity className="w-6 h-6" />
+            <TrendingUp className="w-4 h-4" />
+          </div>
+          <div className="text-3xl mb-1 font-bold">{dashboardData.totalAssignments}</div>
+          <div className="text-blue-100 text-sm">Total Assignments</div>
+          <div className="text-xs text-blue-200 mt-2">
+            {dashboardData.completedAssignments} completed • {dashboardData.pendingAssignments} pending
+          </div>
+        </div>
+
+        {/* Average Rating */}
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg p-6 text-white">
+          <div className="flex items-center justify-between mb-2">
+            <Star className="w-6 h-6" />
+            <span className="text-xs">↑ 0.2</span>
+          </div>
+          <div className="text-3xl mb-1 flex items-center gap-1 font-bold">
+            {dashboardData.averageRating > 0 ? dashboardData.averageRating.toFixed(1) : 'N/A'} 
+            {dashboardData.averageRating > 0 && <Star className="w-5 h-5 fill-white" />}
+          </div>
+          <div className="text-orange-100 text-sm">Average Rating</div>
+          <div className="text-xs text-orange-200 mt-2">Based on {dashboardData.totalRatings} reviews</div>
+        </div>
+
+        {/* This Month Earnings */}
+        <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-6 text-white">
+          <div className="flex items-center justify-between mb-2">
+            <DollarSign className="w-6 h-6" />
+            <span className="text-xs">+12%</span>
+          </div>
+          <div className="text-3xl mb-1 font-bold">${dashboardData.thisMonthEarnings.toLocaleString()}</div>
+          <div className="text-green-100 text-sm">This Month</div>
+          <div className="text-xs text-green-200 mt-2">
+            {dashboardData.thisMonthAssignments} assignments
+          </div>
         </div>
       </div>
-      
-      {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-3 shadow-lg">
-        <Link href="/doctor/dashboard" className="flex flex-col items-center gap-1">
-          <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <span className="text-xs text-blue-600 font-medium">Schedule</span>
-        </Link>
-        <Link href="/doctor/alerts" className="flex flex-col items-center gap-1">
-          <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-          <span className="text-xs text-gray-400">Alerts</span>
-        </Link>
-        <Link href="/doctor/profile" className="flex flex-col items-center gap-1">
-          <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-          <span className="text-xs text-gray-400">Profile</span>
-        </Link>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="text-2xl text-gray-900 mb-1 font-bold">{dashboardData.pendingAssignments}</div>
+          <div className="text-sm text-gray-600">Pending Assignments</div>
+          <div className="text-xs text-gray-500 mt-1">Awaiting your response</div>
+        </div>
+        
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="text-2xl text-gray-900 mb-1 font-bold">{dashboardData.upcomingSlots}</div>
+          <div className="text-sm text-gray-600">Upcoming Slots</div>
+          <div className="text-xs text-gray-500 mt-1">Available for booking</div>
+        </div>
+        
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="text-2xl text-gray-900 mb-1 font-bold">
+            {dashboardData.totalAssignments > 0 
+              ? Math.round((dashboardData.completedAssignments / dashboardData.totalAssignments) * 100)
+              : 0}%
+          </div>
+          <div className="text-sm text-gray-600">Completion Rate</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {dashboardData.completedAssignments}/{dashboardData.totalAssignments} completed
+          </div>
+        </div>
+        
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="text-2xl text-gray-900 mb-1 font-bold">{dashboardData.activeAffiliations}</div>
+          <div className="text-sm text-gray-600">Hospital Affiliations</div>
+          <div className="text-xs text-gray-500 mt-1">Active partnerships</div>
+        </div>
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column - Action Center & Today Schedule */}
+        <div className="lg:col-span-2 space-y-6">
+          <ActionCenter />
+          <TodaySchedule />
+        </div>
+
+        {/* Right Column - Management Stats */}
+        <div>
+          <ManagementStats />
+        </div>
+      </div>
+
+      {/* Subscription Widget */}
+      <div className="bg-gradient-to-br from-amber-400 to-amber-500 rounded-lg p-6 text-white">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Star className="w-5 h-5 fill-white" />
+              <span className="text-xl font-semibold">Your Plan: PLATINUM</span>
+            </div>
+            <div className="space-y-1 text-sm text-amber-100">
+              <div>• Visibility Weight: 100 (Highest)</div>
+              <div>• Max Affiliations: 10</div>
+              <div>• Featured badge on profile</div>
+              <div>• Priority support</div>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-amber-100">Renewal: Dec 15, 2024</span>
+          <Link 
+            href="/doctor/subscriptions"
+            className="px-4 py-2 bg-white text-amber-600 rounded-lg text-sm hover:bg-amber-50 transition-colors font-medium"
+          >
+            Manage Subscription
+          </Link>
+        </div>
       </div>
     </div>
   );
 }
-
-
-
-
-
-
-

@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // No special webpack config needed - swagger-ui-react has been removed
+  // Exclude design folder from compilation
+  webpack: (config) => {
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ['**/Doctor Dashboard Design/**'],
+    };
+    return config;
+  },
 };
 
 module.exports = nextConfig;
