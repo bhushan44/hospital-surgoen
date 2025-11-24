@@ -6,9 +6,10 @@ import {
   doctorAvailability, 
   doctorLeaves, // Use doctorLeaves instead of doctorUnavailability
   specialties,
-  users
+  users,
+  availabilityTemplates,
 } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, desc, asc, sql } from 'drizzle-orm';
+import { eq, and, desc, asc, sql, lte, gte, or, isNull, lt, gt, ne } from 'drizzle-orm';
 
 export interface CreateDoctorData {
   firstName: string;
@@ -48,8 +49,21 @@ export interface CreateDoctorAvailabilityData {
 export interface CreateDoctorUnavailabilityData {
   startDate: string;
   endDate: string;
+  leaveType?: 'sick' | 'vacation' | 'personal' | 'emergency' | 'other';
   reason?: string;
 }
+
+export interface CreateAvailabilityTemplateData {
+  templateName: string;
+  startTime: string;
+  endTime: string;
+  recurrencePattern: 'daily' | 'weekly' | 'monthly' | 'custom';
+  recurrenceDays?: string[];
+  validFrom: string;
+  validUntil?: string;
+}
+
+export type UpdateAvailabilityTemplateData = Partial<CreateAvailabilityTemplateData>;
 
 export interface DoctorQuery {
   search?: string;
@@ -64,8 +78,20 @@ export interface DoctorQuery {
   sortOrder?: 'asc' | 'desc';
 }
 
+type AvailabilityTemplateRow = typeof availabilityTemplates.$inferSelect;
+
 export class DoctorsRepository {
   private db = getDb();
+
+  private mapTemplateRow(row: AvailabilityTemplateRow | null | undefined) {
+    if (!row) return null;
+    return {
+      ...row,
+      recurrenceDays: row.recurrenceDays
+        ? row.recurrenceDays.split(',').map((day) => day.trim()).filter(Boolean)
+        : [],
+    } as AvailabilityTemplateRow & { recurrenceDays: string[] };
+  }
 
   async createDoctor(doctorData: CreateDoctorData, userId: string) {
     // Note: consultationFee and isAvailable are not in doctors table
@@ -218,6 +244,101 @@ export class DoctorsRepository {
       .returning();
   }
 
+  // Availability templates
+  async createAvailabilityTemplate(templateData: CreateAvailabilityTemplateData, doctorId: string) {
+    const [template] = await this.db
+      .insert(availabilityTemplates)
+      .values({
+        doctorId,
+        templateName: templateData.templateName,
+        startTime: templateData.startTime,
+        endTime: templateData.endTime,
+        recurrencePattern: templateData.recurrencePattern,
+        recurrenceDays: templateData.recurrenceDays?.length ? templateData.recurrenceDays.join(',') : null,
+        validFrom: templateData.validFrom,
+        validUntil: templateData.validUntil ?? null,
+      })
+      .returning();
+
+    return this.mapTemplateRow(template);
+  }
+
+  async getAvailabilityTemplates(doctorId: string) {
+    const templates = await this.db
+      .select()
+      .from(availabilityTemplates)
+      .where(eq(availabilityTemplates.doctorId, doctorId))
+      .orderBy(asc(availabilityTemplates.validFrom), asc(availabilityTemplates.startTime));
+
+    return templates
+      .map((row) => this.mapTemplateRow(row))
+      .filter(Boolean) as Array<AvailabilityTemplateRow & { recurrenceDays: string[] }>;
+  }
+
+  async getAvailabilityTemplateById(templateId: string) {
+    const [template] = await this.db
+      .select()
+      .from(availabilityTemplates)
+      .where(eq(availabilityTemplates.id, templateId))
+      .limit(1);
+
+    return this.mapTemplateRow(template);
+  }
+
+  async updateAvailabilityTemplate(templateId: string, doctorId: string, updateData: UpdateAvailabilityTemplateData) {
+    const updateFields: Record<string, any> = {};
+
+    if (updateData.templateName !== undefined) updateFields.templateName = updateData.templateName;
+    if (updateData.startTime !== undefined) updateFields.startTime = updateData.startTime;
+    if (updateData.endTime !== undefined) updateFields.endTime = updateData.endTime;
+    if (updateData.recurrencePattern !== undefined) updateFields.recurrencePattern = updateData.recurrencePattern;
+    if (updateData.recurrenceDays !== undefined) {
+      updateFields.recurrenceDays = updateData.recurrenceDays.length ? updateData.recurrenceDays.join(',') : null;
+    }
+    if (updateData.validFrom !== undefined) updateFields.validFrom = updateData.validFrom;
+    if (updateData.validUntil !== undefined) updateFields.validUntil = updateData.validUntil ?? null;
+
+    const [template] = await this.db
+      .update(availabilityTemplates)
+      .set(updateFields)
+      .where(and(
+        eq(availabilityTemplates.id, templateId),
+        eq(availabilityTemplates.doctorId, doctorId)
+      ))
+      .returning();
+
+    return this.mapTemplateRow(template);
+  }
+
+  async deleteAvailabilityTemplate(templateId: string, doctorId: string) {
+    const [template] = await this.db
+      .delete(availabilityTemplates)
+      .where(and(
+        eq(availabilityTemplates.id, templateId),
+        eq(availabilityTemplates.doctorId, doctorId)
+      ))
+      .returning();
+
+    return this.mapTemplateRow(template);
+  }
+
+  async getTemplatesActiveBetween(startDate: string, endDate: string) {
+    const templates = await this.db
+      .select()
+      .from(availabilityTemplates)
+      .where(and(
+        lte(availabilityTemplates.validFrom, endDate),
+        or(
+          isNull(availabilityTemplates.validUntil),
+          gte(availabilityTemplates.validUntil, startDate)
+        )
+      ));
+
+    return templates
+      .map((row) => this.mapTemplateRow(row))
+      .filter(Boolean) as Array<AvailabilityTemplateRow & { recurrenceDays: string[] }>;
+  }
+
   // Doctor Availability
   async createAvailability(availabilityData: CreateDoctorAvailabilityData, doctorId: string) {
     return await this.db
@@ -243,6 +364,15 @@ export class DoctorsRepository {
       .orderBy(asc(doctorAvailability.slotDate), asc(doctorAvailability.startTime));
   }
 
+  async getAvailabilityById(id: string) {
+    const [slot] = await this.db
+      .select()
+      .from(doctorAvailability)
+      .where(eq(doctorAvailability.id, id))
+      .limit(1);
+    return slot || null;
+  }
+
   async updateAvailability(id: string, updateData: Partial<CreateDoctorAvailabilityData>) {
     return await this.db
       .update(doctorAvailability)
@@ -258,6 +388,33 @@ export class DoctorsRepository {
       .returning();
   }
 
+  async hasAvailabilityOverlap(
+    doctorId: string,
+    slotDate: string,
+    startTime: string,
+    endTime: string,
+    excludeAvailabilityId?: string
+  ) {
+    let condition = and(
+      eq(doctorAvailability.doctorId, doctorId),
+      eq(doctorAvailability.slotDate, slotDate),
+      lt(doctorAvailability.startTime, endTime),
+      gt(doctorAvailability.endTime, startTime)
+    );
+
+    if (excludeAvailabilityId) {
+      condition = and(condition, ne(doctorAvailability.id, excludeAvailabilityId));
+    }
+
+    const [result] = await this.db
+      .select({ id: doctorAvailability.id })
+      .from(doctorAvailability)
+      .where(condition)
+      .limit(1);
+
+    return !!result;
+  }
+
   // Doctor Leaves (replaces doctorUnavailability)
   async createUnavailability(unavailabilityData: CreateDoctorUnavailabilityData, doctorId: string) {
     // Use doctorLeaves table instead of doctorUnavailability
@@ -268,9 +425,43 @@ export class DoctorsRepository {
         startDate: unavailabilityData.startDate,
         endDate: unavailabilityData.endDate,
         reason: unavailabilityData.reason,
-        leaveType: 'other', // Default leave type
+        leaveType: unavailabilityData.leaveType || 'other',
       })
       .returning();
+  }
+
+  async updateUnavailability(id: string, doctorId: string, updateData: Partial<CreateDoctorUnavailabilityData>) {
+    const updateFields: Record<string, any> = {};
+    
+    if (updateData.startDate !== undefined) updateFields.startDate = updateData.startDate;
+    if (updateData.endDate !== undefined) updateFields.endDate = updateData.endDate;
+    if (updateData.leaveType !== undefined) updateFields.leaveType = updateData.leaveType;
+    if (updateData.reason !== undefined) updateFields.reason = updateData.reason;
+
+    const [leave] = await this.db
+      .update(doctorLeaves)
+      .set(updateFields)
+      .where(and(
+        eq(doctorLeaves.id, id),
+        eq(doctorLeaves.doctorId, doctorId)
+      ))
+      .returning();
+
+    return leave;
+  }
+
+  async isDateOnLeave(doctorId: string, date: string): Promise<boolean> {
+    const [leave] = await this.db
+      .select({ id: doctorLeaves.id })
+      .from(doctorLeaves)
+      .where(and(
+        eq(doctorLeaves.doctorId, doctorId),
+        lte(doctorLeaves.startDate, date),
+        gte(doctorLeaves.endDate, date)
+      ))
+      .limit(1);
+
+    return !!leave;
   }
 
   async getDoctorUnavailability(doctorId: string) {

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Header from '../components/Header';
 import { isAuthenticated, getUserRole, getDashboardPath, decodeToken } from '@/lib/auth/utils';
+import apiClient from '@/lib/api/httpClient';
 
 type AccountType = 'doctor' | 'hospital' | 'admin';
 
@@ -45,26 +46,24 @@ function LoginForm() {
     setLoading(true);
     
     try {
-      // TODO: Replace with actual API endpoint
-      const response = await fetch('/api/users/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await apiClient.post('/api/users/login', {
+        email,
+        password,
+        device: {
+          device_type: 'web',
+          device_token: 'web-token',
+          app_version: '1.0.0',
+          os_version: 'web',
+          is_active: true,
         },
-        body: JSON.stringify({
-          email,
-          password,
-          device: {
-            device_type: 'web',
-            device_token: 'web-token',
-            app_version: '1.0.0',
-            os_version: 'web',
-            is_active: true,
-          },
-        }),
       });
 
-      const data = await response.json();
+      const data = response.data;
+      
+      // Store refresh token if provided
+      if (data.data?.refreshToken) {
+        localStorage.setItem('refreshToken', data.data.refreshToken);
+      }
 
       if (data.success && data.data?.accessToken) {
         // Store token
