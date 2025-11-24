@@ -1,9 +1,10 @@
 'use client';
 
-import { Save, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Save, X, CheckCircle, AlertCircle, Loader2, Upload, Camera } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { isAuthenticated } from '@/lib/auth/utils';
+import { toast } from 'sonner';
 
 export default function CompleteProfilePage() {
   const router = useRouter();
@@ -12,6 +13,10 @@ export default function CompleteProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [verificationStatus, setVerificationStatus] = useState<'pending' | 'verified' | 'rejected'>('pending');
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+  const [profilePhotoId, setProfilePhotoId] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -65,6 +70,8 @@ export default function CompleteProfilePage() {
           email: '',
           phone: '',
         });
+        setProfilePhotoUrl(null);
+        setProfilePhotoId(null);
         setVerificationStatus('pending');
         setLoading(false);
         return;
@@ -87,6 +94,21 @@ export default function CompleteProfilePage() {
           email: (doctor as any).email || '',
           phone: (doctor as any).phone || '',
         });
+        // Set profile photo
+        if (doctor.profilePhotoId) {
+          setProfilePhotoId(doctor.profilePhotoId);
+          // Fetch photo URL from files API
+          fetch(`/api/files/${doctor.profilePhotoId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then((res) => res.json())
+            .then((fileData) => {
+              if (fileData.success && fileData.data?.url) {
+                setProfilePhotoUrl(fileData.data.url);
+              }
+            })
+            .catch((err) => console.error('Error fetching profile photo:', err));
+        }
         // Set verification status based on license verification
         const verificationStatus = doctor.licenseVerificationStatus || doctor.license_verification_status || 'pending';
         if (verificationStatus === 'verified') {
@@ -105,6 +127,68 @@ export default function CompleteProfilePage() {
       setError('Failed to load profile: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePhotoUpload = async () => {
+    if (!selectedPhoto) {
+      toast.error('Please select a photo to upload');
+      return;
+    }
+
+    try {
+      setUploadingPhoto(true);
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        toast.error('Session expired. Please log in again.');
+        return;
+      }
+
+      // Upload file
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', selectedPhoto);
+      uploadFormData.append('folder', doctorId ? `doctor-profiles/${doctorId}` : 'doctor-profiles/temp');
+      uploadFormData.append('bucket', 'images');
+
+      const uploadResponse = await fetch('/api/files/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: uploadFormData,
+      });
+      const uploadData = await uploadResponse.json();
+
+      if (!uploadData.success) {
+        throw new Error(uploadData.message || 'Failed to upload photo');
+      }
+
+      // If doctor profile exists, update it. Otherwise, just store the photo ID for when profile is created.
+      if (doctorId) {
+        const updateResponse = await fetch(`/api/doctors/${doctorId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            profilePhotoId: uploadData.data.fileId,
+          }),
+        });
+        const updateData = await updateResponse.json();
+
+        if (!updateData.success) {
+          throw new Error(updateData.message || 'Failed to update profile photo');
+        }
+      }
+
+      toast.success(doctorId ? 'Profile photo updated successfully' : 'Photo ready to be saved with profile');
+      setSelectedPhoto(null);
+      setProfilePhotoId(uploadData.data.fileId);
+      setProfilePhotoUrl(uploadData.data.url);
+    } catch (err) {
+      console.error('Photo upload error:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to upload photo');
+    } finally {
+      setUploadingPhoto(false);
     }
   };
 
@@ -134,13 +218,14 @@ export default function CompleteProfilePage() {
             medicalLicenseNumber: formData.licenseNumber,
             yearsOfExperience: formData.yearsOfExperience ? parseInt(formData.yearsOfExperience) : null,
             bio: formData.bio,
+            profilePhotoId: profilePhotoId,
           }),
         });
 
         const result = await response.json();
         
         if (result.success) {
-          alert('Profile created successfully!');
+          toast.success('Profile created successfully!');
           fetchProfile(); // Refresh to get the doctor ID
         } else {
           setError(result.message || 'Failed to create profile');
@@ -159,13 +244,14 @@ export default function CompleteProfilePage() {
             medicalLicenseNumber: formData.licenseNumber,
             yearsOfExperience: parseInt(formData.yearsOfExperience) || 0,
             bio: formData.bio || null,
+            ...(profilePhotoId && { profilePhotoId }),
           }),
         });
 
         const result = await response.json();
         
         if (result.success) {
-          alert('Profile updated successfully!');
+          toast.success('Profile updated successfully!');
           fetchProfile(); // Refresh the profile
         } else {
           setError(result.message || 'Failed to update profile');
@@ -246,6 +332,85 @@ export default function CompleteProfilePage() {
           </div>
         </div>
       )}
+
+      {/* Profile Photo Section */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h3 className="text-gray-900 mb-6 font-semibold">Profile Photo</h3>
+        <div className="flex items-center gap-6">
+          <div className="relative">
+            {profilePhotoUrl || selectedPhoto ? (
+              <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-200 bg-gray-100">
+                <img
+                  src={selectedPhoto ? URL.createObjectURL(selectedPhoto) : profilePhotoUrl || ''}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <div className="w-32 h-32 rounded-full bg-gray-100 border-4 border-gray-200 flex items-center justify-center">
+                <Camera className="w-12 h-12 text-gray-400" />
+              </div>
+            )}
+            <label
+              htmlFor="profile-photo-upload"
+              className="absolute bottom-0 right-0 w-10 h-10 bg-teal-600 hover:bg-teal-700 rounded-full flex items-center justify-center cursor-pointer border-4 border-white shadow-lg transition-colors"
+            >
+              <Camera className="w-5 h-5 text-white" />
+              <input
+                type="file"
+                id="profile-photo-upload"
+                className="hidden"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    if (file.size > 5 * 1024 * 1024) {
+                      toast.error('Image size must be less than 5MB');
+                      return;
+                    }
+                    setSelectedPhoto(file);
+                  }
+                }}
+              />
+            </label>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm text-gray-600 mb-2">
+              Upload a professional photo. This will be visible to hospitals when they view your profile.
+            </p>
+            {selectedPhoto && (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePhotoUpload}
+                  disabled={uploadingPhoto}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg flex items-center gap-2 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {uploadingPhoto ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      Upload Photo
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setSelectedPhoto(null)}
+                  className="px-4 py-2 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg transition-colors font-medium text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {!selectedPhoto && !profilePhotoUrl && (
+              <p className="text-xs text-gray-500">Click the camera icon to upload a photo</p>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Basic Information Form */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">

@@ -2,34 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
-const ALLOWED_TYPES = ['degree', 'certificate', 'license', 'other'];
-
-async function getHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string }> }) {
+async function patchHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string; photoId: string }> }) {
   try {
-    const { id: doctorId } = await context.params;
-    const doctorsService = new DoctorsService();
-
-    const authorizationResult = await ensureDoctorAccess(req, doctorId, doctorsService);
-    if (!authorizationResult.allowed) {
-      return NextResponse.json(
-        { success: false, message: authorizationResult.message },
-        { status: authorizationResult.status }
-      );
-    }
-
-    const result = await doctorsService.getDoctorCredentials(doctorId);
-    return NextResponse.json(result, { status: result.success ? 200 : 400 });
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, message: 'Internal server error', error: String(error) },
-      { status: 500 }
-    );
-  }
-}
-
-async function postHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string }> }) {
-  try {
-    const { id: doctorId } = await context.params;
+    const { id: doctorId, photoId } = await context.params;
     const doctorsService = new DoctorsService();
 
     const authorizationResult = await ensureDoctorAccess(req, doctorId, doctorsService);
@@ -41,30 +16,38 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
     }
 
     const body = await req.json();
-    if (!body?.fileId || !body?.credentialType || !body?.title) {
+    if (body.isPrimary === true) {
+      const result = await doctorsService.setPrimaryPhoto(doctorId, photoId);
+      return NextResponse.json(result, { status: result.success ? 200 : 400 });
+    }
+
+    return NextResponse.json(
+      { success: false, message: 'Invalid operation' },
+      { status: 400 }
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: 'Internal server error', error: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+async function deleteHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string; photoId: string }> }) {
+  try {
+    const { id: doctorId, photoId } = await context.params;
+    const doctorsService = new DoctorsService();
+
+    const authorizationResult = await ensureDoctorAccess(req, doctorId, doctorsService);
+    if (!authorizationResult.allowed) {
       return NextResponse.json(
-        { success: false, message: 'fileId, credentialType and title are required' },
-        { status: 400 }
+        { success: false, message: authorizationResult.message },
+        { status: authorizationResult.status }
       );
     }
 
-    if (!ALLOWED_TYPES.includes(body.credentialType)) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid credential type' },
-        { status: 400 }
-      );
-    }
-
-    const payload = {
-      fileId: body.fileId,
-      credentialType: body.credentialType,
-      title: body.title,
-      institution: body.institution,
-      verificationStatus: 'pending' as const,
-    };
-
-    const result = await doctorsService.addCredential(doctorId, payload);
-    return NextResponse.json(result, { status: result.success ? 201 : 400 });
+    const result = await doctorsService.deleteProfilePhoto(doctorId, photoId);
+    return NextResponse.json(result, { status: result.success ? 200 : 400 });
   } catch (error) {
     return NextResponse.json(
       { success: false, message: 'Internal server error', error: String(error) },
@@ -97,6 +80,6 @@ async function ensureDoctorAccess(
   return { allowed: true, status: 200 };
 }
 
-export const GET = withAuthAndContext(getHandler, ['doctor', 'admin']);
-export const POST = withAuthAndContext(postHandler, ['doctor', 'admin']);
+export const PATCH = withAuthAndContext(patchHandler, ['doctor', 'admin']);
+export const DELETE = withAuthAndContext(deleteHandler, ['doctor', 'admin']);
 

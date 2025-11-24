@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
-const ALLOWED_TYPES = ['degree', 'certificate', 'license', 'other'];
-
 async function getHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: doctorId } = await context.params;
@@ -17,7 +15,7 @@ async function getHandler(req: AuthenticatedRequest, context: { params: Promise<
       );
     }
 
-    const result = await doctorsService.getDoctorCredentials(doctorId);
+    const result = await doctorsService.getDoctorProfilePhotos(doctorId);
     return NextResponse.json(result, { status: result.success ? 200 : 400 });
   } catch (error) {
     return NextResponse.json(
@@ -41,29 +39,18 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
     }
 
     const body = await req.json();
-    if (!body?.fileId || !body?.credentialType || !body?.title) {
+    if (!body?.fileId) {
       return NextResponse.json(
-        { success: false, message: 'fileId, credentialType and title are required' },
+        { success: false, message: 'fileId is required' },
         { status: 400 }
       );
     }
 
-    if (!ALLOWED_TYPES.includes(body.credentialType)) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid credential type' },
-        { status: 400 }
-      );
-    }
-
-    const payload = {
-      fileId: body.fileId,
-      credentialType: body.credentialType,
-      title: body.title,
-      institution: body.institution,
-      verificationStatus: 'pending' as const,
-    };
-
-    const result = await doctorsService.addCredential(doctorId, payload);
+    const result = await doctorsService.addProfilePhoto(
+      doctorId,
+      body.fileId,
+      body.isPrimary || false
+    );
     return NextResponse.json(result, { status: result.success ? 201 : 400 });
   } catch (error) {
     return NextResponse.json(

@@ -5,8 +5,10 @@ import {
   doctorSpecialties, 
   doctorAvailability, 
   doctorLeaves, // Use doctorLeaves instead of doctorUnavailability
+  doctorProfilePhotos,
   specialties,
-  users
+  users,
+  files,
 } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, desc, asc, sql } from 'drizzle-orm';
 
@@ -177,10 +179,25 @@ export class DoctorsRepository {
 
   async getDoctorCredentials(doctorId: string) {
     return await this.db
-      .select()
+      .select({
+        credential: doctorCredentials,
+        file: files,
+      })
       .from(doctorCredentials)
+      .leftJoin(files, eq(doctorCredentials.fileId, files.id))
       .where(eq(doctorCredentials.doctorId, doctorId))
       .orderBy(desc(doctorCredentials.uploadedAt));
+  }
+
+  async updateCredentialStatus(
+    credentialId: string,
+    verificationStatus: 'pending' | 'verified' | 'rejected'
+  ) {
+    return await this.db
+      .update(doctorCredentials)
+      .set({ verificationStatus })
+      .where(eq(doctorCredentials.id, credentialId))
+      .returning();
   }
 
   // Doctor Specialties
@@ -304,6 +321,76 @@ export class DoctorsRepository {
       .limit(1);
 
     return result[0] || null;
+  }
+
+  // Doctor Profile Photos
+  async getDoctorProfilePhotos(doctorId: string) {
+    return await this.db
+      .select({
+        id: doctorProfilePhotos.id,
+        doctorId: doctorProfilePhotos.doctorId,
+        fileId: doctorProfilePhotos.fileId,
+        isPrimary: doctorProfilePhotos.isPrimary,
+        uploadedAt: doctorProfilePhotos.uploadedAt,
+        file: {
+          id: files.id,
+          filename: files.filename,
+          url: files.url,
+          mimetype: files.mimetype,
+          size: files.size,
+        },
+      })
+      .from(doctorProfilePhotos)
+      .leftJoin(files, eq(doctorProfilePhotos.fileId, files.id))
+      .where(eq(doctorProfilePhotos.doctorId, doctorId))
+      .orderBy(desc(doctorProfilePhotos.isPrimary), desc(doctorProfilePhotos.uploadedAt));
+  }
+
+  async addProfilePhoto(doctorId: string, fileId: string, isPrimary: boolean = false) {
+    // If setting as primary, unset all other primary photos
+    if (isPrimary) {
+      await this.db
+        .update(doctorProfilePhotos)
+        .set({ isPrimary: false })
+        .where(eq(doctorProfilePhotos.doctorId, doctorId));
+    }
+
+    return await this.db
+      .insert(doctorProfilePhotos)
+      .values({
+        doctorId,
+        fileId,
+        isPrimary,
+      })
+      .returning();
+  }
+
+  async setPrimaryPhoto(doctorId: string, photoId: string) {
+    // Unset all primary photos
+    await this.db
+      .update(doctorProfilePhotos)
+      .set({ isPrimary: false })
+      .where(eq(doctorProfilePhotos.doctorId, doctorId));
+
+    // Set the selected photo as primary
+    return await this.db
+      .update(doctorProfilePhotos)
+      .set({ isPrimary: true })
+      .where(and(
+        eq(doctorProfilePhotos.id, photoId),
+        eq(doctorProfilePhotos.doctorId, doctorId)
+      ))
+      .returning();
+  }
+
+  async deleteProfilePhoto(photoId: string, doctorId: string) {
+    return await this.db
+      .delete(doctorProfilePhotos)
+      .where(and(
+        eq(doctorProfilePhotos.id, photoId),
+        eq(doctorProfilePhotos.doctorId, doctorId)
+      ))
+      .returning();
   }
 }
 

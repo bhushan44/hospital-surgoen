@@ -80,6 +80,7 @@ export function DoctorVerifications() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [credentialActionId, setCredentialActionId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDoctors();
@@ -195,6 +196,50 @@ export function DoctorVerifications() {
     } finally {
       setUpdating(null);
     }
+  };
+
+  const updateCredentialStatus = async (
+    credentialId: string,
+    status: 'verified' | 'rejected',
+    reason?: string
+  ) => {
+    if (!selectedDoctor) return;
+
+    try {
+      setCredentialActionId(`${credentialId}-${status}`);
+      const response = await fetch(`/api/admin/doctor-credentials/${credentialId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          verificationStatus: status,
+          notes: reason || notes || (status === 'verified' ? 'Credential verified by admin' : undefined),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(`Credential ${status === 'verified' ? 'approved' : 'rejected'}`);
+        fetchDoctorDetail(selectedDoctor.id);
+        fetchDoctors();
+      } else {
+        toast.error(data.message || 'Failed to update credential');
+      }
+    } catch (error) {
+      console.error('Error updating credential status:', error);
+      toast.error('Failed to update credential');
+    } finally {
+      setCredentialActionId(null);
+    }
+  };
+
+  const handleCredentialApprove = (credentialId: string) => {
+    updateCredentialStatus(credentialId, 'verified');
+  };
+
+  const handleCredentialReject = (credentialId: string) => {
+    const reason = window.prompt('Provide a reason for rejecting this credential (optional):') || undefined;
+    updateCredentialStatus(credentialId, 'rejected', reason);
   };
 
   const formatDate = (dateString: string | null) => {
@@ -461,23 +506,68 @@ export function DoctorVerifications() {
                             <Button 
                               size="sm" 
                               variant="ghost"
-                              onClick={() => window.open(cred.file.url, '_blank')}
+                              onClick={() => cred.file?.url && window.open(cred.file.url, '_blank')}
+                              disabled={!cred.file?.url}
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
                             <Button 
                               size="sm" 
                               variant="ghost"
-                              onClick={() => {
-                                const link = document.createElement('a');
-                                link.href = cred.file.url;
-                                link.download = cred.file.filename;
-                                link.click();
+                              onClick={async () => {
+                                if (!cred.file?.id) return;
+                                try {
+                                  const response = await fetch(`/api/files/${cred.file.id}/download`);
+                                  if (!response.ok) throw new Error('Download failed');
+                                  const blob = await response.blob();
+                                  const url = window.URL.createObjectURL(blob);
+                                  const link = document.createElement('a');
+                                  link.href = url;
+                                  link.download = cred.file.filename;
+                                  document.body.appendChild(link);
+                                  link.click();
+                                  document.body.removeChild(link);
+                                  window.URL.revokeObjectURL(url);
+                                } catch (err) {
+                                  console.error('Download error:', err);
+                                  toast.error('Failed to download file');
+                                }
                               }}
+                              disabled={!cred.file?.id}
                             >
                               <Download className="w-4 h-4" />
                             </Button>
                           </div>
+                          {cred.verificationStatus === 'pending' && (
+                            <div className="flex gap-2 mt-2">
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                                onClick={() => handleCredentialApprove(cred.id)}
+                                disabled={credentialActionId === `${cred.id}-verified`}
+                              >
+                                {credentialActionId === `${cred.id}-verified` ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <Check className="w-4 h-4 mr-2" />
+                                )}
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleCredentialReject(cred.id)}
+                                disabled={credentialActionId === `${cred.id}-rejected`}
+                              >
+                                {credentialActionId === `${cred.id}-rejected` ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <X className="w-4 h-4 mr-2" />
+                                )}
+                                Reject
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       ))
                     )}

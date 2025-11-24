@@ -308,16 +308,63 @@ export class DoctorsService {
   async getDoctorCredentials(doctorId: string) {
     try {
       const credentials = await this.doctorsRepository.getDoctorCredentials(doctorId);
+      const formatted = credentials.map((item: any) => ({
+        id: item.credential.id,
+        doctorId: item.credential.doctorId,
+        fileId: item.credential.fileId,
+        credentialType: item.credential.credentialType,
+        title: item.credential.title,
+        institution: item.credential.institution,
+        verificationStatus: item.credential.verificationStatus,
+        uploadedAt: item.credential.uploadedAt,
+        file: item.file
+          ? {
+              id: item.file.id,
+              filename: item.file.filename,
+              url: item.file.url,
+              mimetype: item.file.mimetype,
+              size: item.file.size,
+            }
+          : null,
+      }));
 
       return {
         success: true,
         message: 'Credentials retrieved successfully',
-        data: credentials,
+        data: formatted,
       };
     } catch (error) {
       return {
         success: false,
         message: 'Failed to retrieve credentials',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async updateCredentialStatus(
+    credentialId: string,
+    verificationStatus: 'pending' | 'verified' | 'rejected'
+  ) {
+    try {
+      const updated = await this.doctorsRepository.updateCredentialStatus(credentialId, verificationStatus);
+
+      if (!updated || updated.length === 0) {
+        return {
+          success: false,
+          message: 'Credential not found',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Credential updated successfully',
+        data: updated[0],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update credential',
         error: error instanceof Error ? error.message : String(error),
       };
     }
@@ -548,6 +595,109 @@ export class DoctorsService {
       return {
         success: false,
         message: 'Failed to retrieve doctor statistics',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // Doctor Profile Photos
+  async getDoctorProfilePhotos(doctorId: string) {
+    try {
+      const photos = await this.doctorsRepository.getDoctorProfilePhotos(doctorId);
+
+      return {
+        success: true,
+        message: 'Profile photos retrieved successfully',
+        data: photos,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to retrieve profile photos',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async addProfilePhoto(doctorId: string, fileId: string, isPrimary: boolean = false) {
+    try {
+      const doctor = await this.doctorsRepository.findDoctorById(doctorId);
+      if (!doctor) {
+        return {
+          success: false,
+          message: 'Doctor not found',
+        };
+      }
+
+      const photo = await this.doctorsRepository.addProfilePhoto(doctorId, fileId, isPrimary);
+
+      return {
+        success: true,
+        message: 'Profile photo added successfully',
+        data: photo[0],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to add profile photo',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async setPrimaryPhoto(doctorId: string, photoId: string) {
+    try {
+      const doctor = await this.doctorsRepository.findDoctorById(doctorId);
+      if (!doctor) {
+        return {
+          success: false,
+          message: 'Doctor not found',
+        };
+      }
+
+      const photo = await this.doctorsRepository.setPrimaryPhoto(doctorId, photoId);
+
+      if (photo.length === 0) {
+        return {
+          success: false,
+          message: 'Photo not found',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Primary photo updated successfully',
+        data: photo[0],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to set primary photo',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async deleteProfilePhoto(doctorId: string, photoId: string) {
+    try {
+      const doctor = await this.doctorsRepository.findDoctorById(doctorId);
+      if (!doctor) {
+        return {
+          success: false,
+          message: 'Doctor not found',
+        };
+      }
+
+      await this.doctorsRepository.deleteProfilePhoto(photoId, doctorId);
+
+      return {
+        success: true,
+        message: 'Profile photo deleted successfully',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to delete profile photo',
         error: error instanceof Error ? error.message : String(error),
       };
     }

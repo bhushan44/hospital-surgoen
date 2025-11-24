@@ -83,11 +83,22 @@ async function postHandler(req: AuthenticatedRequest) {
     });
   } catch (error) {
     console.error('File upload error:', error);
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Provide helpful message for bucket not found
+    let userMessage = 'Failed to upload file';
+    if (errorMessage.includes('Bucket not found') || errorMessage.includes('not found')) {
+      userMessage = `Storage bucket '${bucket}' not found. Please create it in your Supabase dashboard (Storage > Buckets) or run the initialization script.`;
+    } else {
+      userMessage = errorMessage;
+    }
+    
     return NextResponse.json(
       {
         success: false,
-        message: 'Failed to upload file',
-        error: error instanceof Error ? error.message : String(error),
+        message: userMessage,
+        error: errorMessage,
       },
       { status: 500 }
     );
