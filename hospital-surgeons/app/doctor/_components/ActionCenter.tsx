@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Filter, ChevronRight, MapPin, FileText } from 'lucide-react';
 import { isAuthenticated } from '@/lib/auth/utils';
 import Link from 'next/link';
+import apiClient from '@/lib/api/httpClient';
 
 interface PendingRequest {
   id: string;
@@ -29,14 +30,8 @@ export function ActionCenter() {
 
   const fetchPendingRequests = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/doctors/pending-assignments?limit=5', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const result = await response.json();
+      const response = await apiClient.get('/api/doctors/pending-assignments?limit=5');
+      const result = response.data;
       if (result.success) {
         setPendingRequests(result.data);
       }
@@ -77,6 +72,7 @@ export function ActionCenter() {
 
   const upcomingAssignments = [
     {
+      id: 'upcoming-1',
       date: 'Nov 13',
       time: '9:00 AM - 12:00 PM',
       hospital: 'City Heart Hospital',
@@ -84,6 +80,7 @@ export function ActionCenter() {
       type: 'Routine checkup'
     },
     {
+      id: 'upcoming-2',
       date: 'Nov 13',
       time: '2:00 PM - 4:00 PM',
       hospital: 'Metro General',
@@ -94,16 +91,19 @@ export function ActionCenter() {
 
   const recentActivity = [
     {
+      id: 'activity-1',
       time: '2 min ago',
       text: 'Accepted assignment from City Heart',
       icon: '✅'
     },
     {
+      id: 'activity-2',
       time: '1 hour ago',
       text: 'Completed: John Doe consultation',
       icon: '✓'
     },
     {
+      id: 'activity-3',
       time: '3 hours ago',
       text: 'Assignment expired (no response)',
       icon: '⏰'
@@ -198,8 +198,8 @@ export function ActionCenter() {
           </Link>
         </div>
         <div className="divide-y divide-gray-200">
-          {upcomingAssignments.map((assignment, index) => (
-            <div key={index} className="p-4 hover:bg-gray-50 transition-colors">
+          {upcomingAssignments.map((assignment) => (
+            <div key={assignment.id} className="p-4 hover:bg-gray-50 transition-colors">
               <div className="text-sm text-gray-600 mb-2">
                 {assignment.date} • {assignment.time}
               </div>
@@ -228,8 +228,8 @@ export function ActionCenter() {
           <h2 className="text-gray-900 font-semibold">RECENT ACTIVITY</h2>
         </div>
         <div className="divide-y divide-gray-200">
-          {recentActivity.map((activity, index) => (
-            <div key={index} className="p-4 hover:bg-gray-50 transition-colors">
+          {recentActivity.map((activity) => (
+            <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors">
               <div className="text-sm text-gray-500 mb-1">
                 {activity.icon} {activity.time}
               </div>

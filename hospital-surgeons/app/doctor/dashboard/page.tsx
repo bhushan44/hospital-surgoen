@@ -8,6 +8,8 @@ import { ActionCenter } from '../_components/ActionCenter';
 import { TodaySchedule } from '../_components/TodaySchedule';
 import { ManagementStats } from '../_components/ManagementStats';
 import { isAuthenticated } from '@/lib/auth/utils';
+import apiClient from '@/lib/api/httpClient';
+import type { AxiosError } from 'axios';
 
 interface DashboardData {
   totalAssignments: number;
@@ -27,6 +29,13 @@ interface DashboardData {
   };
   activeAffiliations: number;
   licenseVerificationStatus: string;
+  subscription?: {
+    planName: string;
+    visibilityWeight: number;
+    maxAffiliations: number;
+    featured: boolean;
+    renewalDate: string;
+  };
 }
 
 export default function DoctorDashboardPage() {
@@ -36,6 +45,7 @@ export default function DoctorDashboardPage() {
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('rememberMe');
     router.push('/login');
   };
@@ -48,18 +58,12 @@ export default function DoctorDashboardPage() {
 
   const fetchDashboardData = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      
       // Fetch dashboard stats
-      const dashboardResponse = await fetch('/api/doctors/dashboard', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const dashboardResult = await dashboardResponse.json();
+      const dashboardResponse = await apiClient.get('/api/doctors/dashboard');
+      const dashboardResult = dashboardResponse.data;
       
       // If profile doesn't exist (404), show empty state
-      if (dashboardResponse.status === 404 || !dashboardResult.success) {
+      if (!dashboardResult.success) {
         setDashboardData(null);
         setLoading(false);
         return;
@@ -68,14 +72,25 @@ export default function DoctorDashboardPage() {
       // Fetch earnings (optional - don't fail if it returns 404)
       let earningsResult: any = { success: false, data: null };
       try {
-        const earningsResponse = await fetch('/api/doctors/earnings', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        earningsResult = await earningsResponse.json();
+        const earningsResponse = await apiClient.get('/api/doctors/earnings');
+        earningsResult = earningsResponse.data;
       } catch (err) {
-        console.log('Earnings endpoint not available:', err);
+        const axiosError = err as AxiosError;
+        if (axiosError.response?.status !== 404) {
+          console.log('Earnings endpoint not available:', err);
+        }
+      }
+
+      // Fetch subscription (optional - don't fail if it returns 404)
+      let subscriptionResult: any = { success: false, data: null };
+      try {
+        const subscriptionResponse = await apiClient.get('/api/subscriptions?status=active&limit=1');
+        subscriptionResult = subscriptionResponse.data;
+      } catch (err) {
+        const axiosError = err as AxiosError;
+        if (axiosError.response?.status !== 404) {
+          console.log('Subscription endpoint not available:', err);
+        }
       }
 
       if (dashboardResult.success && dashboardResult.data) {
@@ -86,11 +101,38 @@ export default function DoctorDashboardPage() {
           data.thisMonthEarnings = (earningsResult.data as any).thisMonthEarnings || 0;
           data.thisMonthAssignments = (earningsResult.data as any).thisMonthAssignments || 0;
         }
+        // Merge subscription data if available
+        if (subscriptionResult.success && subscriptionResult.data && Array.isArray(subscriptionResult.data) && subscriptionResult.data.length > 0) {
+          const subscription = subscriptionResult.data[0];
+          // Fetch plan details if planId exists
+          if (subscription.planId) {
+            try {
+              const planResponse = await apiClient.get(`/api/subscriptions/plans/${subscription.planId}`);
+              const planData = planResponse.data;
+              if (planData.success && planData.data) {
+                data.subscription = {
+                  planName: planData.data.name || 'PLATINUM',
+                  visibilityWeight: planData.data.visibilityWeight || 100,
+                  maxAffiliations: planData.data.maxAffiliations || 10,
+                  featured: planData.data.featured || false,
+                  renewalDate: subscription.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                };
+              }
+            } catch (err) {
+              console.log('Plan details not available:', err);
+            }
+          }
+        }
         setDashboardData(data);
       }
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      setDashboardData(null);
+      const axiosError = error as AxiosError;
+      if (axiosError.response?.status === 404) {
+        setDashboardData(null);
+      } else {
+        console.error('Error fetching dashboard data:', error);
+        setDashboardData(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -313,31 +355,35 @@ export default function DoctorDashboardPage() {
       </div>
 
       {/* Subscription Widget */}
-      <div className="bg-gradient-to-br from-amber-400 to-amber-500 rounded-lg p-6 text-white">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Star className="w-5 h-5 fill-white" />
-              <span className="text-xl font-semibold">Your Plan: PLATINUM</span>
-            </div>
-            <div className="space-y-1 text-sm text-amber-100">
-              <div>• Visibility Weight: 100 (Highest)</div>
-              <div>• Max Affiliations: 10</div>
-              <div>• Featured badge on profile</div>
-              <div>• Priority support</div>
+      {dashboardData.subscription && (
+        <div className="bg-gradient-to-br from-amber-400 to-amber-500 rounded-lg p-6 text-white">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Star className="w-5 h-5 fill-white" />
+                <span className="text-xl font-semibold">Your Plan: {dashboardData.subscription.planName.toUpperCase()}</span>
+              </div>
+              <div className="space-y-1 text-sm text-amber-100">
+                <div>• Visibility Weight: {dashboardData.subscription.visibilityWeight} {dashboardData.subscription.visibilityWeight >= 100 ? '(Highest)' : ''}</div>
+                <div>• Max Affiliations: {dashboardData.subscription.maxAffiliations}</div>
+                {dashboardData.subscription.featured && <div>• Featured badge on profile</div>}
+                <div>• Priority support</div>
+              </div>
             </div>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-amber-100">
+              Renewal: {new Date(dashboardData.subscription.renewalDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+            <Link 
+              href="/doctor/subscriptions"
+              className="px-4 py-2 bg-white text-amber-600 rounded-lg text-sm hover:bg-amber-50 transition-colors font-medium"
+            >
+              Manage Subscription
+            </Link>
+          </div>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-amber-100">Renewal: Dec 15, 2024</span>
-          <Link 
-            href="/doctor/subscriptions"
-            className="px-4 py-2 bg-white text-amber-600 rounded-lg text-sm hover:bg-amber-50 transition-colors font-medium"
-          >
-            Manage Subscription
-          </Link>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

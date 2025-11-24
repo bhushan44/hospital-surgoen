@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Settings, CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Plus, Settings, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { AddSlotModal } from './AddSlotModal';
+import { ManageTemplatesModal } from './ManageTemplatesModal';
 import { isAuthenticated } from '@/lib/auth/utils';
+import apiClient from '@/lib/api/httpClient';
 
 interface ManagementStatsProps {
   onAddSlot?: () => void;
@@ -21,6 +23,11 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
     avgRating: 0,
     revenue: 0,
   });
+  const [hospitals, setHospitals] = useState<Array<{ name: string; preferred: boolean }>>([]);
+  const [upcomingLeave, setUpcomingLeave] = useState<string | null>(null);
+  const [availabilityDates, setAvailabilityDates] = useState<Set<number>>(new Set());
+  const [leaveDates, setLeaveDates] = useState<Set<number>>(new Set());
+  const [bookedDates, setBookedDates] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,32 +38,136 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      
       // Get doctor profile
-      const profileResponse = await fetch('/api/doctors/profile', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const profileData = await profileResponse.json();
+      const profileResponse = await apiClient.get('/api/doctors/profile');
+      const profileData = profileResponse.data;
       
       if (profileData.success && profileData.data) {
         const id = profileData.data.id;
         setDoctorId(id);
 
         // Get stats
-        const statsResponse = await fetch(`/api/doctors/${id}/stats`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const statsData = await statsResponse.json();
+        const statsResponse = await apiClient.get(`/api/doctors/${id}/stats`);
+        const statsData = statsResponse.data;
+
+        // Get pending assignments to calculate acceptance rate
+        let pendingCount = 0;
+        let completedCount = 0;
+        try {
+          const pendingResponse = await apiClient.get(`/api/doctors/pending-assignments?limit=1000`);
+          if (pendingResponse.data.success && Array.isArray(pendingResponse.data.data)) {
+            pendingCount = pendingResponse.data.data.length;
+          }
+        } catch (err) {
+          console.log('Error fetching pending assignments:', err);
+        }
+
+        // Get earnings for revenue
+        let revenue = 0;
+        try {
+          const earningsResponse = await apiClient.get('/api/doctors/earnings');
+          if (earningsResponse.data.success && earningsResponse.data.data) {
+            revenue = earningsResponse.data.data.totalEarnings || 0;
+          }
+        } catch (err) {
+          console.log('Error fetching earnings:', err);
+        }
 
         if (statsData.success && statsData.data) {
+          completedCount = statsData.data.totalBookings || 0;
+          const totalRequests = pendingCount + completedCount;
+          const acceptanceRate = totalRequests > 0 
+            ? Math.round((completedCount / totalRequests) * 100) 
+            : 0;
+
           setStats({
-            completed: statsData.data.totalBookings || 0,
-            acceptance: 94, // Calculate from pending vs completed
+            completed: completedCount,
+            acceptance: acceptanceRate,
             avgRating: parseFloat(statsData.data.averageRating || '0'),
-            revenue: 126000, // Will be fetched from earnings API
+            revenue: revenue,
           });
         }
+
+        // Fetch upcoming leaves and mark calendar
+        try {
+          const leavesResponse = await apiClient.get(`/api/doctors/${id}/unavailability`);
+          if (leavesResponse.data.success && Array.isArray(leavesResponse.data.data)) {
+            const today = new Date();
+            const currentMonth = today.getMonth();
+            const currentYear = today.getFullYear();
+            const leaveDatesSet = new Set<number>();
+            
+            const upcoming = leavesResponse.data.data
+              .filter((leave: any) => {
+                const endDate = new Date(leave.endDate);
+                return endDate >= today;
+              })
+              .sort((a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0];
+            
+            // Mark leave dates on calendar for current month
+            leavesResponse.data.data.forEach((leave: any) => {
+              const startDate = new Date(leave.startDate);
+              const endDate = new Date(leave.endDate);
+              
+              // Only mark dates in current month
+              if (startDate.getMonth() === currentMonth && startDate.getFullYear() === currentYear) {
+                for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                  if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
+                    leaveDatesSet.add(d.getDate());
+                  }
+                }
+              }
+            });
+            
+            setLeaveDates(leaveDatesSet);
+            
+            if (upcoming) {
+              const startDate = new Date(upcoming.startDate);
+              const endDate = new Date(upcoming.endDate);
+              const type = upcoming.leaveType || 'Leave';
+              setUpcomingLeave(
+                `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}-${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${type})`
+              );
+            }
+          }
+        } catch (err) {
+          console.log('Error fetching leaves:', err);
+        }
+
+        // Fetch availability slots for current month
+        try {
+          const availabilityResponse = await apiClient.get(`/api/doctors/${id}/availability`);
+          if (availabilityResponse.data.success && Array.isArray(availabilityResponse.data.data)) {
+            const today = new Date();
+            const currentMonth = today.getMonth();
+            const currentYear = today.getFullYear();
+            const availabilityDatesSet = new Set<number>();
+            const bookedDatesSet = new Set<number>();
+            
+            availabilityResponse.data.data.forEach((slot: any) => {
+              const slotDate = new Date(slot.slotDate);
+              
+              // Only mark dates in current month
+              if (slotDate.getMonth() === currentMonth && slotDate.getFullYear() === currentYear) {
+                const day = slotDate.getDate();
+                availabilityDatesSet.add(day);
+                
+                if (slot.status === 'booked') {
+                  bookedDatesSet.add(day);
+                }
+              }
+            });
+            
+            setAvailabilityDates(availabilityDatesSet);
+            setBookedDates(bookedDatesSet);
+          }
+        } catch (err) {
+          console.log('Error fetching availability:', err);
+        }
+
+        // Fetch hospital affiliations (if API exists)
+        // For now, we'll keep the hardcoded list as there's no specific API endpoint
+        // This can be updated when the affiliations API is available
       }
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -65,27 +176,6 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
     }
   };
 
-  const templates = [
-    {
-      name: 'Regular OPD Hours',
-      days: 'Mon, Wed, Fri',
-      time: '9:00 AM - 12:00 PM',
-      validity: 'Nov 1 - Dec 31'
-    },
-    {
-      name: 'Evening Consultations',
-      days: 'Tue, Thu',
-      time: '5:00 PM - 8:00 PM',
-      validity: 'Nov 1 - Dec 31'
-    }
-  ];
-
-  const hospitals = [
-    { name: 'City Heart Hospital', preferred: true },
-    { name: 'Metro General', preferred: true },
-    { name: 'Apollo Clinic', preferred: false },
-    { name: 'Fortis Healthcare', preferred: false }
-  ];
 
   const currentDate = new Date();
   const currentMonth = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -157,9 +247,13 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
                             currentDate.getFullYear() === today.getFullYear();
               
               let dotColor = '';
-              if (isToday) dotColor = 'bg-[#0066CC]'; // Today - booked
-              else if ([13, 15, 17].includes(day)) dotColor = 'bg-[#10B981]'; // Available
-              else if ([20, 21, 22].includes(day)) dotColor = 'bg-[#EF4444]'; // Leave
+              if (leaveDates.has(day)) {
+                dotColor = 'bg-[#EF4444]'; // Leave
+              } else if (bookedDates.has(day)) {
+                dotColor = 'bg-[#0066CC]'; // Booked
+              } else if (availabilityDates.has(day)) {
+                dotColor = 'bg-[#10B981]'; // Available
+              }
 
               return (
                 <div key={i} className="aspect-square flex flex-col items-center justify-center">
@@ -202,10 +296,17 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
           <h3 className="text-gray-900 font-semibold">LEAVE MANAGEMENT</h3>
         </div>
         <div className="p-4 space-y-3">
-          <div>
-            <div className="text-sm text-gray-600 mb-2">Upcoming Leave:</div>
-            <div className="text-sm text-gray-700">🏖️ Nov 20-22 (Vacation)</div>
-          </div>
+          {upcomingLeave ? (
+            <div>
+              <div className="text-sm text-gray-600 mb-2">Upcoming Leave:</div>
+              <div className="text-sm text-gray-700">🏖️ {upcomingLeave}</div>
+            </div>
+          ) : (
+            <div>
+              <div className="text-sm text-gray-600 mb-2">Upcoming Leave:</div>
+              <div className="text-sm text-gray-500">No upcoming leaves</div>
+            </div>
+          )}
           <Link
             href="/doctor/leaves"
             className="w-full block px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-center font-medium"
@@ -263,23 +364,29 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
       {/* Affiliated Hospitals */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200" style={{ backgroundImage: 'none' }}>
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-gray-900 font-semibold">HOSPITALS (8/10)</h3>
+          <h3 className="text-gray-900 font-semibold">
+            HOSPITALS {hospitals.length > 0 ? `(${hospitals.length}/10)` : ''}
+          </h3>
           <Link href="/doctor/hospitals" className="text-[#0066CC] hover:underline">
             <Plus className="w-4 h-4" />
           </Link>
         </div>
         <div className="p-4 space-y-2">
-          {hospitals.map((hospital, index) => (
-            <div key={index} className="text-sm text-gray-700 flex items-center gap-2">
-              {hospital.preferred && <span>⭐</span>}
-              <span>{hospital.name}</span>
-            </div>
-          ))}
+          {hospitals.length > 0 ? (
+            hospitals.map((hospital, index) => (
+              <div key={index} className="text-sm text-gray-700 flex items-center gap-2">
+                {hospital.preferred && <span>⭐</span>}
+                <span>{hospital.name}</span>
+              </div>
+            ))
+          ) : (
+            <div className="text-sm text-gray-500 text-center py-2">No hospital affiliations yet</div>
+          )}
           <Link
             href="/doctor/hospitals"
             className="w-full mt-2 block px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-center font-medium"
           >
-            View All
+            {hospitals.length > 0 ? 'View All' : 'Add Hospital'}
           </Link>
         </div>
       </div>
@@ -296,60 +403,8 @@ export function ManagementStats({ onAddSlot, onManageTemplates }: ManagementStat
         />
       )}
 
-      {showManageTemplates && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <h2 className="text-gray-900 font-semibold">Recurring Availability</h2>
-              <button 
-                onClick={() => setShowManageTemplates(false)}
-                className="p-1 hover:bg-gray-100 rounded transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4 overflow-y-auto flex-1">
-              <button className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#0066CC] hover:bg-[#0052a3] text-white rounded-lg transition-colors font-medium">
-                <Plus className="w-4 h-4" />
-                <span>Create New Template</span>
-              </button>
-              <div>
-                <h3 className="text-sm text-gray-600 mb-4 font-medium">Active Templates:</h3>
-                <div className="space-y-4">
-                  {templates.map((template, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-4">
-                      <h4 className="text-gray-900 mb-2 font-semibold">{template.name}</h4>
-                      <div className="text-sm text-gray-600 space-y-1 mb-4">
-                        <div>{template.days}</div>
-                        <div>{template.time}</div>
-                        <div>Valid: {template.validity}</div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button className="px-3 py-1.5 text-sm border border-gray-300 hover:bg-gray-50 rounded transition-colors font-medium">
-                          Edit
-                        </button>
-                        <button className="px-3 py-1.5 text-sm border border-gray-300 hover:bg-gray-50 rounded transition-colors font-medium">
-                          Duplicate
-                        </button>
-                        <button className="px-3 py-1.5 text-sm border border-[#EF4444] text-[#EF4444] hover:bg-red-50 rounded transition-colors font-medium">
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="p-4 border-t border-gray-200 flex justify-end">
-              <button 
-                onClick={() => setShowManageTemplates(false)}
-                className="px-6 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors font-medium"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+      {showManageTemplates && doctorId && (
+        <ManageTemplatesModal doctorId={doctorId} onClose={() => setShowManageTemplates(false)} />
       )}
     </div>
   );

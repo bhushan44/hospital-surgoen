@@ -2,6 +2,7 @@
 
 import { X, Calendar, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import apiClient from '@/lib/api/httpClient';
 
 interface AddSlotModalProps {
   doctorId: string;
@@ -63,26 +64,17 @@ export function AddSlotModal({ doctorId, onClose, onSuccess }: AddSlotModalProps
 
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
-      
-      const response = await fetch(`/api/doctors/${doctorId}/availability`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          slotDate: formData.slotDate,
-          startTime: formData.startTime,
-          endTime: formData.endTime,
-          notes: formData.notes || null,
-          status: 'available',
-          isManual: true,
-        }),
+      const response = await apiClient.post(`/api/doctors/${doctorId}/availability`, {
+        slotDate: formData.slotDate,
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+        notes: formData.notes || null,
+        status: 'available',
+        isManual: true,
       });
 
-      const data = await response.json();
-      
+      const data = response.data;
+
       if (data.success) {
         onSuccess?.();
         onClose();

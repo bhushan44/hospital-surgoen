@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Phone, Navigation, Eye } from 'lucide-react';
 import { isAuthenticated } from '@/lib/auth/utils';
+import apiClient from '@/lib/api/httpClient';
 
 interface ScheduleItem {
   time: string;
@@ -28,13 +29,9 @@ export function TodaySchedule() {
 
   const fetchTodaySchedule = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      
       // Get doctor profile first
-      const profileResponse = await fetch('/api/doctors/profile', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const profileData = await profileResponse.json();
+      const profileResponse = await apiClient.get('/api/doctors/profile');
+      const profileData = profileResponse.data;
       
       if (!profileData.success || !profileData.data) {
         setLoading(false);
@@ -45,16 +42,12 @@ export function TodaySchedule() {
       const today = new Date().toISOString().split('T')[0];
 
       // Get today's availability
-      const availabilityResponse = await fetch(`/api/doctors/${doctorId}/availability?slotDate=${today}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const availabilityData = await availabilityResponse.json();
+      const availabilityResponse = await apiClient.get(`/api/doctors/${doctorId}/availability?slotDate=${today}`);
+      const availabilityData = availabilityResponse.data;
 
       // Get today's assignments
-      const assignmentsResponse = await fetch(`/api/bookings?doctorId=${doctorId}&status=confirmed&limit=10`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const assignmentsData = await assignmentsResponse.json();
+      const assignmentsResponse = await apiClient.get(`/api/bookings?doctorId=${doctorId}&status=confirmed&limit=10`);
+      const assignmentsData = assignmentsResponse.data;
 
       // Combine and format schedule
       const scheduleItems: ScheduleItem[] = [];

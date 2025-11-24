@@ -47,6 +47,7 @@ const credentialTypes = [
 const CREDENTIALS_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_CREDENTIALS_BUCKET || 'images';
 
 export default function CredentialsDocumentsPage() {
+  const router = useRouter();
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);

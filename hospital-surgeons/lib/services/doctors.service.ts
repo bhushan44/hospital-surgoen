@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import { DoctorsRepository, CreateDoctorData, CreateDoctorCredentialData, CreateDoctorSpecialtyData, CreateDoctorAvailabilityData, CreateDoctorUnavailabilityData, DoctorQuery } from '@/lib/repositories/doctors.repository';
+import { DoctorsRepository, CreateDoctorData, CreateDoctorCredentialData, CreateDoctorSpecialtyData, CreateDoctorAvailabilityData, CreateDoctorUnavailabilityData, DoctorQuery, CreateAvailabilityTemplateData, UpdateAvailabilityTemplateData } from '@/lib/repositories/doctors.repository';
 import { UsersService } from '@/lib/services/users.service';
 
 export interface CreateDoctorDto {
@@ -30,6 +30,58 @@ export interface UpdateDoctorDto {
 export class DoctorsService {
   private doctorsRepository = new DoctorsRepository();
   private usersService = new UsersService();
+
+  private datesOverlap(aStart: string, aEnd?: string | null, bStart?: string, bEnd?: string | null) {
+    const aEndValue = aEnd ?? '9999-12-31';
+    const bStartValue = bStart ?? '0001-01-01';
+    const bEndValue = bEnd ?? '9999-12-31';
+    return aStart <= bEndValue && bStartValue <= aEndValue;
+  }
+
+  private getTemplateDaySet(template: { recurrencePattern: string; recurrenceDays?: string[] }) {
+    if (template.recurrencePattern === 'daily') {
+      return new Set(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+    }
+    if (template.recurrencePattern === 'monthly') {
+      return new Set<string>(); // handled separately
+    }
+    return new Set((template.recurrenceDays || []).map((d) => d.toLowerCase()));
+  }
+
+  private templatesConflict(newTemplate: any, existingTemplate: any) {
+    if (!this.datesOverlap(newTemplate.validFrom, newTemplate.validUntil, existingTemplate.validFrom, existingTemplate.validUntil)) {
+      return false;
+    }
+
+    const timesOverlap =
+      newTemplate.startTime < existingTemplate.endTime && existingTemplate.startTime < newTemplate.endTime;
+    if (!timesOverlap) {
+      return false;
+    }
+
+    if (newTemplate.recurrencePattern === 'monthly' && existingTemplate.recurrencePattern === 'monthly') {
+      return true;
+    }
+
+    if (newTemplate.recurrencePattern === 'monthly' || existingTemplate.recurrencePattern === 'monthly') {
+      return newTemplate.recurrencePattern === 'daily' || existingTemplate.recurrencePattern === 'daily';
+    }
+
+    if (newTemplate.recurrencePattern === 'daily' || existingTemplate.recurrencePattern === 'daily') {
+      return true;
+    }
+
+    const newDays = this.getTemplateDaySet(newTemplate);
+    const existingDays = this.getTemplateDaySet(existingTemplate);
+    if (newDays.size === 0 || existingDays.size === 0) return false;
+
+    for (const day of newDays) {
+      if (existingDays.has(day)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   async createDoctor(createDoctorDto: CreateDoctorDto) {
     try {
@@ -439,6 +491,146 @@ export class DoctorsService {
     }
   }
 
+  // Availability templates
+  async createAvailabilityTemplate(doctorId: string, templateDto: CreateAvailabilityTemplateData) {
+    try {
+      const doctor = await this.doctorsRepository.findDoctorById(doctorId);
+      if (!doctor) {
+        return {
+          success: false,
+          message: 'Doctor not found',
+        };
+      }
+
+      const existingTemplates = await this.doctorsRepository.getAvailabilityTemplates(doctorId);
+      const conflict = existingTemplates.some((template) =>
+        this.templatesConflict(
+          {
+            ...templateDto,
+            recurrenceDays: templateDto.recurrencePattern === 'daily' || templateDto.recurrencePattern === 'monthly'
+              ? []
+              : templateDto.recurrenceDays || [],
+          },
+          template,
+        )
+      );
+
+      if (conflict) {
+        return {
+          success: false,
+          message: 'Template overlaps with an existing recurring schedule. Adjust timing or days.',
+        };
+      }
+
+      const template = await this.doctorsRepository.createAvailabilityTemplate(templateDto, doctorId);
+
+      return {
+        success: true,
+        message: 'Availability template created successfully',
+        data: template,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to create availability template',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async getDoctorAvailabilityTemplates(doctorId: string) {
+    try {
+      const templates = await this.doctorsRepository.getAvailabilityTemplates(doctorId);
+      return {
+        success: true,
+        message: 'Availability templates retrieved successfully',
+        data: templates,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to retrieve availability templates',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async updateAvailabilityTemplate(doctorId: string, templateId: string, updateData: UpdateAvailabilityTemplateData) {
+    try {
+      const currentTemplate = await this.doctorsRepository.getAvailabilityTemplateById(templateId);
+      if (!currentTemplate || currentTemplate.doctorId !== doctorId) {
+        return {
+          success: false,
+          message: 'Template not found or does not belong to doctor',
+        };
+      }
+
+      const mergedTemplate = {
+        templateName: updateData.templateName ?? currentTemplate.templateName,
+        startTime: updateData.startTime ?? currentTemplate.startTime,
+        endTime: updateData.endTime ?? currentTemplate.endTime,
+        recurrencePattern: (updateData.recurrencePattern ?? currentTemplate.recurrencePattern) as 'daily' | 'weekly' | 'monthly' | 'custom',
+        recurrenceDays:
+          (updateData.recurrencePattern ?? currentTemplate.recurrencePattern) === 'daily' ||
+          (updateData.recurrencePattern ?? currentTemplate.recurrencePattern) === 'monthly'
+            ? []
+            : updateData.recurrenceDays ?? currentTemplate.recurrenceDays ?? [],
+        validFrom: updateData.validFrom ?? currentTemplate.validFrom,
+        validUntil: updateData.validUntil ?? currentTemplate.validUntil,
+      };
+
+      const templates = await this.doctorsRepository.getAvailabilityTemplates(doctorId);
+      const conflict = templates
+        .filter((tpl) => tpl.id !== templateId)
+        .some((tpl) => this.templatesConflict(mergedTemplate, tpl));
+
+      if (conflict) {
+        return {
+          success: false,
+          message: 'Updated template overlaps with another recurring schedule. Please adjust times/days.',
+        };
+      }
+
+      const template = await this.doctorsRepository.updateAvailabilityTemplate(templateId, doctorId, updateData);
+
+      return {
+        success: true,
+        message: 'Availability template updated successfully',
+        data: template,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update availability template',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async deleteAvailabilityTemplate(doctorId: string, templateId: string) {
+    try {
+      const template = await this.doctorsRepository.deleteAvailabilityTemplate(templateId, doctorId);
+
+      if (!template) {
+        return {
+          success: false,
+          message: 'Template not found or does not belong to doctor',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Availability template deleted successfully',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to delete availability template',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   // Doctor Availability
   async addAvailability(doctorId: string, availabilityDto: CreateDoctorAvailabilityData) {
     try {
@@ -449,6 +641,19 @@ export class DoctorsService {
           message: 'Doctor not found',
         };
       }
+
+       const overlap = await this.doctorsRepository.hasAvailabilityOverlap(
+         doctorId,
+         availabilityDto.slotDate,
+         availabilityDto.startTime,
+         availabilityDto.endTime,
+       );
+       if (overlap) {
+         return {
+           success: false,
+           message: 'Slot overlaps with an existing availability. Choose a different time range.',
+         };
+       }
 
       const availability = await this.doctorsRepository.createAvailability(availabilityDto, doctorId);
 
@@ -486,7 +691,39 @@ export class DoctorsService {
 
   async updateAvailability(availabilityId: string, updateData: Partial<CreateDoctorAvailabilityData>) {
     try {
-      const availability = await this.doctorsRepository.updateAvailability(availabilityId, updateData);
+      const existing = await this.doctorsRepository.getAvailabilityById(availabilityId);
+      if (!existing) {
+        return {
+          success: false,
+          message: 'Availability slot not found',
+        };
+      }
+
+      const slotDate = updateData.slotDate ?? existing.slotDate;
+      const startTime = updateData.startTime ?? existing.startTime;
+      const endTime = updateData.endTime ?? existing.endTime;
+
+      const overlap = await this.doctorsRepository.hasAvailabilityOverlap(
+        existing.doctorId,
+        slotDate,
+        startTime,
+        endTime,
+        availabilityId,
+      );
+
+      if (overlap) {
+        return {
+          success: false,
+          message: 'Updated slot overlaps with an existing availability. Choose a different time range.',
+        };
+      }
+
+      const availability = await this.doctorsRepository.updateAvailability(availabilityId, {
+        ...updateData,
+        slotDate,
+        startTime,
+        endTime,
+      });
 
       return {
         success: true,
@@ -559,6 +796,31 @@ export class DoctorsService {
       return {
         success: false,
         message: 'Failed to retrieve unavailability',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async updateUnavailability(doctorId: string, unavailabilityId: string, updateData: Partial<CreateDoctorUnavailabilityData>) {
+    try {
+      const unavailability = await this.doctorsRepository.updateUnavailability(unavailabilityId, doctorId, updateData);
+
+      if (!unavailability) {
+        return {
+          success: false,
+          message: 'Leave not found or does not belong to doctor',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Leave updated successfully',
+        data: unavailability,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update leave',
         error: error instanceof Error ? error.message : String(error),
       };
     }

@@ -1,10 +1,13 @@
 'use client';
 
-import { Plus, Trash2, Clock, Calendar, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Clock, Calendar, Loader2, RefreshCw, Settings } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AddSlotModal } from '../_components/AddSlotModal';
+import { ManageTemplatesModal } from '../_components/ManageTemplatesModal';
 import { isAuthenticated } from '@/lib/auth/utils';
+import apiClient from '@/lib/api/httpClient';
+import type { AxiosError } from 'axios';
 
 interface TimeSlot {
   id: string;
@@ -13,6 +16,19 @@ interface TimeSlot {
   endTime: string;
   status: 'available' | 'booked';
   notes?: string | null;
+  templateId?: string | null;
+  isManual?: boolean | null;
+}
+
+interface AvailabilityTemplate {
+  id: string;
+  templateName: string;
+  startTime: string;
+  endTime: string;
+  recurrencePattern: string;
+  recurrenceDays: string[];
+  validFrom: string;
+  validUntil?: string | null;
 }
 
 export default function SetAvailabilityPage() {
@@ -23,6 +39,12 @@ export default function SetAvailabilityPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<AvailabilityTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generationMessage, setGenerationMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -35,6 +57,7 @@ export default function SetAvailabilityPage() {
   useEffect(() => {
     if (doctorId) {
       fetchAvailability();
+      fetchTemplates();
     }
   }, [doctorId]);
 
@@ -45,30 +68,45 @@ export default function SetAvailabilityPage() {
         router.push('/login');
         return;
       }
-      
-      const response = await fetch('/api/doctors/profile', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      
-      if (response.status === 404 || !data.success) {
-        // Profile doesn't exist yet - show error but don't redirect
-        setError('Please complete your profile first to manage availability. You can still add slots, but they will be linked after profile creation.');
-        setLoading(false);
-        // Don't redirect - let user stay on the page
-        return;
-      }
-      
-      if (data.success && data.data && data.data.id) {
+
+      const response = await apiClient.get('/api/doctors/profile');
+      const data = response.data;
+
+      if (data.success && data.data?.id) {
         setDoctorId(data.data.id);
       } else {
         setError('Failed to load doctor profile. Please refresh the page.');
         setLoading(false);
       }
     } catch (err) {
-      console.error('Error fetching doctor profile:', err);
+      const error = err as AxiosError<any>;
+      if (error.response?.status === 404) {
+        setError('Please complete your profile first to manage availability. You can still add slots, but they will be linked after profile creation.');
+        setLoading(false);
+        return;
+      }
+      console.error('Error fetching doctor profile:', error);
       setError('Failed to load doctor profile. Please try again.');
       setLoading(false);
+    }
+  };
+
+  const fetchTemplates = async () => {
+    if (!doctorId) return;
+    try {
+      setTemplatesLoading(true);
+      setTemplatesError(null);
+      const { data } = await apiClient.get(`/api/doctors/${doctorId}/availability/templates`);
+      if (data.success && data.data) {
+        setTemplates(data.data);
+      } else {
+        setTemplatesError(data.message || 'Failed to load templates');
+      }
+    } catch (err) {
+      console.error('Error fetching templates:', err);
+      setTemplatesError('Failed to load templates');
+    } finally {
+      setTemplatesLoading(false);
     }
   };
 
@@ -77,11 +115,7 @@ export default function SetAvailabilityPage() {
     try {
       setLoading(true);
       setError(null);
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/doctors/${doctorId}/availability`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
+      const { data } = await apiClient.get(`/api/doctors/${doctorId}/availability`);
       if (data.success && data.data) {
         const formattedSlots = Array.isArray(data.data) ? data.data.map((slot: any) => ({
           id: slot.id,
@@ -90,6 +124,8 @@ export default function SetAvailabilityPage() {
           endTime: slot.endTime,
           status: slot.status || 'available',
           notes: slot.notes,
+          templateId: slot.templateId,
+          isManual: slot.isManual,
         })) : [];
         setSlots(formattedSlots);
       } else {
@@ -110,13 +146,8 @@ export default function SetAvailabilityPage() {
 
     try {
       setDeletingId(id);
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/doctors/availability/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      
+      const { data } = await apiClient.delete(`/api/doctors/availability/${id}`);
+
       if (data.success) {
         // Refresh the list
         await fetchAvailability();
@@ -133,6 +164,40 @@ export default function SetAvailabilityPage() {
 
   const handleSlotAdded = () => {
     fetchAvailability();
+    fetchTemplates();
+  };
+
+  const handleGenerateFromTemplates = async () => {
+    if (!doctorId || generating) return;
+    setGenerationMessage(null);
+    try {
+      setGenerating(true);
+      const { data } = await apiClient.post(`/api/doctors/${doctorId}/availability/templates/generate`);
+      if (data.success) {
+        const created = data.data?.slotsCreated ?? 0;
+        const processed = data.data?.templatesProcessed ?? 0;
+        setGenerationMessage(`Generated ${created} slot${created === 1 ? '' : 's'} from ${processed} template${processed === 1 ? '' : 's'}.`);
+        fetchAvailability();
+      } else {
+        setGenerationMessage(data.message || 'Failed to generate slots');
+      }
+    } catch (err) {
+      console.error('Error generating slots:', err);
+      setGenerationMessage('Failed to generate slots. Please try again.');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const formatPattern = (template: AvailabilityTemplate) => {
+    if (template.recurrencePattern === 'daily') return 'Daily';
+    if (template.recurrencePattern === 'monthly') return 'Monthly (same date)';
+    if (template.recurrenceDays?.length) {
+      return `${template.recurrencePattern === 'weekly' ? 'Weekly' : 'Custom'} on ${template.recurrenceDays
+        .map((day) => day.toUpperCase())
+        .join(', ')}`;
+    }
+    return template.recurrencePattern;
   };
 
   const formatDate = (dateStr: string) => {
@@ -141,8 +206,7 @@ export default function SetAvailabilityPage() {
   };
 
   const formatTime = (timeStr: string) => {
-    // Convert 24-hour format to 12-hour format if needed
-    if (timeStr.includes(':')) {
+    if (timeStr && timeStr.includes(':')) {
       const [hours, minutes] = timeStr.split(':');
       const hour = parseInt(hours);
       const ampm = hour >= 12 ? 'PM' : 'AM';
@@ -189,6 +253,70 @@ export default function SetAvailabilityPage() {
         </div>
       )}
 
+      {/* Recurring Templates */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h3 className="text-gray-900 font-semibold flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Recurring Templates
+            </h3>
+            <p className="text-sm text-gray-600">
+              {templates.length > 0
+                ? `${templates.length} template${templates.length === 1 ? '' : 's'} active`
+                : 'No templates yet'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setShowTemplatesModal(true)}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium"
+            >
+              Manage Templates
+            </button>
+            <button
+              onClick={handleGenerateFromTemplates}
+              disabled={generating || templates.length === 0}
+              className="px-4 py-2 bg-[#0066CC] hover:bg-[#0052a3] text-white rounded-lg flex items-center gap-2 transition-colors font-medium disabled:opacity-50"
+            >
+              {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Generate next 7 days
+            </button>
+          </div>
+        </div>
+        {generationMessage && (
+          <div className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-3">{generationMessage}</div>
+        )}
+        {templatesError && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{templatesError}</div>
+        )}
+        {templatesLoading ? (
+          <div className="flex items-center text-gray-600 gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Loading templates...
+          </div>
+        ) : templates.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {templates.slice(0, 4).map((template) => (
+              <div key={template.id} className="border border-gray-200 rounded-lg p-3 text-sm space-y-1">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-gray-900">{template.templateName}</p>
+                  {template.validUntil ? (
+                    <span className="text-xs text-gray-500">Until {template.validUntil}</span>
+                  ) : (
+                    <span className="text-xs text-green-600">No end date</span>
+                  )}
+                </div>
+                <p className="text-gray-600">
+                  {formatTime(template.startTime)} - {formatTime(template.endTime)}
+                </p>
+                <p className="text-gray-500">{formatPattern(template)}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -234,7 +362,7 @@ export default function SetAvailabilityPage() {
 
                   {/* Details */}
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <h4 className="text-gray-900 font-semibold">{formatDate(slot.slotDate)}</h4>
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                         slot.status === 'available'
@@ -243,6 +371,11 @@ export default function SetAvailabilityPage() {
                       }`}>
                         {slot.status === 'available' ? 'Available' : 'Booked'}
                       </span>
+                      {slot.templateId && (
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                          Auto
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Clock className="w-4 h-4" />
@@ -280,6 +413,15 @@ export default function SetAvailabilityPage() {
           doctorId={doctorId}
           onClose={() => setShowModal(false)} 
           onSuccess={handleSlotAdded}
+        />
+      )}
+      {showTemplatesModal && doctorId && (
+        <ManageTemplatesModal
+          doctorId={doctorId}
+          onClose={() => {
+            setShowTemplatesModal(false);
+            fetchTemplates();
+          }}
         />
       )}
     </div>
