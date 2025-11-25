@@ -86,9 +86,11 @@ export class SubscriptionsRepository {
       } else {
         if (row.hospitalFeatures) {
           const existing = plansMap.get(planId);
-          // Only add if not already in array (avoid duplicates)
-          if (!existing.hospitalFeatures.some((f: any) => f.id === row.hospitalFeatures.id)) {
-            existing.hospitalFeatures.push(row.hospitalFeatures);
+          if (existing && existing.hospitalFeatures) {
+            // Only add if not already in array (avoid duplicates)
+            if (!existing.hospitalFeatures.some((f: any) => f?.id === row.hospitalFeatures?.id)) {
+              existing.hospitalFeatures.push(row.hospitalFeatures);
+            }
           }
         }
       }

@@ -36,11 +36,12 @@ import { tmpdir } from 'os';
  *         description: Unauthorized
  */
 async function postHandler(req: AuthenticatedRequest) {
+  let bucket = 'images'; // Default bucket
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const folder = (formData.get('folder') as string) || 'general';
-    const bucket = (formData.get('bucket') as string) || 'images';
+    bucket = (formData.get('bucket') as string) || 'images';
 
     if (!file) {
       return NextResponse.json(
