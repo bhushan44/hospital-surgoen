@@ -196,7 +196,7 @@ export async function GET(
         // Get specialty
         const [specialtyResult] = await db
           .select({
-            specialtyName: sql<string>`s.name`,
+            specialtyName: specialties.name,
           })
           .from(doctorSpecialties)
           .innerJoin(specialties, eq(doctorSpecialties.specialtyId, specialties.id))

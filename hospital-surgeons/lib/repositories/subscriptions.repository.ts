@@ -1,5 +1,5 @@
 import { getDb } from '@/lib/db';
-import { subscriptionPlans, subscriptions } from '@/src/db/drizzle/migrations/schema';
+import { subscriptionPlans, subscriptions, hospitalPlanFeatures } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql, desc, gte, lte } from 'drizzle-orm';
 
 export interface CreateSubscriptionPlanData {
@@ -17,7 +17,7 @@ export interface CreateSubscriptionPlanData {
 export interface CreateSubscriptionData {
   userId: string;
   planId: string;
-  status?: 'active' | 'expired' | 'cancelled' | 'pending';
+  status?: 'active' | 'expired' | 'cancelled' | 'suspended'; // Schema only allows these values
   startDate: string;
   endDate: string;
   autoRenew?: boolean;
@@ -62,7 +62,39 @@ export class SubscriptionsRepository {
   }
 
   async listPlans() {
-    return this.db.select().from(subscriptionPlans).orderBy(desc(subscriptionPlans.id)); // subscriptionPlans doesn't have createdAt
+    const plans = await this.db
+      .select({
+        plan: subscriptionPlans,
+        hospitalFeatures: hospitalPlanFeatures,
+      })
+      .from(subscriptionPlans)
+      .leftJoin(
+        hospitalPlanFeatures,
+        eq(subscriptionPlans.id, hospitalPlanFeatures.planId)
+      )
+      .orderBy(desc(subscriptionPlans.id));
+
+    // Group plans with their features (in case there are multiple features per plan)
+    const plansMap = new Map();
+    plans.forEach((row) => {
+      const planId = row.plan.id;
+      if (!plansMap.has(planId)) {
+        plansMap.set(planId, {
+          ...row.plan,
+          hospitalFeatures: row.hospitalFeatures ? [row.hospitalFeatures] : [],
+        });
+      } else {
+        if (row.hospitalFeatures) {
+          const existing = plansMap.get(planId);
+          // Only add if not already in array (avoid duplicates)
+          if (!existing.hospitalFeatures.some((f: any) => f.id === row.hospitalFeatures.id)) {
+            existing.hospitalFeatures.push(row.hospitalFeatures);
+          }
+        }
+      }
+    });
+
+    return Array.from(plansMap.values());
   }
 
   async getPlan(id: string) {
@@ -101,7 +133,7 @@ export class SubscriptionsRepository {
       .values({
         userId: dto.userId,
         planId: dto.planId,
-        status: (dto.status || 'pending') as any,
+        status: (dto.status || 'active') as any, // Default to 'active' (schema allows: active, expired, cancelled, suspended)
         startDate: dto.startDate,
         endDate: dto.endDate,
         autoRenew: dto.autoRenew ?? true,
@@ -140,6 +172,24 @@ export class SubscriptionsRepository {
       .from(subscriptions)
       .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
       .where(eq(subscriptions.id, id))
+      .limit(1);
+    return row;
+  }
+
+  async getActiveSubscriptionByUserId(userId: string) {
+    const now = new Date().toISOString();
+    const [row] = await this.db
+      .select({ subscription: subscriptions, plan: subscriptionPlans })
+      .from(subscriptions)
+      .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.status, 'active' as any),
+          gte(subscriptions.endDate, now)
+        )
+      )
+      .orderBy(desc(subscriptions.createdAt))
       .limit(1);
     return row;
   }

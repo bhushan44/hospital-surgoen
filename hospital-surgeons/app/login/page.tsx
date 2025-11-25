@@ -66,7 +66,7 @@ function LoginForm() {
       }
 
       if (data.success && data.data?.accessToken) {
-        // Store token
+        // Store token first
         localStorage.setItem('accessToken', data.data.accessToken);
         if (rememberMe) {
           localStorage.setItem('rememberMe', 'true');
@@ -75,6 +75,26 @@ function LoginForm() {
         // Decode token to get user role
         const decoded = decodeToken(data.data.accessToken);
         const userRole = decoded?.userRole;
+        
+        // For hospital users, check if they have an active subscription
+        if (userRole === 'hospital') {
+          try {
+            // Set the token in apiClient headers for the next request
+            const subscriptionResponse = await apiClient.get('/api/subscriptions/current');
+            const subscriptionData = subscriptionResponse.data;
+            
+            // If no active subscription, redirect to plan selection
+            if (!subscriptionData.success || !subscriptionData.data) {
+              router.push('/hospital/subscription');
+              return;
+            }
+          } catch (error) {
+            console.error('Error checking subscription:', error);
+            // If error checking subscription, still redirect to plan selection to be safe
+            router.push('/hospital/subscription');
+            return;
+          }
+        }
         
         // Redirect based on actual user role from token
         // This ensures users go to the correct dashboard based on their actual role

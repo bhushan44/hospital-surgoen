@@ -1,13 +1,15 @@
 import { getDb } from '@/lib/db';
 import { 
   hospitals, 
-  hospitalDepartments, 
+  hospitalDepartments,
+  hospitalDocuments,
   // hospitalStaff, // Not in database - use doctorHospitalAffiliations instead
   // hospitalFavoriteDoctors, // Not in database
   users,
   specialties,
   doctors,
-  assignments // Use assignments instead of bookings
+  assignments, // Use assignments instead of bookings
+  files
 } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, desc, asc, count } from 'drizzle-orm';
 
@@ -29,6 +31,11 @@ export interface CreateHospitalData {
 export interface CreateHospitalDepartmentData {
   specialtyId: string;
   isActive?: boolean;
+}
+
+export interface CreateHospitalDocumentData {
+  fileId: string;
+  documentType: 'license' | 'accreditation' | 'insurance' | 'other';
 }
 
 export interface CreateHospitalStaffData {
@@ -252,6 +259,52 @@ export class HospitalsRepository {
   async removeFavoriteDoctor(hospitalId: string, doctorId: string) {
     // Table doesn't exist in database
     throw new Error('hospitalFavoriteDoctors table not found in database. Use hospitalPreferences instead.');
+  }
+
+  // Hospital Documents
+  async getHospitalDocuments(hospitalId: string) {
+    return await this.db
+      .select({
+        id: hospitalDocuments.id,
+        hospitalId: hospitalDocuments.hospitalId,
+        fileId: hospitalDocuments.fileId,
+        documentType: hospitalDocuments.documentType,
+        verificationStatus: hospitalDocuments.verificationStatus,
+        uploadedAt: hospitalDocuments.uploadedAt,
+        file: {
+          id: files.id,
+          filename: files.filename,
+          url: files.url,
+          mimetype: files.mimetype,
+          size: files.size,
+        },
+      })
+      .from(hospitalDocuments)
+      .leftJoin(files, eq(hospitalDocuments.fileId, files.id))
+      .where(eq(hospitalDocuments.hospitalId, hospitalId))
+      .orderBy(desc(hospitalDocuments.uploadedAt));
+  }
+
+  async addDocument(documentData: CreateHospitalDocumentData, hospitalId: string) {
+    return await this.db
+      .insert(hospitalDocuments)
+      .values({
+        hospitalId,
+        fileId: documentData.fileId,
+        documentType: documentData.documentType,
+        verificationStatus: 'pending',
+      })
+      .returning();
+  }
+
+  async deleteDocument(documentId: string, hospitalId: string) {
+    return await this.db
+      .delete(hospitalDocuments)
+      .where(and(
+        eq(hospitalDocuments.id, documentId),
+        eq(hospitalDocuments.hospitalId, hospitalId)
+      ))
+      .returning();
   }
 
   // Statistics

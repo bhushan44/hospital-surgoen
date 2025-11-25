@@ -8,7 +8,7 @@ import {
   doctorProfilePhotos,
   specialties,
   users,
-  availabilityTemplates,,
+  availabilityTemplates,
   files,
 } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, desc, asc, sql, lte, gte, or, isNull, lt, gt, ne } from 'drizzle-orm';
@@ -165,14 +165,17 @@ export class DoctorsRepository {
     
     if (updateData.firstName) updateFields.firstName = updateData.firstName;
     if (updateData.lastName) updateFields.lastName = updateData.lastName;
-    // Map profilePhotoId - schema maps profilePhotoUrl to profile_photo_id column
     if (updateData.profilePhotoId) {
-      updateFields.profilePhotoUrl = updateData.profilePhotoId;
+      updateFields.profilePhotoId = updateData.profilePhotoId;
     }
     if (updateData.medicalLicenseNumber) updateFields.medicalLicenseNumber = updateData.medicalLicenseNumber;
     if (updateData.yearsOfExperience !== undefined) updateFields.yearsOfExperience = updateData.yearsOfExperience;
     if (updateData.bio) updateFields.bio = updateData.bio;
     // Remove consultationFee and isAvailable - not in doctors table
+
+    if (Object.keys(updateFields).length === 0) {
+      return await this.db.select().from(doctors).where(eq(doctors.id, id));
+    }
 
     return await this.db
       .update(doctors)

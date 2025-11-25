@@ -107,6 +107,23 @@ export class SubscriptionsService {
     }
   }
 
+  async getActiveSubscriptionByUserId(userId: string) {
+    try {
+      const subscription = await this.repo.getActiveSubscriptionByUserId(userId);
+      return {
+        success: true,
+        message: subscription ? 'Active subscription found' : 'No active subscription found',
+        data: subscription || null,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to retrieve active subscription',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   async create(dto: CreateSubscriptionData) {
     try {
       const plan = await this.repo.getPlan(dto.planId);

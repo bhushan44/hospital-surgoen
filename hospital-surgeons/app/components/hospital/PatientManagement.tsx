@@ -28,6 +28,7 @@ import { AddPatientWizard } from './AddPatientWizard';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
 import { isAuthenticated } from '@/lib/auth/utils';
+import apiClient from '@/lib/api/httpClient';
 
 export function PatientManagement() {
   const router = useRouter();
@@ -61,18 +62,19 @@ export function PatientManagement() {
 
   const fetchHospitalProfile = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/hospitals/profile', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
+      const response = await apiClient.get('/api/hospitals/profile');
+      const data = response.data;
       if (data.success && data.data) {
         setHospitalId(data.data.id);
       } else {
         setError('Failed to load hospital profile');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching hospital profile:', err);
+      if (err.response?.status === 401) {
+        router.push('/login');
+        return;
+      }
       setError('Failed to load hospital profile');
     }
   };
@@ -82,19 +84,16 @@ export function PatientManagement() {
     try {
       setLoading(true);
       setError(null);
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/hospitals/${hospitalId}/patients`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = await response.json();
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/patients`);
+      const result = response.data;
       if (result.success && result.data) {
         setPatients(result.data);
       } else {
         setError('Failed to load patients');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching patients:', error);
-      setError('Failed to load patients');
+      setError(error.response?.data?.message || 'Failed to load patients');
     } finally {
       setLoading(false);
     }

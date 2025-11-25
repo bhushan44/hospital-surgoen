@@ -7,6 +7,7 @@ import { Badge } from '../../components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
 import { StatCard } from '../../hospital/_components/StatCard';
+import apiClient from '@/lib/api/httpClient';
 
 export function DashboardHome() {
   const router = useRouter();
@@ -68,20 +69,44 @@ export function DashboardHome() {
   ]);
   const [loading, setLoading] = useState(true);
 
-  // Get hospital ID from localStorage or context (for now using a placeholder)
-  // In production, get from auth context
-  const hospitalId = 'hospital-id-placeholder'; // TODO: Get from auth context
+  const [hospitalId, setHospitalId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchHospitalProfile();
   }, []);
 
+  useEffect(() => {
+    if (hospitalId && typeof hospitalId === 'string' && hospitalId.length > 0) {
+      fetchDashboardData();
+    }
+  }, [hospitalId]);
+
+  const fetchHospitalProfile = async () => {
+    try {
+      const response = await apiClient.get('/api/hospitals/profile');
+      if (response.data?.success && response.data?.data?.id) {
+        setHospitalId(response.data.data.id);
+      } else {
+        setLoading(false);
+      }
+    } catch (error: any) {
+      console.error('Error fetching hospital profile:', error);
+      setLoading(false);
+      if (error.response?.status === 401) {
+        router.push('/login');
+      }
+    }
+  };
+
   const fetchDashboardData = async () => {
+    if (!hospitalId || typeof hospitalId !== 'string' || hospitalId.length === 0) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      // TODO: Replace with actual hospital ID from auth
-      const response = await fetch(`/api/hospitals/${hospitalId}/dashboard`);
-      const result = await response.json();
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/dashboard`);
+      const result = response.data;
 
       if (result.success && result.data) {
         const data = result.data;
@@ -132,8 +157,12 @@ export function DashboardHome() {
         // Update pending actions
         setPendingActions(data.pendingActions || []);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching dashboard data:', error);
+      if (error.response?.status === 401) {
+        // Token expired, will be handled by apiClient interceptor
+        return;
+      }
     } finally {
       setLoading(false);
     }

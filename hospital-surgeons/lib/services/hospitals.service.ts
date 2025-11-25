@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import { HospitalsRepository, CreateHospitalData, CreateHospitalDepartmentData, CreateHospitalStaffData, CreateFavoriteDoctorData, HospitalQuery } from '@/lib/repositories/hospitals.repository';
+import { HospitalsRepository, CreateHospitalData, CreateHospitalDepartmentData, CreateHospitalStaffData, CreateFavoriteDoctorData, CreateHospitalDocumentData, HospitalQuery } from '@/lib/repositories/hospitals.repository';
 import { UsersService } from '@/lib/services/users.service';
 
 export interface CreateHospitalDto {
@@ -444,6 +444,67 @@ export class HospitalsService {
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Failed to remove favorite doctor',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // Hospital Documents
+  async getHospitalDocuments(hospitalId: string) {
+    try {
+      const documents = await this.hospitalsRepository.getHospitalDocuments(hospitalId);
+
+      return {
+        success: true,
+        message: 'Hospital documents retrieved successfully',
+        data: documents,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to retrieve hospital documents',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async addDocument(hospitalId: string, documentDto: CreateHospitalDocumentData) {
+    try {
+      const result = await this.hospitalsRepository.addDocument(documentDto, hospitalId);
+
+      return {
+        success: true,
+        message: 'Document uploaded successfully',
+        data: result[0],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to upload document',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async deleteDocument(hospitalId: string, documentId: string) {
+    try {
+      const result = await this.hospitalsRepository.deleteDocument(documentId, hospitalId);
+
+      if (result.length === 0) {
+        return {
+          success: false,
+          message: 'Document not found or you do not have permission to delete it',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Document deleted successfully',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to delete document',
         error: error instanceof Error ? error.message : String(error),
       };
     }

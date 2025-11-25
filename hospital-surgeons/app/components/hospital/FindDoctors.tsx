@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Calendar, Star, Award, Crown, Medal, Clock, CheckCircle2, Lock, Loader2 } from 'lucide-react';
+import { Search, Calendar, Star, Award, Crown, Medal, Clock, CheckCircle2, Lock, Loader2, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -27,12 +27,15 @@ import {
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
+import apiClient from '@/lib/api/httpClient';
 
 export function FindDoctors() {
   const router = useRouter();
   const [searchParams, setSearchParams] = useState({
+    searchText: '',
     patient: '',
     specialty: '',
+    selectedSpecialties: [] as string[],
     date: '',
     priority: 'routine',
   });
@@ -72,34 +75,29 @@ export function FindDoctors() {
 
   const fetchHospitalProfile = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-      const response = await fetch('/api/hospitals/profile', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
+      const response = await apiClient.get('/api/hospitals/profile');
+      const data = response.data;
+      
       if (data.success && data.data) {
         setHospitalId(data.data.id);
       } else {
-        setError('Failed to load hospital profile');
+        setError(data.message || 'Failed to load hospital profile');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching hospital profile:', err);
-      setError('Failed to load hospital profile');
+      if (err.response?.status === 401) {
+        router.push('/login');
+        return;
+      }
+      setError('Failed to load hospital profile. Please try refreshing the page.');
     }
   };
 
   const fetchPatients = async () => {
     if (!hospitalId) return;
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/hospitals/${hospitalId}/patients`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = await response.json();
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/patients`);
+      const result = response.data;
       if (result.success && result.data) {
         setPatients(result.data.map((p: any) => ({
           id: p.id,
@@ -118,8 +116,8 @@ export function FindDoctors() {
 
   const fetchSpecialties = async () => {
     try {
-      const response = await fetch('/api/specialties/active');
-      const result = await response.json();
+      const response = await apiClient.get('/api/specialties/active');
+      const result = response.data;
       if (result.success && result.data) {
         setSpecialties(result.data.map((s: any) => s.name));
       }
@@ -210,34 +208,74 @@ export function FindDoctors() {
   };
 
   const handleSearch = async () => {
-    if (!searchParams.patient || !searchParams.specialty || !searchParams.date) {
-      alert('Please fill in all required fields');
+    // Allow search with just text search, selected specialties, or with full criteria
+    const hasSearchCriteria = searchParams.searchText || 
+                               searchParams.selectedSpecialties.length > 0 || 
+                               (searchParams.patient && searchParams.specialty && searchParams.date);
+    
+    if (!hasSearchCriteria) {
+      alert('Please provide search text, select specialties, or fill in all required fields (Patient, Specialty, Date)');
       return;
     }
 
     try {
       setLoading(true);
-      // Get specialty ID from name
-      const specialtiesResponse = await fetch('/api/specialties/active');
-      const specialtiesResult = await specialtiesResponse.json();
-      const specialty = specialtiesResult.data?.find((s: any) => s.name === searchParams.specialty);
       
-      if (!specialty) {
-        alert('Specialty not found');
-        return;
+      const params: any = {};
+      
+      // Add text search if provided
+      if (searchParams.searchText) {
+        params.search = searchParams.searchText;
       }
+      
+      // Add selected specialties filter (use first one for now, or we can modify API to accept multiple)
+      // For now, if multiple specialties selected, we'll search with the first one
+      // TODO: Update API to support multiple specialty IDs
+      if (searchParams.selectedSpecialties.length > 0) {
+        const specialtiesResponse = await apiClient.get('/api/specialties/active');
+        const specialtiesResult = specialtiesResponse.data;
+        const specialty = specialtiesResult.data?.find((s: any) => 
+          searchParams.selectedSpecialties.includes(s.name)
+        );
+        
+        if (specialty) {
+          params.specialtyId = specialty.id;
+        }
+      } else if (searchParams.specialty) {
+        // Fallback to dropdown selection
+        const specialtiesResponse = await apiClient.get('/api/specialties/active');
+        const specialtiesResult = specialtiesResponse.data;
+        const specialty = specialtiesResult.data?.find((s: any) => s.name === searchParams.specialty);
+        
+        if (specialty) {
+          params.specialtyId = specialty.id;
+        }
+      }
+      
+      // Add date if provided
+      if (searchParams.date) {
+        params.date = searchParams.date;
+      }
+      
+      // Add priority
+      params.priority = searchParams.priority;
 
-      const params = new URLSearchParams({
-        specialtyId: specialty.id,
-        date: searchParams.date,
-        priority: searchParams.priority,
-      });
-
-      const response = await fetch(`/api/hospitals/${hospitalId}/find-doctors?${params.toString()}`);
-      const result = await response.json();
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/find-doctors`, { params });
+      const result = response.data;
 
       if (result.success && result.data) {
-        setDoctors(result.data.doctors || []);
+        // Filter results by selected specialties if multiple selected
+        let filteredDoctors = result.data.doctors || [];
+        if (searchParams.selectedSpecialties.length > 1) {
+          filteredDoctors = filteredDoctors.filter((doctor: any) => 
+            doctor.specialties && 
+            searchParams.selectedSpecialties.some(selected => 
+              doctor.specialties.includes(selected)
+            )
+          );
+        }
+        
+        setDoctors(filteredDoctors);
         setHospitalSubscription(result.data.hospitalSubscription || 'free');
         setShowResults(true);
       } else {
@@ -273,24 +311,16 @@ export function FindDoctors() {
 
     try {
       setCreatingAssignment(true);
-      const token = localStorage.getItem('accessToken');
       
-      const response = await fetch(`/api/hospitals/${hospitalId}/assignments/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          patientId: searchParams.patient,
-          doctorId: selectedDoctor.id,
-          availabilitySlotId: selectedSlot.id,
-          priority: searchParams.priority,
-          consultationFee: selectedDoctor.fee,
-        }),
+      const response = await apiClient.post(`/api/hospitals/${hospitalId}/assignments/create`, {
+        patientId: searchParams.patient,
+        doctorId: selectedDoctor.id,
+        availabilitySlotId: selectedSlot.id,
+        priority: searchParams.priority,
+        consultationFee: selectedDoctor.fee,
       });
 
-      const result = await response.json();
+      const result = response.data;
 
       if (result.success) {
         setShowConfirmation(false);
@@ -300,9 +330,9 @@ export function FindDoctors() {
       } else {
         alert(result.message || 'Failed to create assignment');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating assignment:', error);
-      alert('An error occurred while creating the assignment');
+      alert(error.response?.data?.message || 'An error occurred while creating the assignment');
     } finally {
       setCreatingAssignment(false);
     }
@@ -319,23 +349,21 @@ export function FindDoctors() {
         description="Search for available doctors and create assignments"
       />
       <div className="p-8" style={{ overflow: 'visible' }}>
-
-      {/* Search Form */}
-      <div className="bg-white rounded-lg shadow p-6 mb-8" style={{ overflow: 'visible' }}>
-        <div className="mb-6">
-          <h3 className="text-slate-900 font-semibold">Search Criteria</h3>
-        </div>
-        <div>
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ overflow: 'visible' }}>
-              <div className="space-y-2" style={{ overflow: 'visible' }}>
-                <Label htmlFor="patient">Select Patient *</Label>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Patient Selection Card */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 sticky top-6">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Select Patient</h3>
+              <div className="space-y-2">
+                <Label htmlFor="patient" className="text-slate-700">
+                  Patient <span className="text-red-500">*</span>
+                </Label>
                 <Select 
                   value={searchParams.patient} 
                   onValueChange={(value) => setSearchParams({ ...searchParams, patient: value })}
                   disabled={patients.length === 0}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11">
                     <SelectValue placeholder={patients.length === 0 ? "No patients available" : "Choose patient"} />
                   </SelectTrigger>
                   {patients.length > 0 && (
@@ -349,88 +377,195 @@ export function FindDoctors() {
                   )}
                 </Select>
                 {patients.length === 0 && (
-                  <p className="text-sm text-amber-600 mt-1">No patients found. Please add a patient first.</p>
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm text-amber-800">
+                      No patients found. Please add a patient first.
+                    </p>
+                  </div>
+                )}
+                {searchParams.patient && patients.length > 0 && (
+                  <div className="mt-3 p-3 bg-teal-50 border border-teal-200 rounded-lg">
+                    <p className="text-xs text-teal-700 font-medium">Patient Selected</p>
+                    <p className="text-sm text-teal-900 mt-1">
+                      {patients.find(p => p.id.toString() === searchParams.patient)?.name}
+                    </p>
+                  </div>
                 )}
               </div>
+            </div>
+          </div>
 
-              <div className="space-y-2" style={{ overflow: 'visible' }}>
-                <Label htmlFor="specialty">Specialty *</Label>
-                <Select value={searchParams.specialty} onValueChange={(value) => setSearchParams({ ...searchParams, specialty: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select specialty" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {specialties.map((specialty) => (
-                      <SelectItem key={specialty} value={specialty}>
+          {/* Search and Filters Card */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 mb-6">
+              {/* Quick Search Section */}
+              <div className="p-6 border-b border-slate-200">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Search Doctors</h3>
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <Input
+                    id="searchText"
+                    type="text"
+                    placeholder="Search by doctor name or specialty..."
+                    value={searchParams.searchText}
+                    onChange={(e) => setSearchParams({ ...searchParams, searchText: e.target.value })}
+                    className="pl-12 h-12 text-base"
+                  />
+                </div>
+              </div>
+
+              {/* Specialty Filters */}
+              <div className="p-6 border-b border-slate-200">
+                <div className="flex items-center justify-between mb-3">
+                  <Label className="text-base font-medium text-slate-900">Filter by Specialties</Label>
+                  {searchParams.selectedSpecialties.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSearchParams({ ...searchParams, selectedSpecialties: [] })}
+                      className="text-xs text-slate-500 hover:text-slate-700 h-6"
+                    >
+                      Clear all
+                    </Button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {specialties.map((specialty) => {
+                    const isSelected = searchParams.selectedSpecialties.includes(specialty);
+                    return (
+                      <Badge
+                        key={specialty}
+                        variant={isSelected ? "default" : "outline"}
+                        className={`cursor-pointer px-4 py-1.5 text-sm transition-colors ${
+                          isSelected 
+                            ? "bg-teal-600 text-white hover:bg-teal-700 border-teal-600" 
+                            : "hover:bg-slate-50 hover:border-slate-300"
+                        }`}
+                        onClick={() => {
+                          const newSelected = isSelected
+                            ? searchParams.selectedSpecialties.filter(s => s !== specialty)
+                            : [...searchParams.selectedSpecialties, specialty];
+                          setSearchParams({ ...searchParams, selectedSpecialties: newSelected });
+                        }}
+                      >
                         {specialty}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                        {isSelected && <X className="w-3 h-3 ml-1.5" />}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Assignment Details Section */}
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Assignment Details</h3>
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="date" className="text-slate-700">
+                      Appointment Date
+                      {!searchParams.searchText && searchParams.selectedSpecialties.length === 0 && (
+                        <span className="text-red-500 ml-1">*</span>
+                      )}
+                    </Label>
+                    <Input
+                      id="date"
+                      type="date"
+                      value={searchParams.date}
+                      onChange={(e) => setSearchParams({ ...searchParams, date: e.target.value })}
+                      className="h-11"
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="text-slate-700">
+                      Priority Level <span className="text-red-500">*</span>
+                    </Label>
+                    <RadioGroup value={searchParams.priority} onValueChange={(value) => setSearchParams({ ...searchParams, priority: value })}>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="flex items-center space-x-3 p-4 rounded-lg border-2 border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
+                          <RadioGroupItem value="routine" id="routine" />
+                          <div className="flex-1">
+                            <Label htmlFor="routine" className="cursor-pointer font-medium text-slate-900">
+                              Routine
+                            </Label>
+                            <p className="text-sm text-slate-500">24-hour response</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3 p-4 rounded-lg border-2 border-yellow-200 bg-yellow-50/50 hover:border-yellow-300 transition-colors cursor-pointer">
+                          <RadioGroupItem value="urgent" id="urgent" />
+                          <div className="flex-1">
+                            <Label htmlFor="urgent" className="cursor-pointer font-medium text-slate-900">
+                              Urgent
+                            </Label>
+                            <p className="text-sm text-slate-500">6-hour response</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3 p-4 rounded-lg border-2 border-red-200 bg-red-50/50 hover:border-red-300 transition-colors cursor-pointer">
+                          <RadioGroupItem value="emergency" id="emergency" />
+                          <div className="flex-1">
+                            <Label htmlFor="emergency" className="cursor-pointer font-medium text-slate-900">
+                              Emergency
+                            </Label>
+                            <p className="text-sm text-slate-500">1-hour response</p>
+                          </div>
+                        </div>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  <Button
+                    onClick={handleSearch}
+                    disabled={
+                      (!searchParams.searchText && 
+                       searchParams.selectedSpecialties.length === 0 && 
+                       (!searchParams.patient || !searchParams.date)) || 
+                      loading
+                    }
+                    className="w-full h-12 text-base font-medium bg-teal-600 hover:bg-teal-700"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Searching...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-5 h-5 mr-2" />
+                        Search Doctors
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="date">Appointment Date *</Label>
-              <Input
-                id="date"
-                type="date"
-                value={searchParams.date}
-                onChange={(e) => setSearchParams({ ...searchParams, date: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Priority Level *</Label>
-              <RadioGroup value={searchParams.priority} onValueChange={(value) => setSearchParams({ ...searchParams, priority: value })}>
-                <div className="flex items-center space-x-2 p-3 rounded-lg border border-gray-200">
-                  <RadioGroupItem value="routine" id="routine" />
-                  <div className="flex-1">
-                    <Label htmlFor="routine" className="cursor-pointer">
-                      Routine
-                    </Label>
-                    <p className="text-sm text-gray-500">24-hour response timeout</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2 p-3 rounded-lg border border-yellow-200 bg-yellow-50">
-                  <RadioGroupItem value="urgent" id="urgent" />
-                  <div className="flex-1">
-                    <Label htmlFor="urgent" className="cursor-pointer">
-                      Urgent
-                    </Label>
-                    <p className="text-sm text-gray-500">6-hour response timeout</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2 p-3 rounded-lg border border-red-200 bg-red-50">
-                  <RadioGroupItem value="emergency" id="emergency" />
-                  <div className="flex-1">
-                    <Label htmlFor="emergency" className="cursor-pointer">
-                      Emergency
-                    </Label>
-                    <p className="text-sm text-gray-500">1-hour response timeout - Immediate attention required</p>
-                  </div>
-                </div>
-              </RadioGroup>
-            </div>
-
-            <Button
-              onClick={handleSearch}
-              disabled={!searchParams.patient || !searchParams.specialty || !searchParams.date || loading}
-              className="w-full gap-2"
-            >
-              <Search className="w-4 h-4" />
-              {loading ? 'Searching...' : 'Search Available Doctors'}
-            </Button>
           </div>
         </div>
-      </div>
 
       {/* Search Results */}
       {showResults && (
         <div>
-          <div className="mb-4">
-            <h2 className="text-gray-900">Available Doctors</h2>
-            <p className="text-gray-500">Showing results for {searchParams.specialty}</p>
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-semibold text-slate-900">Available Doctors</h2>
+              <Badge variant="secondary" className="text-slate-600">
+                {getFilteredDoctors().length} {getFilteredDoctors().length === 1 ? 'doctor' : 'doctors'} found
+              </Badge>
+            </div>
+            {(searchParams.searchText || searchParams.selectedSpecialties.length > 0) && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-slate-600">Filters:</span>
+                {searchParams.searchText && (
+                  <Badge variant="outline" className="text-slate-700">
+                    Search: "{searchParams.searchText}"
+                  </Badge>
+                )}
+                {searchParams.selectedSpecialties.map((spec) => (
+                  <Badge key={spec} className="bg-teal-100 text-teal-800 border-teal-200">
+                    {spec}
+                  </Badge>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

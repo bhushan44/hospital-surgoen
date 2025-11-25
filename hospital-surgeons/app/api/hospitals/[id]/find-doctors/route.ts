@@ -32,6 +32,7 @@ export async function GET(
     const db = getDb();
     const searchParams = req.nextUrl.searchParams;
 
+    const searchText = searchParams.get('search') || undefined;
     const specialtyId = searchParams.get('specialtyId') || undefined;
     const date = searchParams.get('date') || undefined;
     const priority = searchParams.get('priority') || 'routine';
@@ -76,20 +77,72 @@ export async function GET(
       }
     }
 
-    // Build doctor query
-    const conditions = [];
-    
-    // Filter by specialty if provided
-    if (specialtyId) {
-      conditions.push(
-        sql`EXISTS (SELECT 1 FROM doctor_specialties WHERE doctor_id = ${doctors.id} AND specialty_id = ${specialtyId})`
-      );
-    }
-
-    // Get doctors with their specialties
-    // We'll fetch availability separately to get proper slot IDs
+    // Build doctor query with search support using Drizzle's sql template
     let doctorQuery: any;
-    if (specialtyId) {
+    
+    if (searchText && specialtyId) {
+      // Both search text and specialty filter
+      const searchPattern = `%${searchText.toLowerCase()}%`;
+      doctorQuery = sql`
+        SELECT 
+          d.id,
+          d.first_name as "firstName",
+          d.last_name as "lastName",
+          d.years_of_experience as "yearsOfExperience",
+          d.average_rating as "averageRating",
+          d.total_ratings as "totalRatings",
+          d.completed_assignments as "completedAssignments",
+          ARRAY(
+            SELECT s.name 
+            FROM specialties s 
+            INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
+            WHERE ds.doctor_id = d.id
+          ) as specialties
+        FROM doctors d
+        WHERE (
+          LOWER(d.first_name || ' ' || d.last_name) LIKE ${searchPattern} OR
+          EXISTS (
+            SELECT 1 FROM doctor_specialties ds
+            INNER JOIN specialties s ON ds.specialty_id = s.id
+            WHERE ds.doctor_id = d.id AND LOWER(s.name) LIKE ${searchPattern}
+          )
+        )
+        AND EXISTS (SELECT 1 FROM doctor_specialties WHERE doctor_id = d.id AND specialty_id = ${specialtyId})
+        ORDER BY d.average_rating DESC
+        LIMIT 100
+      `;
+    } else if (searchText) {
+      // Only search text
+      const searchPattern = `%${searchText.toLowerCase()}%`;
+      doctorQuery = sql`
+        SELECT 
+          d.id,
+          d.first_name as "firstName",
+          d.last_name as "lastName",
+          d.years_of_experience as "yearsOfExperience",
+          d.average_rating as "averageRating",
+          d.total_ratings as "totalRatings",
+          d.completed_assignments as "completedAssignments",
+          ARRAY(
+            SELECT s.name 
+            FROM specialties s 
+            INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
+            WHERE ds.doctor_id = d.id
+          ) as specialties
+        FROM doctors d
+        WHERE (
+          LOWER(d.first_name || ' ' || d.last_name) LIKE ${searchPattern} OR
+          EXISTS (
+            SELECT 1 FROM doctor_specialties ds
+            INNER JOIN specialties s ON ds.specialty_id = s.id
+            WHERE ds.doctor_id = d.id AND LOWER(s.name) LIKE ${searchPattern}
+          )
+        )
+        ORDER BY d.average_rating DESC
+        LIMIT 100
+      `;
+    } else if (specialtyId) {
+      // Only specialty filter
       doctorQuery = sql`
         SELECT 
           d.id,
@@ -108,8 +161,10 @@ export async function GET(
         FROM doctors d
         WHERE EXISTS (SELECT 1 FROM doctor_specialties WHERE doctor_id = d.id AND specialty_id = ${specialtyId})
         ORDER BY d.average_rating DESC
+        LIMIT 100
       `;
     } else {
+      // No filters - return all doctors
       doctorQuery = sql`
         SELECT 
           d.id,
@@ -127,6 +182,7 @@ export async function GET(
           ) as specialties
         FROM doctors d
         ORDER BY d.average_rating DESC
+        LIMIT 100
       `;
     }
     
