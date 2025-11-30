@@ -34,3 +34,4 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
 export const GET = withAuthAndContext(getHandler, ['doctor', 'admin']);
 export const POST = withAuthAndContext(postHandler, ['doctor', 'admin']);
 
+

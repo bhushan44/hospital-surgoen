@@ -40,3 +40,4 @@ async function deleteHandler(
 export const PATCH = withAuthAndContext(patchHandler, ['doctor', 'admin']);
 export const DELETE = withAuthAndContext(deleteHandler, ['doctor', 'admin']);
 
+
