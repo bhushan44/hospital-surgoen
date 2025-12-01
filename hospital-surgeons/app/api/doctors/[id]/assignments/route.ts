@@ -5,8 +5,83 @@ import { eq, and, or, sql, desc, asc, gte, lte } from 'drizzle-orm';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
 /**
- * Get all assignments for a doctor
- * GET /api/doctors/[id]/assignments
+ * @swagger
+ * /api/doctors/{id}/assignments:
+ *   get:
+ *     summary: Get all assignments for a doctor
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Doctor ID
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, confirmed, completed, cancelled, all]
+ *         description: Filter by assignment status
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by patient name, hospital name, or condition
+ *       - in: query
+ *         name: todayOnly
+ *         schema:
+ *           type: boolean
+ *         description: Filter to only today's assignments
+ *     responses:
+ *       200:
+ *         description: Assignments retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         format: uuid
+ *                       patient:
+ *                         type: string
+ *                       condition:
+ *                         type: string
+ *                       hospital:
+ *                         type: string
+ *                       date:
+ *                         type: string
+ *                         format: date
+ *                       time:
+ *                         type: string
+ *                       endTime:
+ *                         type: string
+ *                         nullable: true
+ *                       status:
+ *                         type: string
+ *                       priority:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                       expiresIn:
+ *                         type: string
+ *                         nullable: true
+ *                       fee:
+ *                         type: number
+ *       403:
+ *         description: Insufficient permissions
  */
 async function getHandler(
   req: AuthenticatedRequest,

@@ -3,6 +3,54 @@ import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
 
+/**
+ * @swagger
+ * /api/doctors/recent-activity:
+ *   get:
+ *     summary: Get recent activity for the authenticated doctor
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Maximum number of activities to return
+ *     responses:
+ *       200:
+ *         description: Recent activity retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       type:
+ *                         type: string
+ *                         enum: [assignment_completed, credential_verified]
+ *                       icon:
+ *                         type: string
+ *                       text:
+ *                         type: string
+ *                       time:
+ *                         type: string
+ *                         description: Human-readable time ago (e.g., "2 hours ago")
+ *                       timestamp:
+ *                         type: string
+ *                         format: date-time
+ *       404:
+ *         description: Doctor profile not found
+ *       500:
+ *         description: Internal server error
+ */
 async function getHandler(req: NextRequest) {
   try {
     const user = (req as any).user;

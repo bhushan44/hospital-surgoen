@@ -3,6 +3,67 @@ import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
 
+/**
+ * @swagger
+ * /api/doctors/dashboard:
+ *   get:
+ *     summary: Get doctor dashboard statistics and overview
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Dashboard data retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalAssignments:
+ *                       type: number
+ *                     pendingAssignments:
+ *                       type: number
+ *                     completedAssignments:
+ *                       type: number
+ *                     averageRating:
+ *                       type: number
+ *                     totalRatings:
+ *                       type: number
+ *                     totalEarnings:
+ *                       type: number
+ *                     thisMonthEarnings:
+ *                       type: number
+ *                     thisMonthAssignments:
+ *                       type: number
+ *                     upcomingSlots:
+ *                       type: number
+ *                     profileCompletion:
+ *                       type: number
+ *                       description: Profile completion percentage (0-100)
+ *                     credentials:
+ *                       type: object
+ *                       properties:
+ *                         verified:
+ *                           type: number
+ *                         pending:
+ *                           type: number
+ *                         rejected:
+ *                           type: number
+ *                     activeAffiliations:
+ *                       type: number
+ *                     licenseVerificationStatus:
+ *                       type: string
+ *                       enum: [pending, verified, rejected]
+ *       404:
+ *         description: Doctor profile not found
+ *       500:
+ *         description: Internal server error
+ */
 async function getHandler(req: NextRequest) {
   try {
     const user = (req as any).user;

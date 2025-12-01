@@ -5,6 +5,47 @@ import { getDb } from '@/lib/db';
 import { assignmentPayments } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, gte, sql } from 'drizzle-orm';
 
+/**
+ * @swagger
+ * /api/doctors/earnings:
+ *   get:
+ *     summary: Get doctor earnings and payment statistics
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Earnings data retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalEarnings:
+ *                       type: number
+ *                       description: Total earnings from all completed payments
+ *                     thisMonthEarnings:
+ *                       type: number
+ *                       description: Earnings from the current month
+ *                     thisMonthAssignments:
+ *                       type: number
+ *                       description: Number of assignments completed this month
+ *                     pendingEarnings:
+ *                       type: number
+ *                       description: Total earnings pending payment
+ *                     currency:
+ *                       type: string
+ *                       default: USD
+ *       404:
+ *         description: Doctor profile not found
+ *       500:
+ *         description: Internal server error
+ */
 async function getHandler(req: NextRequest) {
   try {
     const user = (req as any).user;

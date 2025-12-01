@@ -3,6 +3,79 @@ import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
 
+/**
+ * @swagger
+ * /api/doctors/pending-assignments:
+ *   get:
+ *     summary: Get pending assignment requests for the authenticated doctor
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Maximum number of assignments to return
+ *       - in: query
+ *         name: priority
+ *         schema:
+ *           type: string
+ *           enum: [low, medium, high, emergency]
+ *         description: Filter by priority level
+ *     responses:
+ *       200:
+ *         description: Pending assignments retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         format: uuid
+ *                       hospitalName:
+ *                         type: string
+ *                       patientName:
+ *                         type: string
+ *                       patientAge:
+ *                         type: integer
+ *                         nullable: true
+ *                       condition:
+ *                         type: string
+ *                       status:
+ *                         type: string
+ *                       priority:
+ *                         type: string
+ *                       requestedAt:
+ *                         type: string
+ *                         format: date-time
+ *                       expiresAt:
+ *                         type: string
+ *                         format: date-time
+ *                         nullable: true
+ *                       expiresIn:
+ *                         type: string
+ *                         nullable: true
+ *                         description: Human-readable time until expiry (e.g., "2h 30m")
+ *                       consultationFee:
+ *                         type: number
+ *                         nullable: true
+ *                 count:
+ *                   type: number
+ *       404:
+ *         description: Doctor profile not found
+ *       500:
+ *         description: Internal server error
+ */
 async function getHandler(req: NextRequest) {
   try {
     const user = (req as any).user;
