@@ -38,6 +38,9 @@ import { withAuth } from '@/lib/auth/middleware';
  *               profilePhotoId:
  *                 type: string
  *                 format: uuid
+ *               primaryLocation:
+ *                 type: string
+ *                 description: Free-text primary location / city for the doctor
  *     responses:
  *       201:
  *         description: Doctor profile created successfully
@@ -70,9 +73,10 @@ async function postHandler(req: NextRequest) {
       yearsOfExperience: body.yearsOfExperience,
       bio: body.bio,
       profilePhotoId: body.profilePhotoId,
+      primaryLocation: body.primaryLocation,
       firstName: body.firstName, // Optional, from step 2
       lastName: body.lastName, // Optional, from step 2
-    } as any);
+    });
     
     return NextResponse.json(result, { status: result.success ? 201 : 400 });
   } catch (error) {

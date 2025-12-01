@@ -120,14 +120,14 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
         { id: 'subscriptions', label: 'Subscription Plan', icon: Star, href: '/doctor/subscriptions' },
       ]
     },
-    {
-      title: 'Performance & Support',
-      items: [
-        { id: 'ratings', label: 'Ratings & Reviews', icon: Star, href: '/doctor/ratings' },
-        { id: 'settings', label: 'Preferences', icon: Settings, href: '/doctor/settings' },
-        { id: 'support', label: 'Support', icon: HelpCircle, href: '/doctor/support' },
-      ]
-    }
+    // {
+    //   title: 'Performance & Support',
+    //   items: [
+    //     { id: 'ratings', label: 'Ratings & Reviews', icon: Star, href: '/doctor/ratings' },
+    //     { id: 'settings', label: 'Preferences', icon: Settings, href: '/doctor/settings' },
+    //     { id: 'support', label: 'Support', icon: HelpCircle, href: '/doctor/support' },
+    //   ]
+    // }
   ];
 
   const isActive = (href: string) => {

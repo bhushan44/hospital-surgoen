@@ -62,6 +62,7 @@ async function getHandler(req: NextRequest) {
 
     // Get affiliations - default to 0 if method doesn't exist
     let activeAffiliations = 0;
+    console.log('doctor', doctor);
 
     // Calculate profile completion
     let profileScore = 0;

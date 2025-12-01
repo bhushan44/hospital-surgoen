@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import { DoctorsRepository, CreateDoctorData, CreateDoctorCredentialData, CreateDoctorSpecialtyData, CreateDoctorAvailabilityData, CreateDoctorUnavailabilityData, DoctorQuery, CreateAvailabilityTemplateData, UpdateAvailabilityTemplateData } from '@/lib/repositories/doctors.repository';
 import { UsersService } from '@/lib/services/users.service';
+import { geocodeLocation } from '@/lib/utils/geocoding';
 
 export interface CreateDoctorDto {
   email: string;
@@ -12,6 +13,9 @@ export interface CreateDoctorDto {
   yearsOfExperience?: number;
   bio?: string;
   profilePhotoId?: string; // UUID reference to files table
+  primaryLocation?: string;
+  latitude?: number;
+  longitude?: number;
   // consultationFee is in assignments table, not doctors table
   // isAvailable should be checked via doctorAvailability table
 }
@@ -23,6 +27,9 @@ export interface UpdateDoctorDto {
   medicalLicenseNumber?: string;
   yearsOfExperience?: number;
   bio?: string;
+  primaryLocation?: string;
+  latitude?: number;
+  longitude?: number;
   // consultationFee is in assignments table, not doctors table
   // isAvailable should be checked via doctorAvailability table
 }
@@ -121,15 +128,35 @@ export class DoctorsService {
 
       const userId = userResult.data[0].id;
 
+      // Optionally geocode location if provided
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      if (createDoctorDto.primaryLocation && (createDoctorDto.latitude === undefined || createDoctorDto.longitude === undefined)) {
+        const geo = await geocodeLocation(createDoctorDto.primaryLocation);
+        if (geo) {
+          latitude = geo.latitude;
+          longitude = geo.longitude;
+        }
+      } else {
+        latitude = createDoctorDto.latitude;
+        longitude = createDoctorDto.longitude;
+      }
+
       // Create doctor profile
-      const doctor = await this.doctorsRepository.createDoctor({
-        firstName: createDoctorDto.firstName,
-        lastName: createDoctorDto.lastName,
-        profilePhotoId: createDoctorDto.profilePhotoId,
-        medicalLicenseNumber: createDoctorDto.medicalLicenseNumber,
-        yearsOfExperience: createDoctorDto.yearsOfExperience,
-        bio: createDoctorDto.bio,
-      }, userId);
+      const doctor = await this.doctorsRepository.createDoctor(
+        {
+          firstName: createDoctorDto.firstName,
+          lastName: createDoctorDto.lastName,
+          profilePhotoId: createDoctorDto.profilePhotoId,
+          medicalLicenseNumber: createDoctorDto.medicalLicenseNumber,
+          yearsOfExperience: createDoctorDto.yearsOfExperience,
+          bio: createDoctorDto.bio,
+          primaryLocation: createDoctorDto.primaryLocation,
+          latitude,
+          longitude,
+        },
+        userId,
+      );
 
       return {
         success: true,
@@ -221,12 +248,20 @@ export class DoctorsService {
     }
   }
 
-  async createDoctorProfile(userId: string, createDoctorProfileDto: {
-    medicalLicenseNumber: string;
-    yearsOfExperience?: number;
-    bio?: string;
-    profilePhotoId?: string;
-  }) {
+  async createDoctorProfile(
+    userId: string,
+    createDoctorProfileDto: {
+      medicalLicenseNumber: string;
+      yearsOfExperience?: number;
+      bio?: string;
+      profilePhotoId?: string;
+      primaryLocation?: string;
+      latitude?: number;
+      longitude?: number;
+      firstName?: string;
+      lastName?: string;
+    },
+  ) {
     try {
       // Check if doctor profile already exists
       const existingDoctor = await this.doctorsRepository.findDoctorByUserId(userId);
@@ -252,18 +287,35 @@ export class DoctorsService {
       // Note: firstName and lastName are stored in doctors table, not users table
       // They should be provided in the DTO or retrieved from user profile
       // For now, we'll accept them as optional parameters
-      const firstName = (createDoctorProfileDto as any).firstName || '';
-      const lastName = (createDoctorProfileDto as any).lastName || '';
+      const firstName = createDoctorProfileDto.firstName || '';
+      const lastName = createDoctorProfileDto.lastName || '';
+
+      // Geocode primary location if provided and coordinates not set
+      let latitude: number | undefined = createDoctorProfileDto.latitude;
+      let longitude: number | undefined = createDoctorProfileDto.longitude;
+      if (createDoctorProfileDto.primaryLocation && (latitude === undefined || longitude === undefined)) {
+        const geo = await geocodeLocation(createDoctorProfileDto.primaryLocation);
+        if (geo) {
+          latitude = geo.latitude;
+          longitude = geo.longitude;
+        }
+      }
       
       // Create doctor profile
-      const doctor = await this.doctorsRepository.createDoctor({
-        firstName,
-        lastName,
-        medicalLicenseNumber: createDoctorProfileDto.medicalLicenseNumber,
-        yearsOfExperience: createDoctorProfileDto.yearsOfExperience,
-        bio: createDoctorProfileDto.bio,
-        profilePhotoId: createDoctorProfileDto.profilePhotoId,
-      }, userId);
+      const doctor = await this.doctorsRepository.createDoctor(
+        {
+          firstName,
+          lastName,
+          medicalLicenseNumber: createDoctorProfileDto.medicalLicenseNumber,
+          yearsOfExperience: createDoctorProfileDto.yearsOfExperience,
+          bio: createDoctorProfileDto.bio,
+          profilePhotoId: createDoctorProfileDto.profilePhotoId,
+          primaryLocation: createDoctorProfileDto.primaryLocation,
+          latitude,
+          longitude,
+        },
+        userId,
+      );
 
       return {
         success: true,
@@ -289,7 +341,23 @@ export class DoctorsService {
         };
       }
 
-      const updatedDoctor = await this.doctorsRepository.updateDoctor(id, updateDoctorDto);
+      // If primaryLocation is being updated and coordinates are not explicitly provided,
+      // geocode the new location.
+      let latitude = updateDoctorDto.latitude;
+      let longitude = updateDoctorDto.longitude;
+      if (updateDoctorDto.primaryLocation && (latitude === undefined || longitude === undefined)) {
+        const geo = await geocodeLocation(updateDoctorDto.primaryLocation);
+        if (geo) {
+          latitude = geo.latitude;
+          longitude = geo.longitude;
+        }
+      }
+
+      const updatedDoctor = await this.doctorsRepository.updateDoctor(id, {
+        ...updateDoctorDto,
+        latitude,
+        longitude,
+      });
 
       return {
         success: true,
