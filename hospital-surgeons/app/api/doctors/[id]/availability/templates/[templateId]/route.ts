@@ -4,6 +4,96 @@ import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware'
 
 const doctorsService = new DoctorsService();
 
+/**
+ * @swagger
+ * /api/doctors/{id}/availability/templates/{templateId}:
+ *   patch:
+ *     summary: Update an availability template
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Doctor ID
+ *       - in: path
+ *         name: templateId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Template ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               templateName:
+ *                 type: string
+ *               startTime:
+ *                 type: string
+ *                 format: time
+ *               endTime:
+ *                 type: string
+ *                 format: time
+ *               recurrencePattern:
+ *                 type: string
+ *                 enum: [daily, weekly, monthly, custom]
+ *               recurrenceDays:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               validFrom:
+ *                 type: string
+ *                 format: date
+ *               validUntil:
+ *                 type: string
+ *                 format: date
+ *                 nullable: true
+ *     responses:
+ *       200:
+ *         description: Template updated successfully
+ *       400:
+ *         description: Bad request (overlapping template or invalid data)
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Template not found
+ *   delete:
+ *     summary: Delete an availability template
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Doctor ID
+ *       - in: path
+ *         name: templateId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Template ID
+ *     responses:
+ *       200:
+ *         description: Template deleted successfully
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Template not found
+ */
+
 async function patchHandler(
   req: AuthenticatedRequest,
   context: { params: Promise<{ id: string; templateId: string }> }
@@ -39,4 +129,5 @@ async function deleteHandler(
 
 export const PATCH = withAuthAndContext(patchHandler, ['doctor', 'admin']);
 export const DELETE = withAuthAndContext(deleteHandler, ['doctor', 'admin']);
+
 

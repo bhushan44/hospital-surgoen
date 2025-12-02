@@ -128,9 +128,9 @@ export function ActionCenter() {
               <p>No pending requests</p>
             </div>
           ) : (
-            pendingRequests.map((request) => (
+            pendingRequests.map((request, index) => (
               <div
-                key={request.id}
+                key={`${request.id}-${index}`}
                 className="border-2 rounded-lg p-4"
                 style={{ borderColor: getPriorityColor(request.priority) }}
               >
@@ -198,8 +198,8 @@ export function ActionCenter() {
           </Link>
         </div>
         <div className="divide-y divide-gray-200">
-          {upcomingAssignments.map((assignment) => (
-            <div key={assignment.id} className="p-4 hover:bg-gray-50 transition-colors">
+          {upcomingAssignments.map((assignment, index) => (
+            <div key={`${assignment.id}-${index}`} className="p-4 hover:bg-gray-50 transition-colors">
               <div className="text-sm text-gray-600 mb-2">
                 {assignment.date} • {assignment.time}
               </div>
@@ -228,8 +228,8 @@ export function ActionCenter() {
           <h2 className="text-gray-900 font-semibold">RECENT ACTIVITY</h2>
         </div>
         <div className="divide-y divide-gray-200">
-          {recentActivity.map((activity) => (
-            <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors">
+          {recentActivity.map((activity, index) => (
+            <div key={`${activity.id}-${index}`} className="p-4 hover:bg-gray-50 transition-colors">
               <div className="text-sm text-gray-500 mb-1">
                 {activity.icon} {activity.time}
               </div>

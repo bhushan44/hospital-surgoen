@@ -37,7 +37,9 @@ export async function PUT(
 
     const db = getDb();
     await db.insert(auditLogs).values({
-      userId: credential.doctorId,
+      // For credential actions, we don't currently have the acting admin userId here,
+      // and doctorId is not a valid foreign key into users.id, so leave userId null.
+      userId: null,
       actorType: 'admin',
       action: verificationStatus === 'verified' ? 'credential_verified' : 'credential_rejected',
       entityType: 'doctor_credential',

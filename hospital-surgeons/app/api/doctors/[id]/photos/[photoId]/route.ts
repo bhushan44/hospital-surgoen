@@ -2,6 +2,76 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
+/**
+ * @swagger
+ * /api/doctors/{id}/photos/{photoId}:
+ *   patch:
+ *     summary: Set a photo as primary profile photo
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Doctor ID
+ *       - in: path
+ *         name: photoId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Photo ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - isPrimary
+ *             properties:
+ *               isPrimary:
+ *                 type: boolean
+ *                 description: Set to true to make this the primary photo
+ *     responses:
+ *       200:
+ *         description: Photo updated successfully
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Insufficient permissions
+ *   delete:
+ *     summary: Delete a profile photo
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Doctor ID
+ *       - in: path
+ *         name: photoId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Photo ID
+ *     responses:
+ *       200:
+ *         description: Photo deleted successfully
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Photo not found
+ */
 async function patchHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string; photoId: string }> }) {
   try {
     const { id: doctorId, photoId } = await context.params;

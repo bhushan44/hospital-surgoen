@@ -20,6 +20,9 @@ export interface CreateDoctorData {
   medicalLicenseNumber: string;
   yearsOfExperience?: number;
   bio?: string;
+  primaryLocation?: string;
+  latitude?: number;
+  longitude?: number;
   // consultationFee is in assignments table, not doctors table
   // isAvailable should be checked via doctorAvailability table
 }
@@ -107,10 +110,21 @@ export class DoctorsRepository {
       yearsOfExperience: doctorData.yearsOfExperience || 0,
       bio: doctorData.bio,
     };
+
+    // Location fields
+    if (doctorData.primaryLocation) {
+      values.primaryLocation = doctorData.primaryLocation;
+    }
+    if (doctorData.latitude !== undefined) {
+      values.latitude = doctorData.latitude;
+    }
+    if (doctorData.longitude !== undefined) {
+      values.longitude = doctorData.longitude;
+    }
     
-    // Map profilePhotoId - schema now maps profilePhotoUrl to profile_photo_id column
+    // Map profilePhotoId
     if (doctorData.profilePhotoId) {
-      values.profilePhotoUrl = doctorData.profilePhotoId;
+      values.profilePhotoId = doctorData.profilePhotoId;
     }
     
     return await this.db
@@ -163,14 +177,17 @@ export class DoctorsRepository {
   async updateDoctor(id: string, updateData: Partial<CreateDoctorData>) {
     const updateFields: any = {};
     
-    if (updateData.firstName) updateFields.firstName = updateData.firstName;
-    if (updateData.lastName) updateFields.lastName = updateData.lastName;
+    if (updateData.firstName !== undefined) updateFields.firstName = updateData.firstName;
+    if (updateData.lastName !== undefined) updateFields.lastName = updateData.lastName;
     if (updateData.profilePhotoId) {
       updateFields.profilePhotoId = updateData.profilePhotoId;
     }
-    if (updateData.medicalLicenseNumber) updateFields.medicalLicenseNumber = updateData.medicalLicenseNumber;
+    if (updateData.medicalLicenseNumber !== undefined) updateFields.medicalLicenseNumber = updateData.medicalLicenseNumber;
     if (updateData.yearsOfExperience !== undefined) updateFields.yearsOfExperience = updateData.yearsOfExperience;
-    if (updateData.bio) updateFields.bio = updateData.bio;
+    if (updateData.bio !== undefined) updateFields.bio = updateData.bio;
+    if (updateData.primaryLocation !== undefined) updateFields.primaryLocation = updateData.primaryLocation;
+    if (updateData.latitude !== undefined) updateFields.latitude = updateData.latitude;
+    if (updateData.longitude !== undefined) updateFields.longitude = updateData.longitude;
     // Remove consultationFee and isAvailable - not in doctors table
 
     if (Object.keys(updateFields).length === 0) {

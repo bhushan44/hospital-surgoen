@@ -4,6 +4,115 @@ import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware'
 
 const ALLOWED_TYPES = ['degree', 'certificate', 'license', 'other'];
 
+/**
+ * @swagger
+ * /api/doctors/{id}/credentials:
+ *   get:
+ *     summary: Get all credentials for a doctor
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Doctor ID
+ *     responses:
+ *       200:
+ *         description: Credentials retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         format: uuid
+ *                       doctorId:
+ *                         type: string
+ *                         format: uuid
+ *                       fileId:
+ *                         type: string
+ *                         format: uuid
+ *                       credentialType:
+ *                         type: string
+ *                         enum: [degree, certificate, license, other]
+ *                       title:
+ *                         type: string
+ *                       institution:
+ *                         type: string
+ *                         nullable: true
+ *                       verificationStatus:
+ *                         type: string
+ *                         enum: [pending, verified, rejected]
+ *                       uploadedAt:
+ *                         type: string
+ *                         format: date-time
+ *                       file:
+ *                         type: object
+ *                         nullable: true
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Doctor not found
+ *   post:
+ *     summary: Upload a new credential for a doctor
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Doctor ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - fileId
+ *               - credentialType
+ *               - title
+ *             properties:
+ *               fileId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the uploaded file
+ *               credentialType:
+ *                 type: string
+ *                 enum: [degree, certificate, license, other]
+ *               title:
+ *                 type: string
+ *                 description: Title of the credential
+ *               institution:
+ *                 type: string
+ *                 description: Institution that issued the credential
+ *     responses:
+ *       201:
+ *         description: Credential uploaded successfully
+ *       400:
+ *         description: Bad request (missing required fields or invalid credential type)
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Doctor not found
+ */
+
 async function getHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: doctorId } = await context.params;

@@ -2,6 +2,70 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
+/**
+ * @swagger
+ * /api/doctors/unavailability/{unavailabilityId}:
+ *   patch:
+ *     summary: Update a leave/unavailability record
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: unavailabilityId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Unavailability record ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *               leaveType:
+ *                 type: string
+ *                 enum: [sick, vacation, personal, emergency, other]
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Leave record updated successfully
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Leave record not found
+ *   delete:
+ *     summary: Delete a leave/unavailability record
+ *     tags: [Doctors]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: unavailabilityId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Unavailability record ID
+ *     responses:
+ *       200:
+ *         description: Leave record deleted successfully
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Leave record not found
+ */
 async function patchHandler(
   req: AuthenticatedRequest,
   context: { params: Promise<{ unavailabilityId: string }> }

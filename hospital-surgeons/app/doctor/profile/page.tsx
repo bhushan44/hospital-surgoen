@@ -22,7 +22,8 @@ export default function CompleteProfilePage() {
     lastName: '',
     licenseNumber: '',
     yearsOfExperience: '',
-    bio: ''
+    bio: '',
+    primaryLocation: '',
   });
   const [userInfo, setUserInfo] = useState({
     email: '',
@@ -64,7 +65,8 @@ export default function CompleteProfilePage() {
           lastName: '',
           licenseNumber: '',
           yearsOfExperience: '',
-          bio: ''
+          bio: '',
+          primaryLocation: '',
         });
         setUserInfo({
           email: '',
@@ -87,7 +89,8 @@ export default function CompleteProfilePage() {
           lastName: doctor.lastName || '',
           licenseNumber: doctor.medicalLicenseNumber || doctor.medical_license_number || '',
           yearsOfExperience: doctor.yearsOfExperience?.toString() || doctor.years_of_experience?.toString() || '',
-          bio: doctor.bio || ''
+          bio: doctor.bio || '',
+          primaryLocation: doctor.primaryLocation || doctor.primary_location || '',
         });
         // User info (email, phone) might be in a separate user object or not returned
         setUserInfo({
@@ -194,8 +197,8 @@ export default function CompleteProfilePage() {
 
   const handleSave = async () => {
     // Validate required fields
-    if (!formData.firstName || !formData.lastName || !formData.licenseNumber || !formData.yearsOfExperience) {
-      setError('Please fill in all required fields (First Name, Last Name, License Number, Years of Experience)');
+    if (!formData.firstName || !formData.lastName || !formData.licenseNumber || !formData.yearsOfExperience || !formData.primaryLocation) {
+      setError('Please fill in all required fields (First Name, Last Name, License Number, Years of Experience, Primary Location)');
       return;
     }
 
@@ -218,6 +221,7 @@ export default function CompleteProfilePage() {
             medicalLicenseNumber: formData.licenseNumber,
             yearsOfExperience: formData.yearsOfExperience ? parseInt(formData.yearsOfExperience) : null,
             bio: formData.bio,
+            primaryLocation: formData.primaryLocation,
             profilePhotoId: profilePhotoId,
           }),
         });
@@ -244,6 +248,7 @@ export default function CompleteProfilePage() {
             medicalLicenseNumber: formData.licenseNumber,
             yearsOfExperience: parseInt(formData.yearsOfExperience) || 0,
             bio: formData.bio || null,
+            primaryLocation: formData.primaryLocation,
             ...(profilePhotoId && { profilePhotoId }),
           }),
         });
@@ -478,6 +483,23 @@ export default function CompleteProfilePage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
               placeholder="Years of practice"
             />
+          </div>
+
+          {/* Primary Location */}
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-700 mb-2 font-medium">
+              Primary Location / City <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.primaryLocation}
+              onChange={(e) => setFormData({ ...formData, primaryLocation: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+              placeholder="e.g., Mumbai, India or City + Area"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              This helps hospitals find you by location. We automatically calculate latitude/longitude from this.
+            </p>
           </div>
         </div>
 

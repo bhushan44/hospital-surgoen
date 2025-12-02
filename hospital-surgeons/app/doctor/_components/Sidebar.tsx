@@ -52,6 +52,7 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
   const toggleCollapse = onToggleCollapse || (() => setInternalCollapsed(prev => !prev));
   const [doctorName, setDoctorName] = useState("Doctor");
   const [doctorEmail, setDoctorEmail] = useState("");
+  const [profileCompletion, setProfileCompletion] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchDoctorInfo = async () => {
@@ -79,6 +80,21 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
               console.error('Could not fetch user email:', err);
             }
           }
+          
+          // Fetch profile completion from dashboard API
+          try {
+            const dashboardResponse = await fetch('/api/doctors/dashboard', {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+            const dashboardData = await dashboardResponse.json();
+            if (dashboardData.success && dashboardData.data?.profileCompletion !== undefined) {
+              setProfileCompletion(dashboardData.data.profileCompletion);
+            }
+          } catch (err) {
+            console.error('Could not fetch profile completion:', err);
+          }
         } catch (error) {
           console.error('Error fetching doctor info:', error);
         }
@@ -91,7 +107,13 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
     {
       title: 'Profile & Verification',
       items: [
-        { id: 'profile', label: 'Complete Profile', icon: User, href: '/doctor/profile', badge: '87%' },
+        { 
+          id: 'profile', 
+          label: 'Complete Profile', 
+          icon: User, 
+          href: '/doctor/profile', 
+          badge: profileCompletion !== null ? `${profileCompletion}%` : undefined 
+        },
         { id: 'credentials', label: 'Credentials & Documents', icon: FileText, href: '/doctor/credentials', badge: '3' },
         { id: 'profile-photos', label: 'Profile Photos', icon: Image, href: '/doctor/profile/photos' },
       ]
@@ -120,14 +142,14 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
         { id: 'subscriptions', label: 'Subscription Plan', icon: Star, href: '/doctor/subscriptions' },
       ]
     },
-    {
-      title: 'Performance & Support',
-      items: [
-        { id: 'ratings', label: 'Ratings & Reviews', icon: Star, href: '/doctor/ratings' },
-        { id: 'settings', label: 'Preferences', icon: Settings, href: '/doctor/settings' },
-        { id: 'support', label: 'Support', icon: HelpCircle, href: '/doctor/support' },
-      ]
-    }
+    // {
+    //   title: 'Performance & Support',
+    //   items: [
+    //     { id: 'ratings', label: 'Ratings & Reviews', icon: Star, href: '/doctor/ratings' },
+    //     { id: 'settings', label: 'Preferences', icon: Settings, href: '/doctor/settings' },
+    //     { id: 'support', label: 'Support', icon: HelpCircle, href: '/doctor/support' },
+    //   ]
+    // }
   ];
 
   const isActive = (href: string) => {
