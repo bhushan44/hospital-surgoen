@@ -61,6 +61,14 @@ export function FindDoctors() {
   const [creatingAssignment, setCreatingAssignment] = useState(false);
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 0,
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
 
   useEffect(() => {
     fetchHospitalProfile();
@@ -207,40 +215,40 @@ export function FindDoctors() {
     }
   };
 
-  const handleSearch = async () => {
-    // Allow search with just text search, selected specialties, or with full criteria
-    const hasSearchCriteria = searchParams.searchText || 
-                               searchParams.selectedSpecialties.length > 0 || 
-                               (searchParams.patient && searchParams.specialty && searchParams.date);
-    
-    if (!hasSearchCriteria) {
-      alert('Please provide search text, select specialties, or fill in all required fields (Patient, Specialty, Date)');
-      return;
-    }
+  const handleSearch = async (page: number = 1) => {
+    // All fields are optional - allow search with any combination or none (shows all doctors)
+    // No validation needed - user can search with any criteria they want
 
     try {
       setLoading(true);
       
-      const params: any = {};
+      const params: any = {
+        page,
+        limit: pagination.limit,
+      };
       
       // Add text search if provided
       if (searchParams.searchText) {
         params.search = searchParams.searchText;
       }
       
-      // Add selected specialties filter (use first one for now, or we can modify API to accept multiple)
-      // For now, if multiple specialties selected, we'll search with the first one
-      // TODO: Update API to support multiple specialty IDs
+      // Add multiple specialty IDs
       if (searchParams.selectedSpecialties.length > 0) {
         const specialtiesResponse = await apiClient.get('/api/specialties/active');
         const specialtiesResult = specialtiesResponse.data;
-        const specialty = specialtiesResult.data?.find((s: any) => 
-          searchParams.selectedSpecialties.includes(s.name)
-        );
+        const specialtyIds = specialtiesResult.data
+          ?.filter((s: any) => searchParams.selectedSpecialties.includes(s.name))
+          .map((s: any) => s.id) || [];
         
-        if (specialty) {
-          params.specialtyId = specialty.id;
-        }
+        // Add all specialty IDs as array
+        specialtyIds.forEach((id: string) => {
+          if (!params.specialtyId) {
+            params.specialtyId = [];
+          }
+          if (Array.isArray(params.specialtyId)) {
+            params.specialtyId.push(id);
+          }
+        });
       } else if (searchParams.specialty) {
         // Fallback to dropdown selection
         const specialtiesResponse = await apiClient.get('/api/specialties/active');
@@ -248,7 +256,7 @@ export function FindDoctors() {
         const specialty = specialtiesResult.data?.find((s: any) => s.name === searchParams.specialty);
         
         if (specialty) {
-          params.specialtyId = specialty.id;
+          params.specialtyId = [specialty.id];
         }
       }
       
@@ -260,23 +268,30 @@ export function FindDoctors() {
       // Add priority
       params.priority = searchParams.priority;
 
-      const response = await apiClient.get(`/api/hospitals/${hospitalId}/find-doctors`, { params });
+      // Build query string with multiple specialtyId params
+      const queryParams = new URLSearchParams();
+      Object.keys(params).forEach(key => {
+        if (key === 'specialtyId' && Array.isArray(params[key])) {
+          params[key].forEach((id: string) => {
+            queryParams.append('specialtyId', id);
+          });
+        } else if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+          queryParams.append(key, params[key].toString());
+        }
+      });
+
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/find-doctors?${queryParams.toString()}`);
       const result = response.data;
 
       if (result.success && result.data) {
-        // Filter results by selected specialties if multiple selected
-        let filteredDoctors = result.data.doctors || [];
-        if (searchParams.selectedSpecialties.length > 1) {
-          filteredDoctors = filteredDoctors.filter((doctor: any) => 
-            doctor.specialties && 
-            searchParams.selectedSpecialties.some(selected => 
-              doctor.specialties.includes(selected)
-            )
-          );
+        setDoctors(result.data.doctors || []);
+        setHospitalSubscription(result.data.hospitalSubscription || 'free');
+        
+        // Update pagination state
+        if (result.data.pagination) {
+          setPagination(result.data.pagination);
         }
         
-        setDoctors(filteredDoctors);
-        setHospitalSubscription(result.data.hospitalSubscription || 'free');
         setShowResults(true);
       } else {
         alert(result.message || 'Failed to find doctors');
@@ -356,7 +371,7 @@ export function FindDoctors() {
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Select Patient</h3>
               <div className="space-y-2">
                 <Label htmlFor="patient" className="text-slate-700">
-                  Patient <span className="text-red-500">*</span>
+                  Patient
                 </Label>
                 <Select 
                   value={searchParams.patient} 
@@ -463,9 +478,6 @@ export function FindDoctors() {
                   <div className="space-y-2">
                     <Label htmlFor="date" className="text-slate-700">
                       Appointment Date
-                      {!searchParams.searchText && searchParams.selectedSpecialties.length === 0 && (
-                        <span className="text-red-500 ml-1">*</span>
-                      )}
                     </Label>
                     <Input
                       id="date"
@@ -478,7 +490,7 @@ export function FindDoctors() {
 
                   <div className="space-y-3">
                     <Label className="text-slate-700">
-                      Priority Level <span className="text-red-500">*</span>
+                      Priority Level
                     </Label>
                     <RadioGroup value={searchParams.priority} onValueChange={(value) => setSearchParams({ ...searchParams, priority: value })}>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -514,13 +526,11 @@ export function FindDoctors() {
                   </div>
 
                   <Button
-                    onClick={handleSearch}
-                    disabled={
-                      (!searchParams.searchText && 
-                       searchParams.selectedSpecialties.length === 0 && 
-                       (!searchParams.patient || !searchParams.date)) || 
-                      loading
-                    }
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleSearch(1);
+                    }}
+                    disabled={loading}
                     className="w-full h-12 text-base font-medium bg-teal-600 hover:bg-teal-700"
                   >
                     {loading ? (
@@ -568,7 +578,13 @@ export function FindDoctors() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="mb-6">
+            <div className="text-sm text-slate-600 mb-4">
+              Showing {((pagination.page - 1) * pagination.limit) + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} doctors
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {getFilteredDoctors().map((doctor) => {
               const hasAccess = hasAccessToDoctor(doctor.requiredPlan);
               return (
@@ -655,6 +671,68 @@ export function FindDoctors() {
               );
             })}
           </div>
+
+          {/* Pagination Controls */}
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between mt-6 pt-6 border-t border-slate-200">
+              <div className="text-sm text-slate-600">
+                Page {pagination.page} of {pagination.totalPages}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleSearch(pagination.page - 1);
+                  }}
+                  disabled={!pagination.hasPrevPage || loading}
+                >
+                  Previous
+                </Button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                    let pageNum: number;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (pagination.page <= 3) {
+                      pageNum = i + 1;
+                    } else if (pagination.page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = pagination.page - 2 + i;
+                    }
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={pagination.page === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleSearch(pageNum);
+                        }}
+                        disabled={loading}
+                        className={pagination.page === pageNum ? "bg-teal-600 hover:bg-teal-700" : ""}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleSearch(pagination.page + 1);
+                  }}
+                  disabled={!pagination.hasNextPage || loading}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

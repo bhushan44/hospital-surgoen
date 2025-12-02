@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { doctors, doctorSpecialties, specialties, doctorAvailability, hospitals, subscriptions, subscriptionPlans } from '@/src/db/drizzle/migrations/schema';
+import { doctors, doctorSpecialties, specialties, doctorAvailability, hospitals, subscriptions, subscriptionPlans, users, doctorPlanFeatures } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, or, sql, desc, asc, gte, inArray, isNull, ne } from 'drizzle-orm';
+import { calculateDoctorScore, sortDoctorsByScore, type DoctorScoringData } from '@/lib/utils/doctor-scoring';
 
 /**
  * Find available doctors for a hospital
@@ -33,9 +34,15 @@ export async function GET(
     const searchParams = req.nextUrl.searchParams;
 
     const searchText = searchParams.get('search') || undefined;
-    const specialtyId = searchParams.get('specialtyId') || undefined;
+    // Support multiple specialty IDs
+    const specialtyIds = searchParams.getAll('specialtyId'); // Gets all values for 'specialtyId'
     const date = searchParams.get('date') || undefined;
     const priority = searchParams.get('priority') || 'routine';
+    
+    // Pagination parameters
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '20', 10); // Default 20 per page
+    const offset = (page - 1) * limit;
 
     // Get hospital's subscription tier
     const hospitalResult = await db
@@ -77,115 +84,85 @@ export async function GET(
       }
     }
 
-    // Build doctor query with search support using Drizzle's sql template
-    let doctorQuery: any;
-    
-    if (searchText && specialtyId) {
-      // Both search text and specialty filter
+    // Build WHERE conditions dynamically using Drizzle's sql template
+    const whereConditions: any[] = [];
+
+    // Search text condition
+    if (searchText) {
       const searchPattern = `%${searchText.toLowerCase()}%`;
-      doctorQuery = sql`
-        SELECT 
-          d.id,
-          d.first_name as "firstName",
-          d.last_name as "lastName",
-          d.years_of_experience as "yearsOfExperience",
-          d.average_rating as "averageRating",
-          d.total_ratings as "totalRatings",
-          d.completed_assignments as "completedAssignments",
-          ARRAY(
-            SELECT s.name 
-            FROM specialties s 
-            INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
-            WHERE ds.doctor_id = d.id
-          ) as specialties
-        FROM doctors d
-        WHERE (
-          LOWER(d.first_name || ' ' || d.last_name) LIKE ${searchPattern} OR
-          EXISTS (
-            SELECT 1 FROM doctor_specialties ds
-            INNER JOIN specialties s ON ds.specialty_id = s.id
-            WHERE ds.doctor_id = d.id AND LOWER(s.name) LIKE ${searchPattern}
-          )
+      whereConditions.push(sql`(
+        LOWER(d.first_name || ' ' || d.last_name) LIKE ${searchPattern} OR
+        EXISTS (
+          SELECT 1 FROM doctor_specialties ds
+          INNER JOIN specialties s ON ds.specialty_id = s.id
+          WHERE ds.doctor_id = d.id AND LOWER(s.name) LIKE ${searchPattern}
         )
-        AND EXISTS (SELECT 1 FROM doctor_specialties WHERE doctor_id = d.id AND specialty_id = ${specialtyId})
-        ORDER BY d.average_rating DESC
-        LIMIT 100
-      `;
-    } else if (searchText) {
-      // Only search text
-      const searchPattern = `%${searchText.toLowerCase()}%`;
-      doctorQuery = sql`
-        SELECT 
-          d.id,
-          d.first_name as "firstName",
-          d.last_name as "lastName",
-          d.years_of_experience as "yearsOfExperience",
-          d.average_rating as "averageRating",
-          d.total_ratings as "totalRatings",
-          d.completed_assignments as "completedAssignments",
-          ARRAY(
-            SELECT s.name 
-            FROM specialties s 
-            INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
-            WHERE ds.doctor_id = d.id
-          ) as specialties
-        FROM doctors d
-        WHERE (
-          LOWER(d.first_name || ' ' || d.last_name) LIKE ${searchPattern} OR
-          EXISTS (
-            SELECT 1 FROM doctor_specialties ds
-            INNER JOIN specialties s ON ds.specialty_id = s.id
-            WHERE ds.doctor_id = d.id AND LOWER(s.name) LIKE ${searchPattern}
-          )
-        )
-        ORDER BY d.average_rating DESC
-        LIMIT 100
-      `;
-    } else if (specialtyId) {
-      // Only specialty filter
-      doctorQuery = sql`
-        SELECT 
-          d.id,
-          d.first_name as "firstName",
-          d.last_name as "lastName",
-          d.years_of_experience as "yearsOfExperience",
-          d.average_rating as "averageRating",
-          d.total_ratings as "totalRatings",
-          d.completed_assignments as "completedAssignments",
-          ARRAY(
-            SELECT s.name 
-            FROM specialties s 
-            INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
-            WHERE ds.doctor_id = d.id
-          ) as specialties
-        FROM doctors d
-        WHERE EXISTS (SELECT 1 FROM doctor_specialties WHERE doctor_id = d.id AND specialty_id = ${specialtyId})
-        ORDER BY d.average_rating DESC
-        LIMIT 100
-      `;
-    } else {
-      // No filters - return all doctors
-      doctorQuery = sql`
-        SELECT 
-          d.id,
-          d.first_name as "firstName",
-          d.last_name as "lastName",
-          d.years_of_experience as "yearsOfExperience",
-          d.average_rating as "averageRating",
-          d.total_ratings as "totalRatings",
-          d.completed_assignments as "completedAssignments",
-          ARRAY(
-            SELECT s.name 
-            FROM specialties s 
-            INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
-            WHERE ds.doctor_id = d.id
-          ) as specialties
-        FROM doctors d
-        ORDER BY d.average_rating DESC
-        LIMIT 100
-      `;
+      )`);
     }
+
+    // Multiple specialty IDs condition - use proper SQL array syntax
+    if (specialtyIds.length > 0) {
+      // Use EXISTS with ANY clause for multiple specialty IDs
+      // Build array literal properly: ARRAY['uuid1'::uuid, 'uuid2'::uuid]
+      const specialtyArrayLiteral = `ARRAY[${specialtyIds.map(id => `'${id}'::uuid`).join(', ')}]`;
+      whereConditions.push(sql.raw(`EXISTS (
+        SELECT 1 FROM doctor_specialties 
+        WHERE doctor_id = d.id 
+        AND specialty_id = ANY(${specialtyArrayLiteral})
+      )`));
+    }
+
+    // Build WHERE clause - combine conditions manually
+    let whereClause: any = sql``;
+    if (whereConditions.length > 0) {
+      if (whereConditions.length === 1) {
+        whereClause = sql`WHERE ${whereConditions[0]}`;
+      } else {
+        // Combine multiple conditions with AND
+        let combined = whereConditions[0];
+        for (let i = 1; i < whereConditions.length; i++) {
+          combined = sql`${combined} AND ${whereConditions[i]}`;
+        }
+        whereClause = sql`WHERE ${combined}`;
+      }
+    }
+
+    // Count query for pagination
+    const countQuery = sql`
+      SELECT COUNT(DISTINCT d.id) as total
+      FROM doctors d
+      ${whereClause}
+    `;
+
+    // Main query with pagination
+    const doctorQuery = sql`
+      SELECT 
+        d.id,
+        d.first_name as "firstName",
+        d.last_name as "lastName",
+        d.years_of_experience as "yearsOfExperience",
+        d.average_rating as "averageRating",
+        d.total_ratings as "totalRatings",
+        d.completed_assignments as "completedAssignments",
+        d.license_verification_status as "licenseVerificationStatus",
+        ARRAY(
+          SELECT s.name 
+          FROM specialties s 
+          INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
+          WHERE ds.doctor_id = d.id
+        ) as specialties
+      FROM doctors d
+      ${whereClause}
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `;
     
+    // Execute count query for pagination
+    const countResult = await db.execute(countQuery);
+    const totalCount = parseInt(String(countResult.rows[0]?.total || '0'), 10);
+    const totalPages = Math.ceil(totalCount / limit);
+    
+    // Execute main query
     const doctorsList = await db.execute(doctorQuery);
     
     // Get list of doctor IDs from the results
@@ -235,34 +212,116 @@ export async function GET(
       });
     }
 
-    // Format the results
-    const formattedDoctorsList = doctorsList.rows.map((row: any) => ({
-      id: row.id,
-      firstName: row.firstName,
-      lastName: row.lastName,
-      yearsOfExperience: row.yearsOfExperience,
-      averageRating: row.averageRating,
-      totalRatings: row.totalRatings,
-      completedAssignments: row.completedAssignments,
-      specialties: row.specialties || [],
-      availableSlots: availabilityByDoctor[row.id] || [],
-    }));
+    // Get doctor user IDs by querying doctors table
+    const doctorUserIdsMap: Record<string, string> = {};
+    if (doctorIds.length > 0) {
+      const doctorUsers = await db
+        .select({
+          id: doctors.id,
+          userId: doctors.userId,
+        })
+        .from(doctors)
+        .where(inArray(doctors.id, doctorIds));
+      
+      doctorUsers.forEach((doc) => {
+        doctorUserIdsMap[doc.id] = doc.userId;
+      });
+    }
+    
+    // Fetch active subscriptions for all doctors
+    const doctorUserIdsList = Object.values(doctorUserIdsMap);
+    const doctorSubscriptions = doctorUserIdsList.length > 0 ? await db
+      .select({
+        userId: subscriptions.userId,
+        tier: subscriptionPlans.tier,
+        planId: subscriptionPlans.id,
+      })
+      .from(subscriptions)
+      .innerJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+      .where(
+        and(
+          inArray(subscriptions.userId, doctorUserIdsList),
+          eq(subscriptions.status, 'active'),
+          eq(subscriptionPlans.userRole, 'doctor')
+        )
+      ) : [];
+    
+    // Create a map of userId -> subscription tier
+    const subscriptionMap: Record<string, { tier: string; planId: string }> = {};
+    doctorSubscriptions.forEach((sub) => {
+      subscriptionMap[sub.userId] = { tier: sub.tier, planId: sub.planId };
+    });
+    
+    // Fetch visibility weights for doctor plans
+    const planIds = [...new Set(doctorSubscriptions.map(s => s.planId))];
+    const visibilityWeights = planIds.length > 0 ? await db
+      .select({
+        planId: doctorPlanFeatures.planId,
+        visibilityWeight: doctorPlanFeatures.visibilityWeight,
+      })
+      .from(doctorPlanFeatures)
+      .where(inArray(doctorPlanFeatures.planId, planIds)) : [];
+    
+    const visibilityWeightMap: Record<string, number> = {};
+    visibilityWeights.forEach((vw) => {
+      visibilityWeightMap[vw.planId] = vw.visibilityWeight || 1;
+    });
+    
+    // Format the results and calculate scores
+    const formattedDoctorsList = doctorsList.rows.map((row: any) => {
+      const userId = doctorUserIdsMap[row.id];
+      const subscription = userId ? subscriptionMap[userId] : null;
+      const visibilityWeight = subscription?.planId ? visibilityWeightMap[subscription.planId] : null;
+      
+      // Calculate score
+      const scoringData: DoctorScoringData = {
+        yearsOfExperience: row.yearsOfExperience || 0,
+        averageRating: row.averageRating ? Number(row.averageRating) : null,
+        totalRatings: row.totalRatings || 0,
+        completedAssignments: row.completedAssignments || 0,
+        licenseVerificationStatus: (row.licenseVerificationStatus || 'pending') as 'pending' | 'verified' | 'rejected',
+        subscriptionTier: subscription?.tier as any || null,
+        visibilityWeight: visibilityWeight || null,
+      };
+      
+      const score = calculateDoctorScore(scoringData);
+      
+      return {
+        id: row.id,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        yearsOfExperience: row.yearsOfExperience,
+        averageRating: row.averageRating,
+        totalRatings: row.totalRatings,
+        completedAssignments: row.completedAssignments,
+        licenseVerificationStatus: row.licenseVerificationStatus,
+        specialties: row.specialties || [],
+        availableSlots: availabilityByDoctor[row.id] || [],
+        score, // Include score for sorting
+      };
+    });
 
+    // Sort doctors by score (highest first)
+    const sortedDoctors = sortDoctorsByScore(formattedDoctorsList);
+    
     // Format doctors with tier and requiredPlan mapping
     // Since schema doesn't have these fields, we'll derive them from rating and experience
-    const formattedDoctors = formattedDoctorsList.map((doctor) => {
+    const formattedDoctors = sortedDoctors.map((doctor) => {
       const rating = doctor.averageRating ? Number(doctor.averageRating) : 0;
       const experience = doctor.yearsOfExperience || 0;
       const completed = doctor.completedAssignments || 0;
 
-      // Derive tier based on rating and experience
+      // Derive tier based on score and other factors
       let tier: 'platinum' | 'gold' | 'silver' = 'silver';
       let requiredPlan: 'free' | 'gold' | 'premium' = 'free';
+      
+      const totalScore = doctor.score?.totalScore || 0;
 
-      if (rating >= 4.8 && experience >= 15 && completed >= 400) {
+      // Tier determination based on score and key metrics
+      if (totalScore >= 80 || (rating >= 4.8 && experience >= 15 && completed >= 400)) {
         tier = 'platinum';
         requiredPlan = 'premium';
-      } else if (rating >= 4.6 && experience >= 10 && completed >= 200) {
+      } else if (totalScore >= 60 || (rating >= 4.6 && experience >= 10 && completed >= 200)) {
         tier = 'gold';
         requiredPlan = 'gold';
       } else {
@@ -303,6 +362,8 @@ export async function GET(
         photo: null,
         availableSlots: slots.length > 0 ? slots : [], // Return empty array if no slots
         fee: 1000 + (experience * 100), // Calculate fee based on experience
+        score: doctor.score?.totalScore || 0, // Include score in response for debugging/display
+        scoreBreakdown: doctor.score?.breakdown, // Include breakdown for transparency
       };
     });
 
@@ -314,14 +375,16 @@ export async function GET(
       return hospitalHas >= doctorRequired;
     });
 
-    // Sort: accessible first, then by tier
+    // Sort: accessible first, then by score (already sorted by score, but re-sort to prioritize accessible)
     accessibleDoctors.sort((a, b) => {
       const aAccessible = planHierarchy[hospitalSubscriptionTier] >= planHierarchy[a.requiredPlan as keyof typeof planHierarchy];
       const bAccessible = planHierarchy[hospitalSubscriptionTier] >= planHierarchy[b.requiredPlan as keyof typeof planHierarchy];
       if (aAccessible !== bAccessible) return bAccessible ? 1 : -1;
       
-      const tierOrder = { platinum: 0, gold: 1, silver: 2 };
-      return tierOrder[a.tier] - tierOrder[b.tier];
+      // If both accessible or both not accessible, sort by score (higher first)
+      const scoreA = a.score || 0;
+      const scoreB = b.score || 0;
+      return scoreB - scoreA;
     });
 
     return NextResponse.json({
@@ -329,6 +392,14 @@ export async function GET(
       data: {
         doctors: accessibleDoctors,
         hospitalSubscription: hospitalSubscriptionTier,
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
+        },
       },
     });
   } catch (error) {
