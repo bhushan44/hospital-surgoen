@@ -21,6 +21,10 @@ export interface CreateDoctorData {
   yearsOfExperience?: number;
   bio?: string;
   primaryLocation?: string;
+  fullAddress?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
   latitude?: number;
   longitude?: number;
   // consultationFee is in assignments table, not doctors table
@@ -115,6 +119,18 @@ export class DoctorsRepository {
     if (doctorData.primaryLocation) {
       values.primaryLocation = doctorData.primaryLocation;
     }
+    if (doctorData.fullAddress) {
+      values.fullAddress = doctorData.fullAddress;
+    }
+    if (doctorData.city) {
+      values.city = doctorData.city;
+    }
+    if (doctorData.state) {
+      values.state = doctorData.state;
+    }
+    if (doctorData.pincode) {
+      values.pincode = doctorData.pincode;
+    }
     if (doctorData.latitude !== undefined) {
       values.latitude = doctorData.latitude;
     }
@@ -186,6 +202,10 @@ export class DoctorsRepository {
     if (updateData.yearsOfExperience !== undefined) updateFields.yearsOfExperience = updateData.yearsOfExperience;
     if (updateData.bio !== undefined) updateFields.bio = updateData.bio;
     if (updateData.primaryLocation !== undefined) updateFields.primaryLocation = updateData.primaryLocation;
+    if (updateData.fullAddress !== undefined) updateFields.fullAddress = updateData.fullAddress;
+    if (updateData.city !== undefined) updateFields.city = updateData.city;
+    if (updateData.state !== undefined) updateFields.state = updateData.state;
+    if (updateData.pincode !== undefined) updateFields.pincode = updateData.pincode;
     if (updateData.latitude !== undefined) updateFields.latitude = updateData.latitude;
     if (updateData.longitude !== undefined) updateFields.longitude = updateData.longitude;
     // Remove consultationFee and isAvailable - not in doctors table

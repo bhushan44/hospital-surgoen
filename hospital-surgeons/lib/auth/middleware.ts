@@ -95,8 +95,10 @@ export function withAuthAndContext<T extends { params: Promise<Record<string, st
 
       return handler(req as AuthenticatedRequest, context);
     } catch (error) {
+      console.error('Authentication error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Invalid token';
       return NextResponse.json(
-        { success: false, message: 'Invalid token' },
+        { success: false, message: errorMessage },
         { status: 401 }
       );
     }

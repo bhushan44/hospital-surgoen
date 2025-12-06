@@ -40,6 +40,8 @@ async function postHandler(req: AuthenticatedRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
+    // Folder and bucket are optional - backend can determine based on context
+    // If not provided, use default 'general' folder
     const folder = (formData.get('folder') as string) || 'general';
     bucket = (formData.get('bucket') as string) || 'images';
 

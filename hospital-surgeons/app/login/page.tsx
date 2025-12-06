@@ -360,7 +360,7 @@ function LoginForm() {
             </form>
           </div>
 
-          {/* Right Panel - Features (Dynamic based on account type) */}
+          {/* Right Panel - Features (Dynamic based on account type)
           <div className={`bg-gradient-to-br rounded-2xl shadow-xl p-8 text-white ${
             accountType === 'doctor' 
               ? 'from-blue-600 to-blue-800' 
@@ -368,8 +368,8 @@ function LoginForm() {
               ? 'from-green-600 to-green-800' 
               : 'from-gray-700 to-gray-900'
           }`}>
-            <div className="mb-8">
-              <div className="flex items-center gap-3 mb-4">
+            <div className="mb-8"> */}
+              {/* <div className="flex items-center gap-3 mb-4">
                 {previewContent.icon}
                 <h3 className="text-xl font-bold">{previewContent.title}</h3>
               </div>
@@ -391,7 +391,7 @@ function LoginForm() {
                 ))}
               </ul>
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>

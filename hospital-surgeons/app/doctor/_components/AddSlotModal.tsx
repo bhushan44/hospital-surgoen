@@ -117,7 +117,14 @@ export function AddSlotModal({ doctorId, onClose, onSuccess }: AddSlotModalProps
                   type="date"
                   value={formData.slotDate}
                   onChange={(e) => setFormData({ ...formData, slotDate: e.target.value })}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={(() => {
+                    // Get today's date in local timezone (not UTC) to avoid date shifts
+                    const today = new Date();
+                    const year = today.getFullYear();
+                    const month = String(today.getMonth() + 1).padStart(2, '0');
+                    const day = String(today.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                  })()}
                   className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0066CC] pr-10 ${
                     errors.slotDate ? 'border-red-300' : 'border-gray-300'
                   }`}

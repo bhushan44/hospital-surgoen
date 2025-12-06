@@ -23,7 +23,10 @@ export default function CompleteProfilePage() {
     licenseNumber: '',
     yearsOfExperience: '',
     bio: '',
-    primaryLocation: '',
+    fullAddress: '',
+    city: '',
+    state: '',
+    pincode: '',
   });
   const [userInfo, setUserInfo] = useState({
     email: '',
@@ -66,7 +69,10 @@ export default function CompleteProfilePage() {
           licenseNumber: '',
           yearsOfExperience: '',
           bio: '',
-          primaryLocation: '',
+          fullAddress: '',
+          city: '',
+          state: '',
+          pincode: '',
         });
         setUserInfo({
           email: '',
@@ -90,7 +96,10 @@ export default function CompleteProfilePage() {
           licenseNumber: doctor.medicalLicenseNumber || doctor.medical_license_number || '',
           yearsOfExperience: doctor.yearsOfExperience?.toString() || doctor.years_of_experience?.toString() || '',
           bio: doctor.bio || '',
-          primaryLocation: doctor.primaryLocation || doctor.primary_location || '',
+          fullAddress: doctor.fullAddress || doctor.full_address || '',
+          city: doctor.city || '',
+          state: doctor.state || '',
+          pincode: doctor.pincode || '',
         });
         // User info (email, phone) might be in a separate user object or not returned
         setUserInfo({
@@ -147,46 +156,50 @@ export default function CompleteProfilePage() {
         return;
       }
 
-      // Upload file
-      const uploadFormData = new FormData();
-      uploadFormData.append('file', selectedPhoto);
-      uploadFormData.append('folder', doctorId ? `doctor-profiles/${doctorId}` : 'doctor-profiles/temp');
-      uploadFormData.append('bucket', 'images');
-
-      const uploadResponse = await fetch('/api/files/upload', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: uploadFormData,
-      });
-      const uploadData = await uploadResponse.json();
-
-      if (!uploadData.success) {
-        throw new Error(uploadData.message || 'Failed to upload photo');
-      }
-
-      // If doctor profile exists, update it. Otherwise, just store the photo ID for when profile is created.
       if (doctorId) {
-        const updateResponse = await fetch(`/api/doctors/${doctorId}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            profilePhotoId: uploadData.data.fileId,
-          }),
+        // Existing profile: Single API call - backend handles file upload and profile update
+        const formData = new FormData();
+        formData.append('file', selectedPhoto);
+
+        const response = await fetch(`/api/doctors/${doctorId}/profile-photo/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
         });
-        const updateData = await updateResponse.json();
+        const data = await response.json();
 
-        if (!updateData.success) {
-          throw new Error(updateData.message || 'Failed to update profile photo');
+        if (!data.success) {
+          throw new Error(data.message || 'Failed to upload photo');
         }
-      }
 
-      toast.success(doctorId ? 'Profile photo updated successfully' : 'Photo ready to be saved with profile');
-      setSelectedPhoto(null);
-      setProfilePhotoId(uploadData.data.fileId);
-      setProfilePhotoUrl(uploadData.data.url);
+        toast.success('Profile photo updated successfully');
+        setSelectedPhoto(null);
+        setProfilePhotoId(data.data.fileId);
+        setProfilePhotoUrl(data.data.url);
+      } else {
+        // New profile: Upload photo first, store fileId for when profile is created
+        // Use general upload endpoint (will be moved to proper folder when profile is created)
+        const formData = new FormData();
+        formData.append('file', selectedPhoto);
+        // Note: For new profiles, we upload to temp location
+        // Backend will handle folder structure - frontend doesn't specify folder/bucket
+
+        const response = await fetch('/api/files/upload', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.message || 'Failed to upload photo');
+        }
+
+        // Store photo ID for when profile is created
+        setProfilePhotoId(data.data.fileId);
+        setProfilePhotoUrl(data.data.url);
+        toast.success('Photo uploaded. It will be saved when you create your profile.');
+      }
     } catch (err) {
       console.error('Photo upload error:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to upload photo');
@@ -197,8 +210,14 @@ export default function CompleteProfilePage() {
 
   const handleSave = async () => {
     // Validate required fields
-    if (!formData.firstName || !formData.lastName || !formData.licenseNumber || !formData.yearsOfExperience || !formData.primaryLocation) {
-      setError('Please fill in all required fields (First Name, Last Name, License Number, Years of Experience, Primary Location)');
+    if (!formData.firstName || !formData.lastName || !formData.licenseNumber || !formData.yearsOfExperience) {
+      setError('Please fill in all required fields (First Name, Last Name, License Number, Years of Experience)');
+      return;
+    }
+    
+    // Validate location - city and state are required
+    if (!formData.city || !formData.state) {
+      setError('Please provide both City and State');
       return;
     }
 
@@ -221,7 +240,10 @@ export default function CompleteProfilePage() {
             medicalLicenseNumber: formData.licenseNumber,
             yearsOfExperience: formData.yearsOfExperience ? parseInt(formData.yearsOfExperience) : null,
             bio: formData.bio,
-            primaryLocation: formData.primaryLocation,
+            fullAddress: formData.fullAddress,
+            city: formData.city,
+            state: formData.state,
+            pincode: formData.pincode,
             profilePhotoId: profilePhotoId,
           }),
         });
@@ -248,10 +270,22 @@ export default function CompleteProfilePage() {
             medicalLicenseNumber: formData.licenseNumber,
             yearsOfExperience: parseInt(formData.yearsOfExperience) || 0,
             bio: formData.bio || null,
-            primaryLocation: formData.primaryLocation,
+            fullAddress: formData.fullAddress,
+            city: formData.city,
+            state: formData.state,
+            pincode: formData.pincode,
             ...(profilePhotoId && { profilePhotoId }),
           }),
         });
+
+        if (response.status === 401) {
+          // Token expired or invalid - redirect to login
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          toast.error('Session expired. Please log in again.');
+          router.push('/login');
+          return;
+        }
 
         const result = await response.json();
         
@@ -485,21 +519,74 @@ export default function CompleteProfilePage() {
             />
           </div>
 
-          {/* Primary Location */}
-          <div className="md:col-span-2">
-            <label className="block text-sm text-gray-700 mb-2 font-medium">
-              Primary Location / City <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.primaryLocation}
-              onChange={(e) => setFormData({ ...formData, primaryLocation: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
-              placeholder="e.g., Mumbai, India or City + Area"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              This helps hospitals find you by location. We automatically calculate latitude/longitude from this.
-            </p>
+        </div>
+
+        {/* Location Details Section */}
+        <div className="mt-6">
+          <h4 className="text-sm font-semibold text-gray-900 mb-4">Location Details</h4>
+          <p className="text-xs text-gray-500 mb-4">
+            Provide detailed location information for better accuracy. More details = more accurate coordinates.
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Full Address */}
+            <div className="md:col-span-2">
+              <label className="block text-sm text-gray-700 mb-2 font-medium">
+                Full Address
+              </label>
+              <input
+                type="text"
+                value={formData.fullAddress}
+                onChange={(e) => setFormData({ ...formData, fullAddress: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                placeholder="e.g., 123 Main Street, Building Name, Area"
+              />
+              <p className="text-xs text-gray-500 mt-1">Street address with building/area name (for high accuracy)</p>
+            </div>
+
+            {/* City */}
+            <div>
+              <label className="block text-sm text-gray-700 mb-2 font-medium">
+                City <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.city}
+                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                placeholder="e.g., Mumbai"
+              />
+            </div>
+
+            {/* State */}
+            <div>
+              <label className="block text-sm text-gray-700 mb-2 font-medium">
+                State <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.state}
+                onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                placeholder="e.g., Maharashtra"
+              />
+            </div>
+
+            {/* Pincode */}
+            <div>
+              <label className="block text-sm text-gray-700 mb-2 font-medium">
+                Pincode / Postal Code
+              </label>
+              <input
+                type="text"
+                value={formData.pincode}
+                onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                placeholder="e.g., 400001"
+                maxLength={10}
+              />
+              <p className="text-xs text-gray-500 mt-1">Postal/ZIP code (for medium accuracy)</p>
+            </div>
           </div>
         </div>
 

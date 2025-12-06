@@ -14,6 +14,10 @@ export interface CreateDoctorDto {
   bio?: string;
   profilePhotoId?: string; // UUID reference to files table
   primaryLocation?: string;
+  fullAddress?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
   latitude?: number;
   longitude?: number;
   // consultationFee is in assignments table, not doctors table
@@ -28,6 +32,10 @@ export interface UpdateDoctorDto {
   yearsOfExperience?: number;
   bio?: string;
   primaryLocation?: string;
+  fullAddress?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
   latitude?: number;
   longitude?: number;
   // consultationFee is in assignments table, not doctors table
@@ -131,8 +139,14 @@ export class DoctorsService {
       // Optionally geocode location if provided
       let latitude: number | undefined;
       let longitude: number | undefined;
-      if (createDoctorDto.primaryLocation && (createDoctorDto.latitude === undefined || createDoctorDto.longitude === undefined)) {
-        const geo = await geocodeLocation(createDoctorDto.primaryLocation);
+      if ((createDoctorDto.fullAddress || createDoctorDto.city || createDoctorDto.state) 
+          && (createDoctorDto.latitude === undefined || createDoctorDto.longitude === undefined)) {
+        const geo = await geocodeLocation({
+          fullAddress: createDoctorDto.fullAddress,
+          city: createDoctorDto.city,
+          state: createDoctorDto.state,
+          pincode: createDoctorDto.pincode,
+        });
         if (geo) {
           latitude = geo.latitude;
           longitude = geo.longitude;
@@ -152,6 +166,10 @@ export class DoctorsService {
           yearsOfExperience: createDoctorDto.yearsOfExperience,
           bio: createDoctorDto.bio,
           primaryLocation: createDoctorDto.primaryLocation,
+          fullAddress: createDoctorDto.fullAddress,
+          city: createDoctorDto.city,
+          state: createDoctorDto.state,
+          pincode: createDoctorDto.pincode,
           latitude,
           longitude,
         },
@@ -256,6 +274,10 @@ export class DoctorsService {
       bio?: string;
       profilePhotoId?: string;
       primaryLocation?: string;
+      fullAddress?: string;
+      city?: string;
+      state?: string;
+      pincode?: string;
       latitude?: number;
       longitude?: number;
       firstName?: string;
@@ -290,11 +312,20 @@ export class DoctorsService {
       const firstName = createDoctorProfileDto.firstName || '';
       const lastName = createDoctorProfileDto.lastName || '';
 
-      // Geocode primary location if provided and coordinates not set
+      // Geocode location using address components for better accuracy
       let latitude: number | undefined = createDoctorProfileDto.latitude;
       let longitude: number | undefined = createDoctorProfileDto.longitude;
-      if (createDoctorProfileDto.primaryLocation && (latitude === undefined || longitude === undefined)) {
-        const geo = await geocodeLocation(createDoctorProfileDto.primaryLocation);
+      
+      // Use address components (city and state are required, fullAddress and pincode are optional)
+      if ((createDoctorProfileDto.fullAddress || createDoctorProfileDto.city || createDoctorProfileDto.state) 
+          && (latitude === undefined || longitude === undefined)) {
+        const geo = await geocodeLocation({
+          fullAddress: createDoctorProfileDto.fullAddress,
+          city: createDoctorProfileDto.city,
+          state: createDoctorProfileDto.state,
+          pincode: createDoctorProfileDto.pincode,
+        });
+        console.log('geo', geo, createDoctorProfileDto);
         if (geo) {
           latitude = geo.latitude;
           longitude = geo.longitude;
@@ -311,6 +342,10 @@ export class DoctorsService {
           bio: createDoctorProfileDto.bio,
           profilePhotoId: createDoctorProfileDto.profilePhotoId,
           primaryLocation: createDoctorProfileDto.primaryLocation,
+          fullAddress: createDoctorProfileDto.fullAddress,
+          city: createDoctorProfileDto.city,
+          state: createDoctorProfileDto.state,
+          pincode: createDoctorProfileDto.pincode,
           latitude,
           longitude,
         },
@@ -345,11 +380,30 @@ export class DoctorsService {
       // geocode the new location.
       let latitude = updateDoctorDto.latitude;
       let longitude = updateDoctorDto.longitude;
-      if (updateDoctorDto.primaryLocation && (latitude === undefined || longitude === undefined)) {
-        const geo = await geocodeLocation(updateDoctorDto.primaryLocation);
-        if (geo) {
-          latitude = geo.latitude;
-          longitude = geo.longitude;
+      
+      // If location components are being updated, re-geocode unless coordinates are explicitly provided
+      const hasLocationUpdate = updateDoctorDto.fullAddress !== undefined ||
+                                updateDoctorDto.city !== undefined ||
+                                updateDoctorDto.state !== undefined ||
+                                updateDoctorDto.pincode !== undefined;
+      
+      if (hasLocationUpdate) {
+        // Only geocode if coordinates are not explicitly provided in the update
+        if (latitude === undefined && longitude === undefined) {
+          const geo = await geocodeLocation({
+            fullAddress: updateDoctorDto.fullAddress,
+            city: updateDoctorDto.city,
+            state: updateDoctorDto.state,
+            pincode: updateDoctorDto.pincode,
+          });
+          console.log('geo', geo, updateDoctorDto);
+          if (geo) {
+            latitude = geo.latitude;
+            longitude = geo.longitude;
+          }
+          // If geocoding fails, leave latitude/longitude as undefined
+          // This means the old coordinates will be preserved (not updated)
+          // This is safer than clearing them, as the location might still be valid
         }
       }
 
@@ -710,9 +764,41 @@ export class DoctorsService {
         };
       }
 
+      // Validate and normalize date format (YYYY-MM-DD)
+      // Accept date as-is from frontend - no timezone conversion
+      // The date string represents a calendar date, not a timestamp
+      let slotDate = availabilityDto.slotDate;
+      if (slotDate) {
+        // Ensure format is YYYY-MM-DD (remove any time/timezone if present)
+        const dateMatch = slotDate.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          slotDate = dateMatch[1];
+        } else {
+          return {
+            success: false,
+            message: 'Invalid date format. Expected YYYY-MM-DD',
+          };
+        }
+      }
+
+      // Validate time format (HH:mm)
+      const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+      if (availabilityDto.startTime && !timeRegex.test(availabilityDto.startTime)) {
+        return {
+          success: false,
+          message: 'Invalid start time format. Expected HH:mm (24-hour format)',
+        };
+      }
+      if (availabilityDto.endTime && !timeRegex.test(availabilityDto.endTime)) {
+        return {
+          success: false,
+          message: 'Invalid end time format. Expected HH:mm (24-hour format)',
+        };
+      }
+
        const overlap = await this.doctorsRepository.hasAvailabilityOverlap(
          doctorId,
-         availabilityDto.slotDate,
+         slotDate,
          availabilityDto.startTime,
          availabilityDto.endTime,
        );
@@ -723,7 +809,13 @@ export class DoctorsService {
          };
        }
 
-      const availability = await this.doctorsRepository.createAvailability(availabilityDto, doctorId);
+      // Use normalized date
+      const normalizedDto = {
+        ...availabilityDto,
+        slotDate,
+      };
+
+      const availability = await this.doctorsRepository.createAvailability(normalizedDto, doctorId);
 
       return {
         success: true,

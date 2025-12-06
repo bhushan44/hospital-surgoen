@@ -152,7 +152,7 @@ export default function DoctorRegistrationPage() {
       return;
     }
     
-    if (step < 4) {
+    if (step < 3) {
       setStep(step + 1);
     }
   };
@@ -224,8 +224,8 @@ export default function DoctorRegistrationPage() {
     }
   };
 
-  const steps = ['Personal', 'Practice', 'Professional', 'Preferences'];
-  const progress = (step / 4) * 100;
+  const steps = ['Personal', 'Practice', 'Professional'];
+  const progress = (step / 3) * 100;
 
   // Fetch specialties when component mounts or step 3 is reached
   useEffect(() => {
@@ -281,7 +281,7 @@ export default function DoctorRegistrationPage() {
             {/* Progress Indicator */}
             <div className="mb-8">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">Step {step} of 4</span>
+                <span className="text-sm font-medium text-gray-700">Step {step} of 3</span>
                 <span className="text-sm text-gray-500">{Math.round(progress)}% Complete</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
@@ -326,7 +326,7 @@ export default function DoctorRegistrationPage() {
             )}
 
             {/* Form Steps */}
-            <form onSubmit={step === 4 ? handleSubmit : undefined}>
+            <form onSubmit={step === 3 ? handleSubmit : undefined}>
               {step === 1 && (
                 <div className="space-y-6">
                   <div>
@@ -492,21 +492,23 @@ export default function DoctorRegistrationPage() {
                         <p className="text-gray-500">No specialties available</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 gap-3 max-h-64 overflow-y-auto border border-gray-200 rounded-lg p-4">
-                        {specialtiesList.map((specialty) => (
-                          <label
-                            key={specialty.id}
-                            className="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formData.specialties.includes(specialty.id)}
-                              onChange={() => handleSpecialtyToggle(specialty.id)}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <span className="text-sm text-gray-700">{specialty.name}</span>
-                          </label>
-                        ))}
+                      <div className="border border-gray-200 rounded-lg p-4">
+                        <div className="grid grid-cols-2 gap-3 ">
+                          {specialtiesList.map((specialty) => (
+                            <label
+                              key={specialty.id}
+                              className="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={formData.specialties.includes(specialty.id)}
+                                onChange={() => handleSpecialtyToggle(specialty.id)}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-gray-700">{specialty.name}</span>
+                            </label>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {formData.specialties.length > 0 && (
@@ -515,12 +517,6 @@ export default function DoctorRegistrationPage() {
                       </p>
                     )}
                   </div>
-                </div>
-              )}
-
-              {step === 4 && (
-                <div className="space-y-6">
-                  <p className="text-gray-600">Preferences step (to be implemented)</p>
                 </div>
               )}
 
@@ -538,11 +534,10 @@ export default function DoctorRegistrationPage() {
                   Previous
                 </button>
 
-                {step < 4 ? (
+                {step < 3 ? (
                   <button
                     type="button"
                     onClick={handleNext}
-                    disabled={step === 3 && formData.specialties.length === 0}
                     className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
                   >
                     Next
@@ -553,10 +548,25 @@ export default function DoctorRegistrationPage() {
                 ) : (
                   <button
                     type="submit"
-                    disabled={loading}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    disabled={loading || formData.specialties.length === 0}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
                   >
-                    {loading ? 'Creating Profile...' : 'Complete Registration'}
+                    {loading ? (
+                      <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Creating Profile...
+                      </>
+                    ) : (
+                      <>
+                        Complete Registration
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </>
+                    )}
                   </button>
                 )}
               </div>

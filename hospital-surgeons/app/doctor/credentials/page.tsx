@@ -45,8 +45,6 @@ const credentialTypes = [
   { value: 'other', label: 'Other' },
 ];
 
-const CREDENTIALS_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_CREDENTIALS_BUCKET || 'images';
-
 export default function CredentialsDocumentsPage() {
   const router = useRouter();
   const [doctorId, setDoctorId] = useState<string | null>(null);
@@ -153,39 +151,24 @@ export default function CredentialsDocumentsPage() {
         return;
       }
 
+      // Single API call - backend handles file upload and credential creation
       const formData = new FormData();
       formData.append('file', selectedFile);
-      formData.append('folder', `doctor-credentials/${doctorId}`);
-      formData.append('bucket', CREDENTIALS_BUCKET);
+      formData.append('credentialType', form.type);
+      formData.append('title', form.title);
+      if (form.institution) {
+        formData.append('institution', form.institution);
+      }
 
-      const uploadResponse = await fetch('/api/files/upload', {
+      const response = await fetch(`/api/doctors/${doctorId}/credentials/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      const uploadData = await uploadResponse.json();
+      const data = await response.json();
 
-      if (!uploadData.success) {
-        throw new Error(uploadData.message || 'Failed to upload file');
-      }
-
-      const credentialResponse = await fetch(`/api/doctors/${doctorId}/credentials`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          fileId: uploadData.data.fileId,
-          credentialType: form.type,
-          title: form.title,
-          institution: form.institution,
-        }),
-      });
-      const credentialData = await credentialResponse.json();
-
-      if (!credentialData.success) {
-        throw new Error(credentialData.message || 'Failed to save credential');
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to upload credential');
       }
 
       toast.success('Credential uploaded successfully');

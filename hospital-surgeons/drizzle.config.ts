@@ -7,7 +7,7 @@ dotenv.config(); // Fallback to .env
 
 export default {
   out: './src/db/drizzle/migrations',
-  schema: './lib/db/schema.ts',
+  schema: './src/db/drizzle/migrations/schema.ts',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL!,

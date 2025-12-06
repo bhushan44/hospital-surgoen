@@ -74,6 +74,10 @@ async function postHandler(req: NextRequest) {
       bio: body.bio,
       profilePhotoId: body.profilePhotoId,
       primaryLocation: body.primaryLocation,
+      fullAddress: body.fullAddress,
+      city: body.city,
+      state: body.state,
+      pincode: body.pincode,
       firstName: body.firstName, // Optional, from step 2
       lastName: body.lastName, // Optional, from step 2
     });
