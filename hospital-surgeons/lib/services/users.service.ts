@@ -162,7 +162,7 @@ export class UsersService {
       const accessToken = signToken(
         payload,
         process.env.JWT_ACCESS_TOKEN_SECRET!,
-        process.env.JWT_ACCESS_TOKEN_EXPIRATION || '900s'
+        process.env.JWT_ACCESS_TOKEN_EXPIRATION || '1d'
       );
 
       const refreshToken = signToken(
@@ -221,7 +221,7 @@ export class UsersService {
       const accessToken = signToken(
         { userId: payload.userId, userRole: payload.userRole },
         process.env.JWT_ACCESS_TOKEN_SECRET!,
-        process.env.JWT_ACCESS_TOKEN_EXPIRATION || '900s'
+        process.env.JWT_ACCESS_TOKEN_EXPIRATION || '1d'
       );
 
       // Update or insert device usage

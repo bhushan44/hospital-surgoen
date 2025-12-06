@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
       const accessToken = signToken(
         payload,
         process.env.JWT_ACCESS_TOKEN_SECRET!,
-        process.env.JWT_ACCESS_TOKEN_EXPIRATION || '900s'
+        process.env.JWT_ACCESS_TOKEN_EXPIRATION || '1d'
       );
       
       return NextResponse.json({
