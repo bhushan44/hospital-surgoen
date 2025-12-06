@@ -25,6 +25,9 @@ export interface UpdateHospitalDto {
   registrationNumber?: string;
   address?: string;
   city?: string;
+  fullAddress?: string;
+  state?: string;
+  pincode?: string;
   phone?: string;
   website?: string;
   logoId?: string; // UUID reference to files table
@@ -192,7 +195,44 @@ export class HospitalsService {
         };
       }
 
-      const updatedHospital = await this.hospitalsRepository.updateHospital(id, updateHospitalDto);
+      // If location components are being updated, always re-geocode
+      let latitude = updateHospitalDto.latitude;
+      let longitude = updateHospitalDto.longitude;
+      
+      const hasLocationUpdate = updateHospitalDto.fullAddress !== undefined ||
+                                updateHospitalDto.city !== undefined ||
+                                updateHospitalDto.state !== undefined ||
+                                updateHospitalDto.pincode !== undefined ||
+                                updateHospitalDto.address !== undefined;
+      
+      if (hasLocationUpdate) {
+        // Always geocode when location fields are updated
+        const { geocodeLocation } = await import('@/lib/utils/geocoding');
+        const geo = await geocodeLocation({
+          fullAddress: updateHospitalDto.fullAddress,
+          city: updateHospitalDto.city,
+          state: updateHospitalDto.state,
+          pincode: updateHospitalDto.pincode,
+        });
+        
+        if (geo) {
+          latitude = geo.latitude;
+          longitude = geo.longitude;
+        }
+        // If geocoding fails and coordinates were not explicitly provided,
+        // leave latitude/longitude as undefined to preserve old coordinates
+        if (!geo && latitude === undefined && longitude === undefined) {
+          // Keep existing coordinates from database (will be preserved in repository)
+          latitude = undefined;
+          longitude = undefined;
+        }
+      }
+
+      const updatedHospital = await this.hospitalsRepository.updateHospital(id, {
+        ...updateHospitalDto,
+        latitude,
+        longitude,
+      });
 
       return {
         success: true,

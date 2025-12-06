@@ -107,73 +107,16 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   
   try {
-    const body = await req.json();
-
-    // Validate required fields
-    const requiredFields = [
-      'email',
-      'password',
-      'phone',
-      'name',
-      'registrationNumber',
-      'address',
-      'city',
-      'departments',
-    ];
-
-    for (const field of requiredFields) {
-      if (!body[field]) {
-        return NextResponse.json(
-          { success: false, message: `${field} is required` },
-          { status: 400 }
-        );
-      }
+    // Validate request body with Zod
+    const { HospitalRegisterDtoSchema } = await import('@/lib/validations/hospital.dto');
+    const { validateRequest } = await import('@/lib/utils/validate-request');
+    
+    const validation = await validateRequest(req, HospitalRegisterDtoSchema);
+    if (!validation.success) {
+      return validation.response;
     }
 
-    // Validate departments array
-    if (!Array.isArray(body.departments) || body.departments.length === 0) {
-      return NextResponse.json(
-        { success: false, message: 'At least one department is required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate password strength
-    if (body.password.length < 8) {
-      return NextResponse.json(
-        { success: false, message: 'Password must be at least 8 characters long' },
-        { status: 400 }
-      );
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(body.email)) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid email format' },
-        { status: 400 }
-      );
-    }
-
-    // Validate hospital type if provided
-    const validHospitalTypes = ['general', 'specialty', 'clinic', 'trauma_center', 'teaching', 'other'];
-    if (body.hospitalType && !validHospitalTypes.includes(body.hospitalType)) {
-      return NextResponse.json(
-        { success: false, message: `Invalid hospital type. Must be one of: ${validHospitalTypes.join(', ')}` },
-        { status: 400 }
-      );
-    }
-
-    // Validate number of beds if provided
-    if (body.numberOfBeds !== undefined && body.numberOfBeds !== null) {
-      const beds = parseInt(body.numberOfBeds);
-      if (isNaN(beds) || beds < 0) {
-        return NextResponse.json(
-          { success: false, message: 'Number of beds must be a non-negative integer' },
-          { status: 400 }
-        );
-      }
-    }
+    const body = validation.data;
 
     // Check if user with email already exists
     const existingUser = await db
@@ -238,7 +181,7 @@ export async function POST(req: NextRequest) {
           address: body.address,
           city: body.city,
           hospitalType: body.hospitalType || null,
-          numberOfBeds: body.numberOfBeds ? parseInt(body.numberOfBeds) : null,
+          numberOfBeds: body.numberOfBeds ?? null,
           contactEmail: body.contactEmail || body.email,
           contactPhone: body.contactPhone || body.phone,
           websiteUrl: body.websiteUrl || null,

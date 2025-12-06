@@ -151,29 +151,20 @@ export async function POST(
       );
     }
     
-    const db = getDb();
-    const body = await req.json();
+    // Validate request body with Zod
+    const { CreatePatientDtoSchema } = await import('@/lib/validations/patient.dto');
+    const { validateRequest } = await import('@/lib/utils/validate-request');
+    
+    const validation = await validateRequest(req, CreatePatientDtoSchema);
+    if (!validation.success) {
+      return validation.response;
+    }
 
-    // Normalize room type to match database constraint
-    // Database allows: 'general', 'private', 'semi_private', 'icu', 'emergency'
-    const validRoomTypes = ['general', 'private', 'semi_private', 'icu', 'emergency'];
-    let roomType = body.roomType;
+    const body = validation.data;
+    const db = getDb();
     
-    // Convert hyphen to underscore for semi-private
-    if (roomType === 'semi-private') {
-      roomType = 'semi_private';
-    }
-    
-    // Validate room type
-    if (!validRoomTypes.includes(roomType)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Invalid room type. Allowed values: ${validRoomTypes.join(', ')}`,
-        },
-        { status: 400 }
-      );
-    }
+    // Room type is already normalized by Zod transform
+    const roomType = body.roomType;
 
     const newPatient = await db
       .insert(patients)

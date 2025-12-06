@@ -125,52 +125,16 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   
   try {
-    const body = await req.json();
-      // Validate required fields
-      const requiredFields = [
-        'email',
-        'password',
-        'phone',
-        'firstName',
-        'lastName',
-        'medicalLicenseNumber',
-        'yearsOfExperience',
-        'specialties',
-      ];
+    // Validate request body with Zod
+    const { DoctorRegisterDtoSchema } = await import('@/lib/validations/doctor.dto');
+    const { validateRequest } = await import('@/lib/utils/validate-request');
+    
+    const validation = await validateRequest(req, DoctorRegisterDtoSchema);
+    if (!validation.success) {
+      return validation.response;
+    }
 
-      for (const field of requiredFields) {
-        if (!body[field]) {
-          return NextResponse.json(
-            { success: false, message: `${field} is required` },
-            { status: 400 }
-          );
-        }
-      }
-
-      // Validate specialties array
-      if (!Array.isArray(body.specialties) || body.specialties.length === 0) {
-        return NextResponse.json(
-          { success: false, message: 'At least one specialty is required' },
-          { status: 400 }
-        );
-      }
-
-      // Validate password strength
-      if (body.password.length < 8) {
-        return NextResponse.json(
-          { success: false, message: 'Password must be at least 8 characters long' },
-          { status: 400 }
-        );
-      }
-
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(body.email)) {
-        return NextResponse.json(
-          { success: false, message: 'Invalid email format' },
-          { status: 400 }
-        );
-      }
+    const body = validation.data;
 
     // Check if user with email already exists
     const existingUser = await db
@@ -223,7 +187,7 @@ export async function POST(req: NextRequest) {
         firstName: body.firstName,
         lastName: body.lastName,
         medicalLicenseNumber: body.medicalLicenseNumber,
-        yearsOfExperience: parseInt(body.yearsOfExperience) || 0,
+        yearsOfExperience: body.yearsOfExperience,
         bio: body.bio || null,
         profilePhotoId: body.profilePhotoId || null,
         licenseVerificationStatus: 'pending',

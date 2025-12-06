@@ -22,6 +22,7 @@ export interface CreateUserDto {
 export interface LoginUserDto {
   email: string;
   password: string;
+  accountType?: 'doctor' | 'hospital' | 'admin'; // Optional: expected account type for validation
   device?: {
     device_token: string;
     device_type: 'ios' | 'android' | 'web';
@@ -136,6 +137,25 @@ export class UsersService {
           message: 'Invalid password',
           data: null,
         };
+      }
+
+      // Validate account type if provided (for security - ensure user is logging in with correct role)
+      if (body.accountType && body.accountType !== 'admin') {
+        const roleToAccountType: Record<string, 'doctor' | 'hospital' | 'admin'> = {
+          'doctor': 'doctor',
+          'hospital': 'hospital',
+          'admin': 'admin',
+        };
+        
+        const expectedAccountType = roleToAccountType[user[0].role];
+        
+        if (expectedAccountType && body.accountType !== expectedAccountType) {
+          return {
+            success: false,
+            message: `This account is registered as a ${user[0].role}. Please use the ${expectedAccountType} login.`,
+            data: null,
+          };
+        }
       }
 
       const payload = { userId: user[0].id, userRole: user[0].role };

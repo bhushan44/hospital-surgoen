@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { UsersService } from '@/lib/services/users.service';
+import { SignupDtoSchema } from '@/lib/validations/auth.dto';
+import { validateRequest } from '@/lib/utils/validate-request';
 
 /**
  * @swagger
@@ -75,41 +77,24 @@ import { UsersService } from '@/lib/services/users.service';
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    
-    // Validate required fields
-    if (!body.email) {
-      return NextResponse.json(
-        { success: false, message: 'Email is required' },
-        { status: 400 }
-      );
+    // Validate request body with Zod
+    const validation = await validateRequest(req, SignupDtoSchema);
+    if (!validation.success) {
+      return validation.response;
     }
-    
-    if (!body.password || body.password.trim() === '') {
-      return NextResponse.json(
-        { success: false, message: 'Password is required and cannot be empty' },
-        { status: 400 }
-      );
-    }
-    
-    if (!body.phone) {
-      return NextResponse.json(
-        { success: false, message: 'Phone is required' },
-        { status: 400 }
-      );
-    }
-    
+
+    const validatedData = validation.data;
     const usersService = new UsersService();
     
     // Convert password to password_hash for the service
     // The service will hash it, so we pass the plain password here
     const createUserDto = {
-      email: body.email,
-      phone: body.phone,
-      password_hash: body.password, // Plain password - will be hashed in the service
-      firstName: body.firstName,
-      lastName: body.lastName,
-      device: body.device || {
+      email: validatedData.email,
+      phone: validatedData.phone,
+      password_hash: validatedData.password, // Plain password - will be hashed in the service
+      firstName: validatedData.firstName,
+      lastName: validatedData.lastName,
+      device: validatedData.device || {
         device_token: 'web-token-' + Date.now(),
         device_type: 'web',
         app_version: '1.0.0',

@@ -49,6 +49,7 @@ function LoginForm() {
       const response = await apiClient.post('/api/users/login', {
         email,
         password,
+        accountType: accountType, // Send selected account type for API validation
         device: {
           device_type: 'web',
           device_token: 'web-token',
@@ -59,22 +60,41 @@ function LoginForm() {
       });
 
       const data = response.data;
-      
-      // Store refresh token if provided
-      if (data.data?.refreshToken) {
-        localStorage.setItem('refreshToken', data.data.refreshToken);
-      }
 
       if (data.success && data.data?.accessToken) {
-        // Store token first
+        // Decode token to get user role BEFORE storing any tokens
+        const decoded = decodeToken(data.data.accessToken);
+        const userRole = decoded?.userRole;
+        
+        // Validate that the selected account type matches the actual user role
+        if (userRole && accountType !== 'admin') {
+          // Map 'doctor' role to 'doctor' account type, 'hospital' role to 'hospital' account type
+          const roleToAccountType: Record<string, AccountType> = {
+            'doctor': 'doctor',
+            'hospital': 'hospital',
+            'admin': 'admin',
+          };
+          
+          const expectedAccountType = roleToAccountType[userRole];
+          
+          if (expectedAccountType && accountType !== expectedAccountType) {
+            // Don't store any tokens - show error and stop
+            alert(`This account is registered as a ${userRole}. Please select the "${expectedAccountType}" tab and try again.`);
+            setLoading(false);
+            return;
+          }
+        }
+        
+        // Store tokens only after validation passes
         localStorage.setItem('accessToken', data.data.accessToken);
         if (rememberMe) {
           localStorage.setItem('rememberMe', 'true');
         }
-
-        // Decode token to get user role
-        const decoded = decodeToken(data.data.accessToken);
-        const userRole = decoded?.userRole;
+        
+        // Store refresh token if provided
+        if (data.data?.refreshToken) {
+          localStorage.setItem('refreshToken', data.data.refreshToken);
+        }
         
         // For hospital users, check if they have an active subscription
         if (userRole === 'hospital') {

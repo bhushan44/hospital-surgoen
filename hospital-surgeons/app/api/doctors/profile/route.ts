@@ -65,22 +65,19 @@ async function getHandler(req: NextRequest) {
 async function postHandler(req: NextRequest) {
   try {
     const user = (req as any).user;
-    const body = await req.json();
+    
+    // Validate request body with Zod
+    const { CreateDoctorProfileDtoSchema } = await import('@/lib/validations/doctor-profile.dto');
+    const { validateRequest } = await import('@/lib/utils/validate-request');
+    
+    const validation = await validateRequest(req, CreateDoctorProfileDtoSchema);
+    if (!validation.success) {
+      return validation.response;
+    }
+    
     const doctorsService = new DoctorsService();
     
-    const result = await doctorsService.createDoctorProfile(user.userId, {
-      medicalLicenseNumber: body.medicalLicenseNumber,
-      yearsOfExperience: body.yearsOfExperience,
-      bio: body.bio,
-      profilePhotoId: body.profilePhotoId,
-      primaryLocation: body.primaryLocation,
-      fullAddress: body.fullAddress,
-      city: body.city,
-      state: body.state,
-      pincode: body.pincode,
-      firstName: body.firstName, // Optional, from step 2
-      lastName: body.lastName, // Optional, from step 2
-    });
+    const result = await doctorsService.createDoctorProfile(user.userId, validation.data);
     
     return NextResponse.json(result, { status: result.success ? 201 : 400 });
   } catch (error) {

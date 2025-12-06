@@ -111,7 +111,15 @@ async function patchHandler(req: AuthenticatedRequest, context: { params: Promis
   try {
     const params = await context.params;
     const user = (req as any).user;
-    const body = await req.json();
+    
+    // Validate request body with Zod
+    const { UpdateHospitalDtoSchema } = await import('@/lib/validations/hospital.dto');
+    const { validateRequest } = await import('@/lib/utils/validate-request');
+    
+    const validation = await validateRequest(req, UpdateHospitalDtoSchema);
+    if (!validation.success) {
+      return validation.response;
+    }
     
     if (user.userRole !== 'admin') {
       const hospitalsService = new HospitalsService();
@@ -125,7 +133,7 @@ async function patchHandler(req: AuthenticatedRequest, context: { params: Promis
     }
 
     const hospitalsService = new HospitalsService();
-    const result = await hospitalsService.updateHospital(params.id, body);
+    const result = await hospitalsService.updateHospital(params.id, validation.data);
     
     return NextResponse.json(result, { status: result.success ? 200 : 400 });
   } catch (error) {

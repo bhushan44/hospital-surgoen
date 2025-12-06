@@ -376,34 +376,35 @@ export class DoctorsService {
         };
       }
 
-      // If primaryLocation is being updated and coordinates are not explicitly provided,
-      // geocode the new location.
+      // If location components are being updated, always re-geocode
       let latitude = updateDoctorDto.latitude;
       let longitude = updateDoctorDto.longitude;
       
-      // If location components are being updated, re-geocode unless coordinates are explicitly provided
+      // If location components are being updated, always re-geocode
       const hasLocationUpdate = updateDoctorDto.fullAddress !== undefined ||
                                 updateDoctorDto.city !== undefined ||
                                 updateDoctorDto.state !== undefined ||
                                 updateDoctorDto.pincode !== undefined;
       
       if (hasLocationUpdate) {
-        // Only geocode if coordinates are not explicitly provided in the update
-        if (latitude === undefined && longitude === undefined) {
-          const geo = await geocodeLocation({
-            fullAddress: updateDoctorDto.fullAddress,
-            city: updateDoctorDto.city,
-            state: updateDoctorDto.state,
-            pincode: updateDoctorDto.pincode,
-          });
-          console.log('geo', geo, updateDoctorDto);
-          if (geo) {
-            latitude = geo.latitude;
-            longitude = geo.longitude;
-          }
-          // If geocoding fails, leave latitude/longitude as undefined
-          // This means the old coordinates will be preserved (not updated)
-          // This is safer than clearing them, as the location might still be valid
+        // Always geocode when location fields are updated
+        const geo = await geocodeLocation({
+          fullAddress: updateDoctorDto.fullAddress,
+          city: updateDoctorDto.city,
+          state: updateDoctorDto.state,
+          pincode: updateDoctorDto.pincode,
+        });
+        console.log('geo', geo, updateDoctorDto);
+        if (geo) {
+          latitude = geo.latitude;
+          longitude = geo.longitude;
+        }
+        // If geocoding fails and coordinates were not explicitly provided,
+        // leave latitude/longitude as undefined to preserve old coordinates
+        if (!geo && latitude === undefined && longitude === undefined) {
+          // Keep existing coordinates from database (will be preserved in repository)
+          latitude = undefined;
+          longitude = undefined;
         }
       }
 

@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DoctorsService } from '@/lib/services/doctors.service';
+import { HospitalsService } from '@/lib/services/hospitals.service';
 import { FilesService } from '@/lib/services/files.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
-const ALLOWED_TYPES = ['degree', 'certificate', 'license', 'other'];
-const CREDENTIALS_BUCKET = 'images'; // Backend determines the bucket
+const ALLOWED_DOCUMENT_TYPES = ['license', 'accreditation', 'insurance', 'other'];
+const DOCUMENTS_BUCKET = 'documents'; // Backend determines the bucket
 
 /**
  * @swagger
- * /api/doctors/{id}/credentials/upload:
+ * /api/hospitals/{id}/documents/upload:
  *   post:
- *     summary: Upload credential file and create credential record in one call
- *     tags: [Doctors]
+ *     summary: Upload document file and create document record in one call
+ *     tags: [Hospitals]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -21,7 +21,7 @@ const CREDENTIALS_BUCKET = 'images'; // Backend determines the bucket
  *         schema:
  *           type: string
  *           format: uuid
- *         description: Doctor ID
+ *         description: Hospital ID
  *     requestBody:
  *       required: true
  *       content:
@@ -30,22 +30,17 @@ const CREDENTIALS_BUCKET = 'images'; // Backend determines the bucket
  *             type: object
  *             required:
  *               - file
- *               - credentialType
- *               - title
+ *               - documentType
  *             properties:
  *               file:
  *                 type: string
  *                 format: binary
- *               credentialType:
+ *               documentType:
  *                 type: string
- *                 enum: [degree, certificate, license, other]
- *               title:
- *                 type: string
- *               institution:
- *                 type: string
+ *                 enum: [license, accreditation, insurance, other]
  *     responses:
  *       201:
- *         description: Credential uploaded and created successfully
+ *         description: Document uploaded and created successfully
  *       400:
  *         description: Bad request
  *       403:
@@ -53,8 +48,8 @@ const CREDENTIALS_BUCKET = 'images'; // Backend determines the bucket
  */
 async function postHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const { id: doctorId } = await context.params;
-    const doctorsService = new DoctorsService();
+    const { id: hospitalId } = await context.params;
+    const hospitalsService = new HospitalsService();
 
     // Check authorization
     const user = req.user;
@@ -65,16 +60,17 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
       );
     }
 
-    if (user.userRole === 'doctor') {
-      const doctorResult = await doctorsService.findDoctorByUserId(user.userId);
-      if (!doctorResult.success || !doctorResult.data) {
+    // Ensure hospital access
+    if (user.userRole === 'hospital') {
+      const hospitalResult = await hospitalsService.findHospitalByUserId(user.userId);
+      if (!hospitalResult.success || !hospitalResult.data) {
         return NextResponse.json(
-          { success: false, message: 'Doctor profile not found' },
+          { success: false, message: 'Hospital profile not found' },
           { status: 404 }
         );
       }
 
-      if (doctorResult.data.id !== doctorId) {
+      if (hospitalResult.data.id !== hospitalId) {
         return NextResponse.json(
           { success: false, message: 'Insufficient permissions' },
           { status: 403 }
@@ -112,15 +108,15 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
     }
 
     // Validate FormData fields with Zod
-    const { CreateDoctorCredentialFormDataSchema } = await import('@/lib/validations/doctor.dto');
+    const { CreateHospitalDocumentFormDataSchema } = await import('@/lib/validations/hospital.dto');
     const { validateFormData } = await import('@/lib/utils/validate-formdata');
     
-    const validation = validateFormData(formData, CreateDoctorCredentialFormDataSchema);
+    const validation = validateFormData(formData, CreateHospitalDocumentFormDataSchema);
     if (!validation.success) {
       return validation.response;
     }
 
-    const { file, credentialType, title, institution } = validation.data;
+    const { file, documentType } = validation.data;
 
     // Validate file separately (Zod can't validate File objects properly)
     if (!file || !(file instanceof File)) {
@@ -134,11 +130,11 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
       );
     }
 
-    // credentialType and title are already validated by Zod
+    // documentType is already validated by Zod
 
     // Backend determines folder and bucket (frontend doesn't need to know)
-    const folder = `doctor-credentials/${doctorId}`;
-    const bucket = CREDENTIALS_BUCKET;
+    const folder = `hospital-documents/${hospitalId}`;
+    const bucket = DOCUMENTS_BUCKET;
 
     // Upload file
     const bytes = await file.arrayBuffer();
@@ -152,33 +148,29 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
       mimetype: file.type,
       size: file.size,
       bucket,
-      isPublic: true,
+      isPublic: false, // Documents are typically private
     });
 
-    // Create credential record
-    // institution is optional in database but required in interface, so use empty string if not provided
-    const credentialResult = await doctorsService.addCredential(doctorId, {
+    // Create document record
+    const documentResult = await hospitalsService.addDocument(hospitalId, {
       fileId: uploadResult.fileId,
-      credentialType: credentialType, // Already validated by Zod
-      title: title, // Already validated by Zod
-      institution: institution || '', // Use empty string if not provided (database allows null but interface requires string)
-      verificationStatus: 'pending',
+      documentType: documentType, // Already validated by Zod as enum
     });
 
-    if (!credentialResult.success) {
-      // If credential creation fails, we could optionally delete the uploaded file
+    if (!documentResult.success) {
+      // If document creation fails, we could optionally delete the uploaded file
       // For now, we'll just return the error
       return NextResponse.json(
-        { success: false, message: credentialResult.message || 'Failed to create credential record' },
+        { success: false, message: documentResult.message || 'Failed to create document record' },
         { status: 400 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Credential uploaded and created successfully',
+      message: 'Document uploaded and created successfully',
       data: {
-        credential: credentialResult.data,
+        document: documentResult.data,
         file: {
           fileId: uploadResult.fileId,
           url: uploadResult.url,
@@ -187,7 +179,7 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
       },
     }, { status: 201 });
   } catch (error) {
-    console.error('Credential upload error:', error);
+    console.error('Document upload error:', error);
     return NextResponse.json(
       { success: false, message: 'Internal server error', error: String(error) },
       { status: 500 }
@@ -195,5 +187,5 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
   }
 }
 
-export const POST = withAuthAndContext(postHandler, ['doctor', 'admin']);
+export const POST = withAuthAndContext(postHandler, ['hospital', 'admin']);
 

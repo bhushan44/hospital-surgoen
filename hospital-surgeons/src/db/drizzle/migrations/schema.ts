@@ -267,6 +267,9 @@ export const hospitals = pgTable("hospitals", {
 	contactPhone: text("contact_phone"),
 	websiteUrl: text("website_url"),
 	licenseVerificationStatus: text("license_verification_status").default('pending').notNull(),
+	fullAddress: text("full_address"),
+	state: text(),
+	pincode: varchar({ length: 10 }),
 }, (table) => [
 	index("idx_hospitals_city").using("btree", table.city.asc().nullsLast().op("text_ops")),
 	index("idx_hospitals_location").using("btree", table.latitude.asc().nullsLast().op("numeric_ops"), table.longitude.asc().nullsLast().op("numeric_ops")),

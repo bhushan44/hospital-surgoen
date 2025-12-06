@@ -28,19 +28,17 @@ export async function POST(
     }
     
     const db = getDb();
-    const body = await req.json();
-
-    const { patientId, doctorId, availabilitySlotId, priority = 'routine', consultationFee } = body;
-
-    if (!patientId || !doctorId || !availabilitySlotId) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'patientId, doctorId, and availabilitySlotId are required',
-        },
-        { status: 400 }
-      );
+    
+    // Validate request body with Zod
+    const { CreateAssignmentDtoSchema } = await import('@/lib/validations/assignment.dto');
+    const { validateRequest } = await import('@/lib/utils/validate-request');
+    
+    const validation = await validateRequest(req, CreateAssignmentDtoSchema);
+    if (!validation.success) {
+      return validation.response;
     }
+
+    const { patientId, doctorId, availabilitySlotId, priority = 'routine', consultationFee } = validation.data;
 
     // Calculate expiresAt based on priority
     const expiresAt = new Date();

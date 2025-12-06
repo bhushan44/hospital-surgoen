@@ -75,6 +75,9 @@ export function HospitalProfile() {
     websiteUrl: '',
     address: '',
     city: '',
+    fullAddress: '',
+    state: '',
+    pincode: '',
     numberOfBeds: '',
   });
   const [selectedLogo, setSelectedLogo] = useState<File | null>(null);
@@ -116,6 +119,9 @@ export function HospitalProfile() {
           websiteUrl: hospital.websiteUrl || '',
           address: hospital.address || '',
           city: hospital.city || '',
+          fullAddress: hospital.fullAddress || hospital.full_address || '',
+          state: hospital.state || '',
+          pincode: hospital.pincode || '',
           numberOfBeds: hospital.numberOfBeds?.toString() || '',
         });
         
@@ -175,35 +181,20 @@ export function HospitalProfile() {
     try {
       setUploadingLogo(true);
       
-      // Upload file
-      const uploadFormData = new FormData();
-      uploadFormData.append('file', selectedLogo);
-      uploadFormData.append('folder', `hospital-logos/${hospitalId}`);
-      uploadFormData.append('bucket', 'images');
+      // Single API call - backend handles file upload and profile update
+      const formData = new FormData();
+      formData.append('file', selectedLogo);
 
-      const uploadResponse = await apiClient.post('/api/files/upload', uploadFormData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      const response = await apiClient.post(`/api/hospitals/${hospitalId}/logo/upload`, formData);
 
-      if (!uploadResponse.data.success) {
-        throw new Error(uploadResponse.data.message || 'Failed to upload logo');
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Failed to upload logo');
       }
 
-      // Update hospital with logo ID
-      const updateResponse = await apiClient.patch(`/api/hospitals/${hospitalId}`, {
-        logoId: uploadResponse.data.data.fileId,
-      });
-
-      if (updateResponse.data.success) {
-        toast.success('Logo uploaded successfully');
-        setSelectedLogo(null);
-        setLogoUrl(uploadResponse.data.data.url);
-        fetchHospitalProfile();
-      } else {
-        throw new Error(updateResponse.data.message || 'Failed to update logo');
-      }
+      toast.success('Logo uploaded successfully');
+      setSelectedLogo(null);
+      setLogoUrl(response.data.data.url);
+      fetchHospitalProfile();
     } catch (error: any) {
       console.error('Logo upload error:', error);
       toast.error(error.response?.data?.message || 'Failed to upload logo');
@@ -226,6 +217,9 @@ export function HospitalProfile() {
         websiteUrl: formData.websiteUrl || undefined,
         address: formData.address,
         city: formData.city,
+        fullAddress: formData.fullAddress || undefined,
+        state: formData.state || undefined,
+        pincode: formData.pincode || undefined,
         numberOfBeds: formData.numberOfBeds ? parseInt(formData.numberOfBeds) : undefined,
       };
 
@@ -301,38 +295,25 @@ export function HospitalProfile() {
     try {
       setUploadingDocument(true);
       
-      // First upload the file
-      const uploadFormData = new FormData();
-      uploadFormData.append('file', selectedDocument);
-      uploadFormData.append('folder', `documents/${hospitalId}`);
-      uploadFormData.append('bucket', 'documents');
+      // Single API call - backend handles file upload and document creation
+      const formData = new FormData();
+      formData.append('file', selectedDocument);
+      formData.append('documentType', documentType);
 
-      const uploadResponse = await apiClient.post('/api/files/upload', uploadFormData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await apiClient.post(`/api/hospitals/${hospitalId}/documents/upload`, formData);
 
-      if (!uploadResponse.data.success) {
-        throw new Error(uploadResponse.data.message || 'Failed to upload file');
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Failed to upload document');
       }
 
-      // Then create the document record
-      const documentResponse = await apiClient.post(`/api/hospitals/${hospitalId}/documents`, {
-        fileId: uploadResponse.data.data.fileId,
-        documentType: documentType,
-      });
-
-      if (documentResponse.data.success) {
-        toast.success('Document uploaded successfully');
-        setShowUploadDocument(false);
-        setSelectedDocument(null);
-        setDocumentType('license');
-        fetchDocuments();
-      } else {
-        throw new Error(documentResponse.data.message || 'Failed to create document record');
-      }
+      toast.success('Document uploaded successfully');
+      setShowUploadDocument(false);
+      setSelectedDocument(null);
+      setDocumentType('license');
+      fetchDocuments();
     } catch (error: any) {
-      console.error('Error uploading document:', error);
-      toast.error(error.response?.data?.message || error.message || 'Failed to upload document');
+      console.error('Document upload error:', error);
+      toast.error(error.response?.data?.message || 'Failed to upload document');
     } finally {
       setUploadingDocument(false);
     }
@@ -614,6 +595,17 @@ export function HospitalProfile() {
                     </div>
                   </div>
 
+                  <div className="space-y-2">
+                    <Label htmlFor="fullAddress" className="text-slate-700">Full Address</Label>
+                    <Input
+                      id="fullAddress"
+                      value={formData.fullAddress}
+                      onChange={(e) => setFormData({ ...formData, fullAddress: e.target.value })}
+                      placeholder="Street address, building name, etc."
+                      className="bg-white"
+                    />
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="address" className="text-slate-700">
@@ -639,6 +631,28 @@ export function HospitalProfile() {
                         className="bg-white"
                         value={formData.city}
                         onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="state" className="text-slate-700">State</Label>
+                      <Input
+                        id="state"
+                        value={formData.state}
+                        onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                        className="bg-white"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="pincode" className="text-slate-700">Pincode</Label>
+                      <Input
+                        id="pincode"
+                        value={formData.pincode}
+                        onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                        maxLength={10}
+                        className="bg-white"
                       />
                     </div>
                   </div>
@@ -694,15 +708,17 @@ export function HospitalProfile() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {departments.map((dept) => (
-                      <Badge
-                        key={dept.id}
-                        variant="secondary"
-                        className="px-3 py-1.5 text-sm bg-teal-50 text-teal-800 border-teal-200"
-                      >
-                        {dept.specialty?.name || 'Unknown Specialty'}
-                      </Badge>
-                    ))}
+                    {departments
+                      .filter((dept) => dept && (dept.id || dept.specialtyId))
+                      .map((dept, index) => (
+                        <Badge
+                          key={dept.id || `dept-${dept.specialtyId}-${index}`}
+                          variant="secondary"
+                          className="px-3 py-1.5 text-sm bg-teal-50 text-teal-800 border-teal-200"
+                        >
+                          {dept.specialty?.name || 'Unknown Specialty'}
+                        </Badge>
+                      ))}
                   </div>
                 )}
               </CardContent>

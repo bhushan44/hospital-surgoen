@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { UsersService } from '@/lib/services/users.service';
+import { LoginDtoSchema } from '@/lib/validations/auth.dto';
+import { validateRequest } from '@/lib/utils/validate-request';
 
 /**
  * @swagger
@@ -26,6 +28,11 @@ import { UsersService } from '@/lib/services/users.service';
  *                 type: string
  *                 format: password
  *                 example: "SecurePassword123!"
+ *               accountType:
+ *                 type: string
+ *                 enum: [doctor, hospital, admin]
+ *                 description: Optional. Expected account type for validation. If provided, must match user's actual role.
+ *                 example: doctor
  *               device:
  *                 type: object
  *                 required:
@@ -63,11 +70,19 @@ import { UsersService } from '@/lib/services/users.service';
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    // Validate request body with Zod
+    const validation = await validateRequest(req, LoginDtoSchema);
+    if (!validation.success) {
+      return validation.response;
+    }
+
     const usersService = new UsersService();
-    const result = await usersService.login(body);
+    const result = await usersService.login(validation.data);
     
-    return NextResponse.json(result, { status: result.success ? 200 : 401 });
+    // Return 403 Forbidden if role mismatch (more specific than 401)
+    const statusCode = result.success ? 200 : (result.message?.includes('registered as') ? 403 : 401);
+    
+    return NextResponse.json(result, { status: statusCode });
   } catch (error) {
     return NextResponse.json(
       { success: false, message: 'Internal server error', error: String(error) },

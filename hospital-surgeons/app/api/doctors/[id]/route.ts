@@ -108,7 +108,15 @@ async function patchHandler(req: AuthenticatedRequest, context: { params: Promis
   try {
     const params = await context.params;
     const user = (req as any).user;
-    const body = await req.json();
+    
+    // Validate request body with Zod
+    const { UpdateDoctorDtoSchema } = await import('@/lib/validations/doctor.dto');
+    const { validateRequest } = await import('@/lib/utils/validate-request');
+    
+    const validation = await validateRequest(req, UpdateDoctorDtoSchema);
+    if (!validation.success) {
+      return validation.response;
+    }
     
     // Check if user is admin or the doctor themselves
     if (user.userRole !== 'admin') {
@@ -124,7 +132,7 @@ async function patchHandler(req: AuthenticatedRequest, context: { params: Promis
     }
 
     const doctorsService = new DoctorsService();
-    const result = await doctorsService.updateDoctor(params.id, body);
+    const result = await doctorsService.updateDoctor(params.id, validation.data);
     
     return NextResponse.json(result, { status: result.success ? 200 : 400 });
   } catch (error) {

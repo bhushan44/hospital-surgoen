@@ -19,6 +19,9 @@ export interface CreateHospitalData {
   registrationNumber: string;
   address: string;
   city: string;
+  fullAddress?: string;
+  state?: string;
+  pincode?: string;
   phone?: string;
   website?: string;
   logoId?: string; // UUID reference to files table
@@ -153,6 +156,9 @@ export class HospitalsRepository {
     if (updateData.registrationNumber) updateFields.registrationNumber = updateData.registrationNumber;
     if (updateData.address) updateFields.address = updateData.address;
     if (updateData.city) updateFields.city = updateData.city;
+    if (updateData.fullAddress !== undefined) updateFields.fullAddress = updateData.fullAddress;
+    if (updateData.state !== undefined) updateFields.state = updateData.state;
+    if (updateData.pincode !== undefined) updateFields.pincode = updateData.pincode;
     // Map phone → contactPhone
     if (updateData.phone) updateFields.contactPhone = updateData.phone;
     // Map website → websiteUrl
