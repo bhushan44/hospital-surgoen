@@ -42,8 +42,10 @@ interface Assignment {
   declinedAt: string | null;
   completedAt: string | null;
   expiresIn: string | null;
+  expiresAt?: string | null;
   fee: number;
   declineReason: string | null;
+  treatmentNotes?: string | null;
   hospitalId: string;
   patientId: string;
 }
@@ -58,7 +60,9 @@ export default function AssignmentsPage() {
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showDeclineModal, setShowDeclineModal] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
+  const [treatmentNotes, setTreatmentNotes] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -185,6 +189,13 @@ export default function AssignmentsPage() {
             Completed
           </Badge>
         );
+      case 'cancelled':
+        return (
+          <Badge variant="outline" className="bg-gray-100 text-gray-600 hover:bg-gray-100 gap-1">
+            <XCircle className="w-3 h-3" />
+            Cancelled
+          </Badge>
+        );
       default:
         return null;
     }
@@ -207,6 +218,7 @@ export default function AssignmentsPage() {
     setSelectedAssignment(assignment);
     setShowDetails(true);
     setDeclineReason('');
+    setTreatmentNotes('');
   };
 
   const handleAcceptAssignment = async () => {
@@ -289,6 +301,53 @@ export default function AssignmentsPage() {
   const closeDeclineModal = () => {
     setShowDeclineModal(false);
     setDeclineReason('');
+  };
+
+  const openCompleteModal = () => {
+    setShowCompleteModal(true);
+  };
+
+  const closeCompleteModal = () => {
+    setShowCompleteModal(false);
+    setTreatmentNotes('');
+  };
+
+  const handleCompleteAssignment = async () => {
+    if (!selectedAssignment) return;
+
+    try {
+      setUpdatingStatus(true);
+      const token = localStorage.getItem('accessToken');
+      
+      const response = await fetch(`/api/assignments/${selectedAssignment.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status: 'completed',
+          treatmentNotes: treatmentNotes || undefined,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setShowDetails(false);
+        setShowCompleteModal(false);
+        setTreatmentNotes('');
+        await fetchAssignments(); // Refresh the list
+        alert('Assignment marked as completed successfully!');
+      } else {
+        alert(result.message || 'Failed to complete assignment');
+      }
+    } catch (error) {
+      console.error('Error completing assignment:', error);
+      alert('An error occurred while completing the assignment');
+    } finally {
+      setUpdatingStatus(false);
+    }
   };
 
   const filteredAssignments = assignments.filter(assignment => {
@@ -386,6 +445,7 @@ export default function AssignmentsPage() {
             <option value="accepted">Accepted</option>
             <option value="completed">Completed</option>
             <option value="declined">Declined</option>
+            <option value="cancelled">Cancelled</option>
           </select>
         </div>
       </div>
@@ -459,10 +519,33 @@ export default function AssignmentsPage() {
                   <TableCell>{getPriorityBadge(assignment.priority)}</TableCell>
                   <TableCell>
                     <div>
-                      {getStatusBadge(assignment.status)}
-                      {assignment.status === 'pending' && assignment.expiresIn && (
-                        <p className="text-xs text-yellow-600 mt-1">Expires in {assignment.expiresIn}</p>
-                      )}
+                      {(() => {
+                        // Check if assignment is expired (even if status is still pending)
+                        const isExpired = assignment.status === 'pending' && assignment.expiresAt
+                          ? new Date(assignment.expiresAt) < new Date()
+                          : false;
+
+                        if (isExpired) {
+                          return (
+                            <div>
+                              <Badge variant="outline" className="bg-orange-100 text-orange-800 hover:bg-orange-100 gap-1">
+                                <AlertCircle className="w-3 h-3" />
+                                Expired
+                              </Badge>
+                              <p className="text-xs text-orange-600 mt-1">Will be cancelled automatically</p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <>
+                            {getStatusBadge(assignment.status)}
+                            {assignment.status === 'pending' && assignment.expiresIn && (
+                              <p className="text-xs text-yellow-600 mt-1">Expires in {assignment.expiresIn}</p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -584,19 +667,41 @@ export default function AssignmentsPage() {
               {/* Action Buttons for Pending Assignments */}
               {selectedAssignment.status === 'pending' && (
                 <div className="space-y-3 pt-4 border-t">
-                  {selectedAssignment.expiresIn && (
-                    <Alert>
-                      <Clock className="h-4 w-4" />
-                      <AlertDescription>
-                        This assignment expires in {selectedAssignment.expiresIn}. Please respond before it expires.
-                      </AlertDescription>
-                    </Alert>
-                  )}
+                  {(() => {
+                    // Check if assignment is expired
+                    const isExpired = selectedAssignment.expiresAt 
+                      ? new Date(selectedAssignment.expiresAt) < new Date()
+                      : false;
+
+                    if (isExpired) {
+                      return (
+                        <Alert variant="destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertDescription>
+                            <span className="font-medium">This assignment has expired.</span> It will be automatically cancelled. Please contact the hospital for a new assignment.
+                          </AlertDescription>
+                        </Alert>
+                      );
+                    }
+
+                    if (selectedAssignment.expiresIn) {
+                      return (
+                        <Alert>
+                          <Clock className="h-4 w-4" />
+                          <AlertDescription>
+                            This assignment expires in {selectedAssignment.expiresIn}. Please respond before it expires.
+                          </AlertDescription>
+                        </Alert>
+                      );
+                    }
+
+                    return null;
+                  })()}
                   <div className="flex gap-3">
                     <Button
                       onClick={handleAcceptAssignment}
-                      disabled={updatingStatus}
-                      className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                      disabled={updatingStatus || (selectedAssignment.expiresAt ? new Date(selectedAssignment.expiresAt) < new Date() : false)}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {updatingStatus ? (
                         <>
@@ -620,6 +725,41 @@ export default function AssignmentsPage() {
                       Decline Assignment
                     </Button>
                   </div>
+                </div>
+              )}
+
+              {/* Action Button for Accepted Assignments */}
+              {selectedAssignment.status === 'accepted' && (
+                <div className="space-y-3 pt-4 border-t">
+                  <Button
+                    onClick={openCompleteModal}
+                    disabled={updatingStatus}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Mark as Completed
+                  </Button>
+                </div>
+              )}
+
+              {/* Treatment Notes for Completed Assignments */}
+              {selectedAssignment.status === 'completed' && selectedAssignment.completedAt && (
+                <div className="pt-4 border-t space-y-3">
+                  <div className="p-4 bg-green-50 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      <span className="font-medium text-green-900">Assignment Completed</span>
+                    </div>
+                    <p className="text-sm text-green-700">
+                      Completed on {new Date(selectedAssignment.completedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  {selectedAssignment.treatmentNotes && (
+                    <div className="p-4 bg-blue-50 rounded-lg">
+                      <h4 className="font-medium text-blue-900 mb-2">Treatment Notes</h4>
+                      <p className="text-sm text-blue-800 whitespace-pre-wrap">{selectedAssignment.treatmentNotes}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -698,6 +838,77 @@ export default function AssignmentsPage() {
                 <>
                   <XCircle className="w-4 h-4 mr-2" />
                   Confirm Decline
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Complete Assignment Modal */}
+      <Dialog open={showCompleteModal} onOpenChange={closeCompleteModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark Assignment as Completed</DialogTitle>
+            <DialogDescription>
+              Add treatment notes (optional) and mark this assignment as completed
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedAssignment && (
+            <div className="space-y-4">
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Marking this assignment as completed will notify the hospital and update your assignment statistics.
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-2">
+                <Label htmlFor="treatmentNotes">Treatment Notes (Optional)</Label>
+                <Textarea
+                  id="treatmentNotes"
+                  placeholder="e.g., Patient responded well to treatment, Follow-up recommended in 2 weeks..."
+                  rows={6}
+                  value={treatmentNotes}
+                  onChange={(e) => setTreatmentNotes(e.target.value)}
+                  className="resize-none"
+                />
+                <p className="text-xs text-gray-500">
+                  Add any relevant notes about the consultation or treatment provided. These notes will be visible to the hospital.
+                </p>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-lg">
+                <div className="space-y-1 text-sm">
+                  <p><span className="text-gray-500">Patient:</span> {selectedAssignment.patient}</p>
+                  <p><span className="text-gray-500">Hospital:</span> {selectedAssignment.hospital}</p>
+                  <p><span className="text-gray-500">Condition:</span> {selectedAssignment.condition}</p>
+                  <p><span className="text-gray-500">Date:</span> {selectedAssignment.date ? new Date(selectedAssignment.date).toLocaleDateString() : 'TBD'}</p>
+                  <p><span className="text-gray-500">Time:</span> {selectedAssignment.time}{selectedAssignment.endTime ? ` - ${selectedAssignment.endTime}` : ''}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeCompleteModal} disabled={updatingStatus}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCompleteAssignment}
+              disabled={updatingStatus}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {updatingStatus ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Completing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Mark as Completed
                 </>
               )}
             </Button>

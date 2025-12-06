@@ -142,6 +142,7 @@ async function getHandler(
         completedAt: assignments.completedAt,
         cancelledAt: assignments.cancelledAt,
         cancellationReason: assignments.cancellationReason,
+        treatmentNotes: assignments.treatmentNotes,
         consultationFee: assignments.consultationFee,
         // Patient info
         patientName: sql<string>`(SELECT full_name FROM patients WHERE id = ${assignments.patientId})`,
@@ -211,8 +212,10 @@ async function getHandler(
         declinedAt: assignment.status === 'declined' && assignment.cancelledAt ? assignment.cancelledAt : null,
         completedAt: assignment.completedAt,
         expiresIn,
+        expiresAt: assignment.expiresAt,
         fee: assignment.consultationFee ? Number(assignment.consultationFee) : 0,
         declineReason: assignment.cancellationReason,
+        treatmentNotes: assignment.treatmentNotes,
         hospitalId: assignment.hospitalId,
         patientId: assignment.patientId,
       };

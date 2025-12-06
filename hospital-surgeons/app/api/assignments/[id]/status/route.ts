@@ -3,6 +3,8 @@ import { getDb } from '@/lib/db';
 import { assignments, doctorAvailability, enumStatus } from '@/src/db/drizzle/migrations/schema';
 import { eq, and } from 'drizzle-orm';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
+import { UpdateAssignmentStatusDtoSchema } from '@/lib/validations/assignment-status.dto';
+import { validateRequest } from '@/lib/utils/validate-request';
 
 /**
  * Update assignment status
@@ -15,18 +17,14 @@ async function patchHandler(
   try {
     const params = await context.params;
     const assignmentId = params.id;
-    const body = await req.json();
-    const { status, cancellationReason } = body;
-
-    if (!status || !['accepted', 'declined'].includes(status)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Invalid status. Must be "accepted" or "declined"',
-        },
-        { status: 400 }
-      );
+    
+    // Validate request body with Zod
+    const validation = await validateRequest(req, UpdateAssignmentStatusDtoSchema);
+    if (!validation.success) {
+      return validation.response;
     }
+
+    const { status, cancellationReason, treatmentNotes } = validation.data;
 
     const db = getDb();
     const user = (req as any).user;
@@ -69,8 +67,8 @@ async function patchHandler(
       }
     }
 
-    // Check if assignment is already in a final state
-    if (assignmentData.status === 'accepted' || assignmentData.status === 'declined' || assignmentData.status === 'completed') {
+    // Check if assignment is already in a final state (but allow completed if current status is accepted)
+    if (assignmentData.status === 'declined' || assignmentData.status === 'completed') {
       return NextResponse.json(
         {
           success: false,
@@ -78,6 +76,32 @@ async function patchHandler(
         },
         { status: 400 }
       );
+    }
+
+    // Only allow 'completed' status if assignment is already 'accepted'
+    if (status === 'completed' && assignmentData.status !== 'accepted') {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Assignment must be accepted before it can be marked as completed',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Check if assignment has expired (only for pending assignments)
+    if (status === 'accepted' && assignmentData.status === 'pending' && assignmentData.expiresAt) {
+      const expiresAt = new Date(assignmentData.expiresAt);
+      const now = new Date();
+      if (expiresAt < now) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'This assignment has expired and can no longer be accepted. Please contact the hospital for a new assignment.',
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Verify status exists in enum_status table, insert if it doesn't
@@ -107,6 +131,12 @@ async function patchHandler(
       updateData.cancelledBy = 'doctor';
       if (cancellationReason) {
         updateData.cancellationReason = cancellationReason;
+      }
+    } else if (status === 'completed') {
+      updateData.completedAt = new Date().toISOString();
+      updateData.actualEndTime = new Date().toISOString();
+      if (treatmentNotes) {
+        updateData.treatmentNotes = treatmentNotes;
       }
     }
 

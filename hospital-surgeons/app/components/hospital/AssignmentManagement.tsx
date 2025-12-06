@@ -130,6 +130,7 @@ export function AssignmentManagement() {
             expiresIn: assignment.expiresIn || null,
             fee: assignment.fee || 0,
             declineReason: assignment.declineReason || null,
+            treatmentNotes: assignment.treatmentNotes || null,
           };
         });
         setAssignments(formattedAssignments);
@@ -466,6 +467,16 @@ export function AssignmentManagement() {
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
                     <span className="font-medium">Decline Reason:</span> {selectedAssignment.declineReason}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {selectedAssignment.status === 'completed' && selectedAssignment.treatmentNotes && (
+                <Alert>
+                  <CheckCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <span className="font-medium">Treatment Notes:</span>
+                    <p className="mt-2 whitespace-pre-wrap">{selectedAssignment.treatmentNotes}</p>
                   </AlertDescription>
                 </Alert>
               )}

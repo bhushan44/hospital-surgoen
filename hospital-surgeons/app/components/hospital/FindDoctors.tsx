@@ -310,6 +310,7 @@ export function FindDoctors() {
       return;
     }
     setSelectedDoctor(doctor);
+    console.log(doctor);
     setSelectedSlot(slot);
     setShowConfirmation(true);
   };
