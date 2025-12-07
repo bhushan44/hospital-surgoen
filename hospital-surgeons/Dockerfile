@@ -1,6 +1,12 @@
 # Stage 1: Build the app
 FROM node:20-alpine AS builder
 
+# Explicitly set shell (fixes Coolify build issues)
+SHELL ["/bin/sh", "-c"]
+
+# Install CA certificates for HTTPS connections (needed for Supabase)
+RUN apk add --no-cache ca-certificates
+
 # Set working directory
 WORKDIR /app
 
@@ -39,8 +45,15 @@ RUN npm run build
 # Stage 2: Production image
 FROM node:20-alpine
 
+# Explicitly set shell (fixes Coolify build issues)
+SHELL ["/bin/sh", "-c"]
+
+# Install CA certificates and curl for HTTPS connections (needed for Supabase)
+RUN apk add --no-cache ca-certificates curl
+
+# Set working directory
 WORKDIR /app
-RUN apk add --no-cache curl
+
 # Create a non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001
