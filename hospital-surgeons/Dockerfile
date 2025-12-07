@@ -40,7 +40,7 @@ RUN npm run build
 FROM node:20-alpine
 
 WORKDIR /app
-
+RUN apk add --no-cache curl
 # Create a non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001
