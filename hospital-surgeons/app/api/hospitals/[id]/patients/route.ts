@@ -163,6 +163,27 @@ export async function POST(
     const body = validation.data;
     const db = getDb();
     
+    // Check hospital patient limit before creating
+    const { HospitalUsageService } = await import('@/lib/services/hospital-usage.service');
+    const hospitalUsageService = new HospitalUsageService();
+    
+    try {
+      await hospitalUsageService.checkPatientLimit(hospitalId);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage === 'PATIENT_LIMIT_REACHED') {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'You have reached your monthly patient limit. Upgrade your plan to add more patients.',
+            error: 'PATIENT_LIMIT_REACHED',
+          },
+          { status: 403 }
+        );
+      }
+      throw error;
+    }
+    
     // Room type is already normalized by Zod transform
     const roomType = body.roomType;
 
@@ -182,6 +203,14 @@ export async function POST(
         medicalNotes: body.medicalNotes,
       })
       .returning();
+
+    // Increment patient usage after successful creation
+    try {
+      await hospitalUsageService.incrementPatientUsage(hospitalId);
+    } catch (error) {
+      console.error('Error incrementing patient usage:', error);
+      // Don't fail the request if usage increment fails
+    }
 
     return NextResponse.json({
       success: true,

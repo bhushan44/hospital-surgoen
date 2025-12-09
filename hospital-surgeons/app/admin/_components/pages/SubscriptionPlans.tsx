@@ -24,7 +24,7 @@ interface Plan {
   features?: any;
 }
 
-function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (plan: Plan) => void; onDelete: (plan: Plan) => void; deleting: boolean }) {
+function PlanCard({ plan, onEdit, onDelete, onEditFeatures, deleting }: { plan: Plan; onEdit: (plan: Plan) => void; onDelete: (plan: Plan) => void; onEditFeatures: (plan: Plan) => void; deleting: boolean }) {
   const getTierColor = (tier: string) => {
     if (tier === 'free' || tier === 'basic') return 'bg-blue-100 text-blue-700';
     if (tier === 'premium') return 'bg-purple-100 text-purple-700';
@@ -54,9 +54,27 @@ function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (p
       if (plan.features.maxAffiliations) {
         features.push(`Max Affiliations: ${plan.features.maxAffiliations}`);
       }
+      if (plan.features.maxAssignmentsPerMonth !== null && plan.features.maxAssignmentsPerMonth !== undefined) {
+        if (plan.features.maxAssignmentsPerMonth === -1) {
+          features.push('Max Assignments: Unlimited');
+        } else {
+          features.push(`Max Assignments/Month: ${plan.features.maxAssignmentsPerMonth}`);
+        }
+      }
     } else {
-      if (plan.features.maxPatientsPerMonth) {
-        features.push(`Max Patients/Month: ${plan.features.maxPatientsPerMonth}`);
+      if (plan.features.maxPatientsPerMonth !== null && plan.features.maxPatientsPerMonth !== undefined) {
+        if (plan.features.maxPatientsPerMonth === -1) {
+          features.push('Max Patients: Unlimited');
+        } else {
+          features.push(`Max Patients/Month: ${plan.features.maxPatientsPerMonth}`);
+        }
+      }
+      if (plan.features.maxAssignmentsPerMonth !== null && plan.features.maxAssignmentsPerMonth !== undefined) {
+        if (plan.features.maxAssignmentsPerMonth === -1) {
+          features.push('Max Assignments: Unlimited');
+        } else {
+          features.push(`Max Assignments/Month: ${plan.features.maxAssignmentsPerMonth}`);
+        }
       }
       if (plan.features.includesPremiumDoctors) {
         features.push('Includes Premium Doctors');
@@ -80,10 +98,13 @@ function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (p
           </span>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="ghost" onClick={() => onEdit(plan)} disabled={deleting}>
+          <Button size="sm" variant="ghost" onClick={() => onEdit(plan)} disabled={deleting} title="Edit Plan">
             <Edit className="w-4 h-4" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => onDelete(plan)} disabled={deleting}>
+          <Button size="sm" variant="ghost" onClick={() => onEditFeatures(plan)} disabled={deleting} title="Edit Limits & Features" className="text-blue-600 hover:text-blue-700">
+            <span className="text-xs">Limits</span>
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onDelete(plan)} disabled={deleting} title="Delete Plan">
             {deleting ? (
               <Loader2 className="w-4 h-4 animate-spin text-red-600" />
             ) : (
@@ -119,9 +140,12 @@ export function SubscriptionPlans() {
   const [hospitalPlans, setHospitalPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showFeaturesModal, setShowFeaturesModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+  const [editingFeaturesPlan, setEditingFeaturesPlan] = useState<Plan | null>(null);
   const [activeTab, setActiveTab] = useState<'doctors' | 'hospitals'>('doctors');
   const [submitting, setSubmitting] = useState(false);
+  const [savingFeatures, setSavingFeatures] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -129,6 +153,18 @@ export function SubscriptionPlans() {
     userRole: 'doctor' as 'doctor' | 'hospital',
     price: '',
     currency: 'USD',
+  });
+  const [featuresData, setFeaturesData] = useState({
+    // Doctor features
+    visibilityWeight: 1,
+    maxAffiliations: 1,
+    maxAssignmentsPerMonth: '',
+    // Hospital features
+    maxPatientsPerMonth: '',
+    hospitalMaxAssignmentsPerMonth: '',
+    includesPremiumDoctors: false,
+    // Common
+    notes: '',
   });
 
   useEffect(() => {
@@ -158,6 +194,128 @@ export function SubscriptionPlans() {
       toast.error('Failed to fetch subscription plans');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEditFeatures = async (plan: Plan) => {
+    setEditingFeaturesPlan(plan);
+    try {
+      const res = await fetch(`/api/admin/plans/${plan.id}/features`);
+      const data = await res.json();
+      
+      if (data.success && data.data) {
+        const features = data.data;
+        if (plan.userRole === 'doctor') {
+          setFeaturesData({
+            visibilityWeight: features.visibilityWeight || 1,
+            maxAffiliations: features.maxAffiliations || 1,
+            maxAssignmentsPerMonth: features.maxAssignmentsPerMonth !== null && features.maxAssignmentsPerMonth !== undefined 
+              ? (features.maxAssignmentsPerMonth === -1 ? 'unlimited' : String(features.maxAssignmentsPerMonth))
+              : '',
+            maxPatientsPerMonth: '',
+            hospitalMaxAssignmentsPerMonth: '',
+            includesPremiumDoctors: false,
+            notes: features.notes || '',
+          });
+        } else {
+          setFeaturesData({
+            visibilityWeight: 1,
+            maxAffiliations: 1,
+            maxAssignmentsPerMonth: '',
+            maxPatientsPerMonth: features.maxPatientsPerMonth !== null && features.maxPatientsPerMonth !== undefined
+              ? (features.maxPatientsPerMonth === -1 ? 'unlimited' : String(features.maxPatientsPerMonth))
+              : '',
+            hospitalMaxAssignmentsPerMonth: features.maxAssignmentsPerMonth !== null && features.maxAssignmentsPerMonth !== undefined
+              ? (features.maxAssignmentsPerMonth === -1 ? 'unlimited' : String(features.maxAssignmentsPerMonth))
+              : '',
+            includesPremiumDoctors: features.includesPremiumDoctors || false,
+            notes: features.notes || '',
+          });
+        }
+        setShowFeaturesModal(true);
+      } else {
+        // No features yet, set defaults
+        if (plan.userRole === 'doctor') {
+          setFeaturesData({
+            visibilityWeight: 1,
+            maxAffiliations: 1,
+            maxAssignmentsPerMonth: '',
+            maxPatientsPerMonth: '',
+            hospitalMaxAssignmentsPerMonth: '',
+            includesPremiumDoctors: false,
+            notes: '',
+          });
+        } else {
+          setFeaturesData({
+            visibilityWeight: 1,
+            maxAffiliations: 1,
+            maxAssignmentsPerMonth: '',
+            maxPatientsPerMonth: '',
+            hospitalMaxAssignmentsPerMonth: '',
+            includesPremiumDoctors: false,
+            notes: '',
+          });
+        }
+        setShowFeaturesModal(true);
+      }
+    } catch (error) {
+      console.error('Error fetching plan features:', error);
+      toast.error('Failed to load plan features');
+    }
+  };
+
+  const handleSaveFeatures = async () => {
+    if (!editingFeaturesPlan) return;
+
+    try {
+      setSavingFeatures(true);
+      const plan = editingFeaturesPlan;
+      
+      let body: any = {};
+      
+      if (plan.userRole === 'doctor') {
+        body = {
+          visibilityWeight: featuresData.visibilityWeight,
+          maxAffiliations: featuresData.maxAffiliations,
+          maxAssignmentsPerMonth: featuresData.maxAssignmentsPerMonth === 'unlimited' || featuresData.maxAssignmentsPerMonth === ''
+            ? (featuresData.maxAssignmentsPerMonth === 'unlimited' ? -1 : null)
+            : parseInt(featuresData.maxAssignmentsPerMonth),
+          notes: featuresData.notes || null,
+        };
+      } else {
+        body = {
+          maxPatientsPerMonth: featuresData.maxPatientsPerMonth === 'unlimited' || featuresData.maxPatientsPerMonth === ''
+            ? (featuresData.maxPatientsPerMonth === 'unlimited' ? -1 : null)
+            : parseInt(featuresData.maxPatientsPerMonth),
+          maxAssignmentsPerMonth: featuresData.maxAssignmentsPerMonth === 'unlimited' || featuresData.maxAssignmentsPerMonth === ''
+            ? (featuresData.maxAssignmentsPerMonth === 'unlimited' ? -1 : null)
+            : parseInt(featuresData.maxAssignmentsPerMonth),
+          includesPremiumDoctors: featuresData.includesPremiumDoctors,
+          notes: featuresData.notes || null,
+        };
+      }
+
+      const res = await fetch(`/api/admin/plans/${plan.id}/features`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        toast.success('Plan features updated successfully');
+        setShowFeaturesModal(false);
+        setEditingFeaturesPlan(null);
+        fetchPlans();
+      } else {
+        toast.error(data.message || 'Failed to update plan features');
+      }
+    } catch (error) {
+      console.error('Error saving plan features:', error);
+      toast.error('Failed to save plan features');
+    } finally {
+      setSavingFeatures(false);
     }
   };
 
@@ -322,6 +480,7 @@ export function SubscriptionPlans() {
                       plan={plan} 
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onEditFeatures={handleEditFeatures}
                       deleting={deletingId === plan.id}
                     />
                   ))}
@@ -342,6 +501,7 @@ export function SubscriptionPlans() {
                       plan={plan} 
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onEditFeatures={handleEditFeatures}
                       deleting={deletingId === plan.id}
                     />
                   ))}
@@ -464,6 +624,141 @@ export function SubscriptionPlans() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Features/Limits Edit Modal */}
+      <Dialog open={showFeaturesModal} onOpenChange={(open) => {
+        if (!open) {
+          setShowFeaturesModal(false);
+          setEditingFeaturesPlan(null);
+        }
+      }}>
+        <DialogContent aria-describedby={undefined} className="max-w-2xl bg-white dark:bg-gray-900 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Edit Limits & Features - {editingFeaturesPlan?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {editingFeaturesPlan?.userRole === 'doctor' ? (
+              <>
+                <div>
+                  <Label htmlFor="visibilityWeight">Visibility Weight</Label>
+                  <Input
+                    id="visibilityWeight"
+                    type="number"
+                    min="1"
+                    value={featuresData.visibilityWeight}
+                    onChange={(e) => setFeaturesData({ ...featuresData, visibilityWeight: parseInt(e.target.value) || 1 })}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Higher weight = better visibility in search results</p>
+                </div>
+                <div>
+                  <Label htmlFor="maxAffiliations">Max Affiliations</Label>
+                  <Input
+                    id="maxAffiliations"
+                    type="number"
+                    min="1"
+                    value={featuresData.maxAffiliations}
+                    onChange={(e) => setFeaturesData({ ...featuresData, maxAffiliations: parseInt(e.target.value) || 1 })}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="maxAssignmentsPerMonth">Max Assignments Per Month</Label>
+                  <Input
+                    id="maxAssignmentsPerMonth"
+                    type="text"
+                    placeholder="Enter number or 'unlimited'"
+                    value={featuresData.maxAssignmentsPerMonth}
+                    onChange={(e) => setFeaturesData({ ...featuresData, maxAssignmentsPerMonth: e.target.value })}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Enter a number or 'unlimited' for -1</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <Label htmlFor="maxPatientsPerMonth">Max Patients Per Month</Label>
+                  <Input
+                    id="maxPatientsPerMonth"
+                    type="text"
+                    placeholder="Enter number or 'unlimited'"
+                    value={featuresData.maxPatientsPerMonth}
+                    onChange={(e) => setFeaturesData({ ...featuresData, maxPatientsPerMonth: e.target.value })}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Enter a number or 'unlimited' for -1</p>
+                </div>
+                <div>
+                  <Label htmlFor="maxAssignmentsPerMonth">Max Assignments Per Month</Label>
+                  <Input
+                    id="maxAssignmentsPerMonth"
+                    type="text"
+                    placeholder="Enter number or 'unlimited'"
+                    value={featuresData.maxAssignmentsPerMonth}
+                    onChange={(e) => setFeaturesData({ ...featuresData, maxAssignmentsPerMonth: e.target.value })}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Enter a number or 'unlimited' for -1</p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="includesPremiumDoctors"
+                    checked={featuresData.includesPremiumDoctors}
+                    onChange={(e) => setFeaturesData({ ...featuresData, includesPremiumDoctors: e.target.checked })}
+                    className="rounded border-gray-300"
+                  />
+                  <Label htmlFor="includesPremiumDoctors" className="cursor-pointer">
+                    Includes Premium Doctors Access
+                  </Label>
+                </div>
+              </>
+            )}
+            <div>
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                placeholder="Additional notes about this plan..."
+                value={featuresData.notes}
+                onChange={(e) => setFeaturesData({ ...featuresData, notes: e.target.value })}
+                className="mt-1"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter className="mt-6">
+            <Button 
+              type="button"
+              variant="outline" 
+              onClick={() => {
+                setShowFeaturesModal(false);
+                setEditingFeaturesPlan(null);
+              }}
+              disabled={savingFeatures}
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="button"
+              onClick={handleSaveFeatures}
+              className="bg-navy-600 hover:bg-navy-700"
+              disabled={savingFeatures}
+            >
+              {savingFeatures ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Features'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

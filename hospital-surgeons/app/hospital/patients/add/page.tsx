@@ -106,7 +106,13 @@ export default function AddPatientPage() {
       if (data.success) {
         router.push('/hospital/patients');
       } else {
-        setError(data.message || 'Failed to create patient. Please try again.');
+        // Show specific error message for limit reached
+        const errorMessage = data.message || 'Failed to create patient. Please try again.';
+        if (data.error === 'PATIENT_LIMIT_REACHED') {
+          setError(`${errorMessage}\n\nUpgrade your plan to add more patients.`);
+        } else {
+          setError(errorMessage);
+        }
       }
     } catch (err) {
       console.error('Error creating patient:', err);

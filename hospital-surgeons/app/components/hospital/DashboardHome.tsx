@@ -7,6 +7,7 @@ import { Badge } from '../../components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
 import { StatCard } from '../../hospital/_components/StatCard';
+import { HospitalUsageWidget } from '../../hospital/_components/HospitalUsageWidget';
 import apiClient from '@/lib/api/httpClient';
 
 export function DashboardHome() {
@@ -268,6 +269,13 @@ export function DashboardHome() {
               <Eye className="w-4 h-4" />
               View All Assignments
             </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          {/* Hospital Usage Widget */}
+          <div className="lg:col-span-1">
+            <HospitalUsageWidget />
           </div>
         </div>
 

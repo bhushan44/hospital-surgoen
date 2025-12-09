@@ -344,11 +344,28 @@ export function FindDoctors() {
         // Optionally navigate to assignments page
         router.push('/hospital/assignments');
       } else {
-        alert(result.message || 'Failed to create assignment');
+        // Show specific error messages for limit reached
+        const errorMessage = result.message || 'Failed to create assignment';
+        if (result.code === 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED') {
+          alert(`${errorMessage}\n\nUpgrade your plan to create more assignments.`);
+        } else if (result.code === 'ASSIGNMENT_LIMIT_REACHED') {
+          alert(`${errorMessage}\n\nThis doctor has reached their limit. Please try another doctor.`);
+        } else {
+          alert(errorMessage);
+        }
       }
     } catch (error: any) {
       console.error('Error creating assignment:', error);
-      alert(error.response?.data?.message || 'An error occurred while creating the assignment');
+      const errorMessage = error.response?.data?.message || 'An error occurred while creating the assignment';
+      const errorCode = error.response?.data?.code;
+      
+      if (errorCode === 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED') {
+        alert(`${errorMessage}\n\nUpgrade your plan to create more assignments.`);
+      } else if (errorCode === 'ASSIGNMENT_LIMIT_REACHED') {
+        alert(`${errorMessage}\n\nThis doctor has reached their limit. Please try another doctor.`);
+      } else {
+        alert(errorMessage);
+      }
     } finally {
       setCreatingAssignment(false);
     }

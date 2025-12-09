@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage } from '@/src/db/drizzle/migrations/schema';
+import { doctors, hospitals, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, hospitalUsageTracking } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, gte } from 'drizzle-orm';
 import { getMaxAssignments, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
+import { getMaxPatients, getMaxAssignmentsForHospital, DEFAULT_HOSPITAL_PATIENT_LIMIT, DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT } from '@/lib/config/hospital-subscription-limits';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -101,13 +102,105 @@ async function handler(req: NextRequest) {
       }
     }
 
+    // Reset hospital usage
+    const allHospitals = await db.select({ id: hospitals.id, userId: hospitals.userId }).from(hospitals);
+    
+    let hospitalResetCount = 0;
+    let hospitalUpdatedCount = 0;
+
+    for (const hospital of allHospitals) {
+      // Get current subscription to determine limits
+      const subscription = await db
+        .select({
+          planId: subscriptionPlans.id,
+          tier: subscriptionPlans.tier,
+        })
+        .from(subscriptions)
+        .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+        .where(
+          and(
+            eq(subscriptions.userId, hospital.userId),
+            eq(subscriptions.status, 'active'),
+            gte(subscriptions.endDate, now.toISOString())
+          )
+        )
+        .limit(1);
+
+      // Determine limits based on tier
+      let maxPatients = DEFAULT_HOSPITAL_PATIENT_LIMIT;
+      let maxAssignments = DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
+      if (subscription.length > 0) {
+        const tier = subscription[0].tier;
+        maxPatients = getMaxPatients(tier);
+        maxAssignments = getMaxAssignmentsForHospital(tier);
+      }
+
+      // Calculate reset date (1st of next month)
+      const resetDate = new Date();
+      resetDate.setMonth(resetDate.getMonth() + 1);
+      resetDate.setDate(1);
+      resetDate.setHours(0, 0, 0, 0);
+
+      // Check if record exists for current month
+      const existing = await db
+        .select()
+        .from(hospitalUsageTracking)
+        .where(
+          and(
+            eq(hospitalUsageTracking.hospitalId, hospital.id),
+            eq(hospitalUsageTracking.month, currentMonth)
+          )
+        )
+        .limit(1);
+
+      if (existing.length === 0) {
+        // Create new record for current month
+        await db.insert(hospitalUsageTracking).values({
+          hospitalId: hospital.id,
+          month: currentMonth,
+          patientsCount: 0,
+          assignmentsCount: 0,
+          patientsLimit: maxPatients,
+          assignmentsLimit: maxAssignments,
+          resetDate: resetDate.toISOString(),
+        });
+        hospitalResetCount++;
+      } else {
+        // Update limits if plan changed, reset counts to 0
+        await db
+          .update(hospitalUsageTracking)
+          .set({
+            patientsCount: 0,
+            assignmentsCount: 0,
+            patientsLimit: maxPatients,
+            assignmentsLimit: maxAssignments,
+            resetDate: resetDate.toISOString(),
+            updatedAt: now.toISOString(),
+          })
+          .where(
+            and(
+              eq(hospitalUsageTracking.hospitalId, hospital.id),
+              eq(hospitalUsageTracking.month, currentMonth)
+            )
+          );
+        hospitalUpdatedCount++;
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: `Reset assignment usage for ${resetCount + updatedCount} doctors`,
+      message: `Reset usage for ${resetCount + updatedCount} doctors and ${hospitalResetCount + hospitalUpdatedCount} hospitals`,
       data: { 
-        resetCount, 
-        updatedCount,
-        totalProcessed: resetCount + updatedCount,
+        doctors: {
+          resetCount, 
+          updatedCount,
+          totalProcessed: resetCount + updatedCount,
+        },
+        hospitals: {
+          resetCount: hospitalResetCount,
+          updatedCount: hospitalUpdatedCount,
+          totalProcessed: hospitalResetCount + hospitalUpdatedCount,
+        },
         month: currentMonth 
       },
     });

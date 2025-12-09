@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { doctors, doctorSpecialties, specialties, doctorAvailability, hospitals, subscriptions, subscriptionPlans, users, doctorPlanFeatures } from '@/src/db/drizzle/migrations/schema';
+import { doctors, doctorSpecialties, specialties, doctorAvailability, hospitals, subscriptions, subscriptionPlans, users, doctorPlanFeatures, hospitalPlanFeatures } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, or, sql, desc, asc, gte, inArray, isNull, ne } from 'drizzle-orm';
 import { calculateDoctorScore, sortDoctorsByScore, type DoctorScoringData } from '@/lib/utils/doctor-scoring';
 
@@ -44,7 +44,7 @@ export async function GET(
     const limit = parseInt(searchParams.get('limit') || '20', 10); // Default 20 per page
     const offset = (page - 1) * limit;
 
-    // Get hospital's subscription tier
+    // Get hospital's subscription tier and premium doctor access
     const hospitalResult = await db
       .select({
         userId: hospitals.userId,
@@ -54,10 +54,13 @@ export async function GET(
       .limit(1);
 
     let hospitalSubscriptionTier: 'free' | 'gold' | 'premium' = 'free';
+    let includesPremiumDoctors = false;
+    
     if (hospitalResult[0]?.userId) {
       const subscriptionResult = await db
         .select({
           tier: subscriptionPlans.tier,
+          planId: subscriptionPlans.id,
         })
         .from(subscriptions)
         .innerJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
@@ -80,6 +83,19 @@ export async function GET(
           hospitalSubscriptionTier = 'premium';
         } else {
           hospitalSubscriptionTier = 'free';
+        }
+
+        // Check if hospital has premium doctor access
+        const hospitalFeatures = await db
+          .select({
+            includesPremiumDoctors: hospitalPlanFeatures.includesPremiumDoctors,
+          })
+          .from(hospitalPlanFeatures)
+          .where(eq(hospitalPlanFeatures.planId, subscriptionResult[0].planId))
+          .limit(1);
+
+        if (hospitalFeatures.length > 0) {
+          includesPremiumDoctors = hospitalFeatures[0].includesPremiumDoctors || false;
         }
       }
     }
@@ -367,11 +383,21 @@ export async function GET(
       };
     });
 
-    // Filter doctors based on subscription access
+    // Filter doctors based on subscription access and premium doctor access
     const accessibleDoctors = formattedDoctors.filter((doctor) => {
       const planHierarchy = { free: 0, gold: 1, premium: 2 };
       const doctorRequired = planHierarchy[doctor.requiredPlan as keyof typeof planHierarchy];
       const hospitalHas = planHierarchy[hospitalSubscriptionTier];
+      
+      // Check if doctor is premium (platinum tier or premium plan)
+      const isPremiumDoctor = doctor.tier === 'platinum' || doctor.requiredPlan === 'premium';
+      
+      // If doctor is premium and hospital doesn't have premium access, filter out
+      if (isPremiumDoctor && !includesPremiumDoctors) {
+        return false;
+      }
+      
+      // Otherwise, check plan hierarchy
       return hospitalHas >= doctorRequired;
     });
 

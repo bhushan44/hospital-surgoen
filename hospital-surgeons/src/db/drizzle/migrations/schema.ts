@@ -52,7 +52,6 @@ export const doctorPlanFeatures = pgTable("doctor_plan_features", {
 	planId: uuid("plan_id").notNull(),
 	visibilityWeight: integer("visibility_weight").default(1),
 	maxAffiliations: integer("max_affiliations"),
-	maxAssignmentsPerMonth: integer("max_assignments_per_month"),
 	notes: text(),
 }, (table) => [
 	foreignKey({
@@ -351,6 +350,27 @@ export const doctorPreferences = pgTable("doctor_preferences", {
 	unique("doctor_preferences_doctor_id_key").on(table.doctorId),
 ]);
 
+export const hospitalUsageTracking = pgTable("hospital_usage_tracking", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	hospitalId: uuid("hospital_id").notNull(),
+	month: varchar({ length: 7 }).notNull(),
+	patientsCount: integer("patients_count").default(0).notNull(),
+	assignmentsCount: integer("assignments_count").default(0).notNull(),
+	patientsLimit: integer("patients_limit").notNull(),
+	assignmentsLimit: integer("assignments_limit").notNull(),
+	resetDate: timestamp("reset_date", { mode: 'string' }).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	index("idx_hospital_usage_tracking_hospital_month").using("btree", table.hospitalId.asc().nullsLast().op("text_ops"), table.month.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.hospitalId],
+			foreignColumns: [hospitals.id],
+			name: "hospital_usage_tracking_hospital_id_fkey"
+		}).onDelete("cascade"),
+	unique("hospital_usage_tracking_hospital_id_month_key").on(table.hospitalId, table.month),
+]);
+
 export const hospitalDocuments = pgTable("hospital_documents", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	hospitalId: uuid("hospital_id").notNull(),
@@ -535,6 +555,25 @@ export const doctorAvailabilityHistory = pgTable("doctor_availability_history", 
 		}).onDelete("set null"),
 	check("doctor_availability_history_changed_by_check", sql`changed_by = ANY (ARRAY['doctor'::text, 'hospital'::text, 'system'::text, 'admin'::text])`),
 	check("doctor_availability_history_event_type_check", sql`event_type = ANY (ARRAY['created'::text, 'updated'::text, 'booked'::text, 'released'::text, 'cancelled'::text])`),
+]);
+
+export const doctorAssignmentUsage = pgTable("doctor_assignment_usage", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	doctorId: uuid("doctor_id").notNull(),
+	month: varchar({ length: 7 }).notNull(),
+	count: integer().default(0).notNull(),
+	limitCount: integer("limit_count").notNull(),
+	resetDate: timestamp("reset_date", { mode: 'string' }).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	index("idx_doctor_assignment_usage_doctor_month").using("btree", table.doctorId.asc().nullsLast().op("text_ops"), table.month.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.doctorId],
+			foreignColumns: [doctors.id],
+			name: "doctor_assignment_usage_doctor_id_fkey"
+		}).onDelete("cascade"),
+	unique("doctor_assignment_usage_doctor_id_month_key").on(table.doctorId, table.month),
 ]);
 
 export const patients = pgTable("patients", {
@@ -787,6 +826,21 @@ export const notificationPreferences = pgTable("notification_preferences", {
 	unique("notification_preferences_user_id_key").on(table.userId),
 ]);
 
+export const hospitalPlanFeatures = pgTable("hospital_plan_features", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	planId: uuid("plan_id").notNull(),
+	maxPatientsPerMonth: integer("max_patients_per_month"),
+	includesPremiumDoctors: boolean("includes_premium_doctors").default(false),
+	notes: text(),
+	maxAssignmentsPerMonth: integer("max_assignments_per_month"),
+}, (table) => [
+	foreignKey({
+			columns: [table.planId],
+			foreignColumns: [subscriptionPlans.id],
+			name: "hospital_plan_features_plan_id_fkey"
+		}).onDelete("cascade"),
+]);
+
 export const notificationRecipients = pgTable("notification_recipients", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	notificationId: uuid("notification_id").notNull(),
@@ -825,20 +879,6 @@ export const doctorSpecialties = pgTable("doctor_specialties", {
 		}).onDelete("cascade"),
 	unique("doctor_specialties_doctor_id_specialty_id_key").on(table.doctorId, table.specialtyId),
 	check("doctor_specialties_years_of_experience_check", sql`years_of_experience >= 0`),
-]);
-
-export const hospitalPlanFeatures = pgTable("hospital_plan_features", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	planId: uuid("plan_id").notNull(),
-	maxPatientsPerMonth: integer("max_patients_per_month"),
-	includesPremiumDoctors: boolean("includes_premium_doctors").default(false),
-	notes: text(),
-}, (table) => [
-	foreignKey({
-			columns: [table.planId],
-			foreignColumns: [subscriptionPlans.id],
-			name: "hospital_plan_features_plan_id_fkey"
-		}).onDelete("cascade"),
 ]);
 
 export const doctorAvailability = pgTable("doctor_availability", {
@@ -897,23 +937,4 @@ export const doctorLeaves = pgTable("doctor_leaves", {
 		}).onDelete("cascade"),
 	check("doctor_leaves_check", sql`end_date >= start_date`),
 	check("doctor_leaves_leave_type_check", sql`leave_type = ANY (ARRAY['sick'::text, 'vacation'::text, 'personal'::text, 'emergency'::text, 'other'::text])`),
-]);
-
-export const doctorAssignmentUsage = pgTable("doctor_assignment_usage", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	doctorId: uuid("doctor_id").notNull(),
-	month: varchar("month", { length: 7 }).notNull(), // Format: "2024-03"
-	count: integer().default(0).notNull(),
-	limitCount: integer("limit_count").notNull(),
-	resetDate: timestamp("reset_date", { mode: 'string' }).notNull(),
-	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-	index("idx_doctor_assignment_usage_doctor_month").using("btree", table.doctorId.asc().nullsLast().op("uuid_ops"), table.month.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.doctorId],
-			foreignColumns: [doctors.id],
-			name: "doctor_assignment_usage_doctor_id_fkey"
-		}).onDelete("cascade"),
-	unique("doctor_assignment_usage_doctor_id_month_key").on(table.doctorId, table.month),
 ]);

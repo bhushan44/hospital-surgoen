@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { assignments, notifications, enumChannel, subscriptionPlans, doctorPlanFeatures, orders, users, paymentTransactions, files, doctors, subscriptions, hospitals, doctorCredentials, doctorProfilePhotos, doctorPreferences, hospitalDocuments, hospitalPreferences, doctorHospitalAffiliations, availabilityTemplates, hospitalDepartments, specialties, doctorAvailability, patients, enumPriority, enumStatus, doctorAvailabilityHistory, patientConsents, assignmentRatings, assignmentPayments, hospitalCancellationFlags, auditLogs, userDevices, analyticsEvents, supportTickets, notificationPreferences, notificationRecipients, doctorSpecialties, hospitalPlanFeatures, doctorLeaves } from "./schema";
+import { assignments, notifications, enumChannel, subscriptionPlans, doctorPlanFeatures, orders, users, paymentTransactions, files, doctors, subscriptions, hospitals, doctorCredentials, doctorProfilePhotos, doctorPreferences, hospitalUsageTracking, hospitalDocuments, hospitalPreferences, doctorHospitalAffiliations, availabilityTemplates, hospitalDepartments, specialties, doctorAvailability, patients, enumPriority, enumStatus, doctorAvailabilityHistory, doctorAssignmentUsage, patientConsents, assignmentRatings, assignmentPayments, hospitalCancellationFlags, auditLogs, userDevices, analyticsEvents, supportTickets, notificationPreferences, hospitalPlanFeatures, notificationRecipients, doctorSpecialties, doctorLeaves } from "./schema";
 
 export const notificationsRelations = relations(notifications, ({one, many}) => ({
 	assignment: one(assignments, {
@@ -117,6 +117,7 @@ export const doctorsRelations = relations(doctors, ({one, many}) => ({
 	doctorHospitalAffiliations: many(doctorHospitalAffiliations),
 	availabilityTemplates: many(availabilityTemplates),
 	assignments: many(assignments),
+	doctorAssignmentUsages: many(doctorAssignmentUsage),
 	assignmentRatings: many(assignmentRatings),
 	assignmentPayments: many(assignmentPayments),
 	doctorSpecialties: many(doctorSpecialties),
@@ -160,6 +161,7 @@ export const hospitalsRelations = relations(hospitals, ({one, many}) => ({
 		fields: [hospitals.userId],
 		references: [users.id]
 	}),
+	hospitalUsageTrackings: many(hospitalUsageTracking),
 	hospitalDocuments: many(hospitalDocuments),
 	hospitalPreferences: many(hospitalPreferences),
 	doctorHospitalAffiliations: many(doctorHospitalAffiliations),
@@ -198,6 +200,13 @@ export const doctorPreferencesRelations = relations(doctorPreferences, ({one}) =
 	doctor: one(doctors, {
 		fields: [doctorPreferences.doctorId],
 		references: [doctors.id]
+	}),
+}));
+
+export const hospitalUsageTrackingRelations = relations(hospitalUsageTracking, ({one}) => ({
+	hospital: one(hospitals, {
+		fields: [hospitalUsageTracking.hospitalId],
+		references: [hospitals.id]
 	}),
 }));
 
@@ -304,6 +313,13 @@ export const doctorAvailabilityHistoryRelations = relations(doctorAvailabilityHi
 	}),
 }));
 
+export const doctorAssignmentUsageRelations = relations(doctorAssignmentUsage, ({one}) => ({
+	doctor: one(doctors, {
+		fields: [doctorAssignmentUsage.doctorId],
+		references: [doctors.id]
+	}),
+}));
+
 export const patientConsentsRelations = relations(patientConsents, ({one}) => ({
 	patient: one(patients, {
 		fields: [patientConsents.patientId],
@@ -393,6 +409,13 @@ export const notificationPreferencesRelations = relations(notificationPreference
 	}),
 }));
 
+export const hospitalPlanFeaturesRelations = relations(hospitalPlanFeatures, ({one}) => ({
+	subscriptionPlan: one(subscriptionPlans, {
+		fields: [hospitalPlanFeatures.planId],
+		references: [subscriptionPlans.id]
+	}),
+}));
+
 export const notificationRecipientsRelations = relations(notificationRecipients, ({one}) => ({
 	notification: one(notifications, {
 		fields: [notificationRecipients.notificationId],
@@ -412,13 +435,6 @@ export const doctorSpecialtiesRelations = relations(doctorSpecialties, ({one}) =
 	specialty: one(specialties, {
 		fields: [doctorSpecialties.specialtyId],
 		references: [specialties.id]
-	}),
-}));
-
-export const hospitalPlanFeaturesRelations = relations(hospitalPlanFeatures, ({one}) => ({
-	subscriptionPlan: one(subscriptionPlans, {
-		fields: [hospitalPlanFeatures.planId],
-		references: [subscriptionPlans.id]
 	}),
 }));
 

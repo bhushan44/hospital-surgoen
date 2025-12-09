@@ -41,7 +41,27 @@ export async function POST(
 
     const { patientId, doctorId, availabilitySlotId, priority = 'routine', consultationFee } = validation.data;
 
-    // Check assignment limit before creating
+    // Check hospital assignment limit first
+    const { HospitalUsageService } = await import('@/lib/services/hospital-usage.service');
+    const hospitalUsageService = new HospitalUsageService();
+    
+    try {
+      await hospitalUsageService.checkAssignmentLimit(hospitalId);
+    } catch (error: any) {
+      if (error.message === 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED') {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Your hospital has reached its monthly assignment limit. Upgrade your plan to create more assignments.',
+            code: 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED',
+          },
+          { status: 403 }
+        );
+      }
+      throw error;
+    }
+
+    // Check doctor assignment limit
     try {
       await checkAssignmentLimit(doctorId, db);
     } catch (error: any) {
@@ -110,7 +130,8 @@ export async function POST(
         .where(eq(doctorAvailability.id, availabilitySlotId));
     }
 
-    // Increment assignment usage count
+    // Increment assignment usage count for both hospital and doctor
+    await hospitalUsageService.incrementAssignmentUsage(hospitalId);
     await incrementAssignmentUsage(doctorId, db);
 
     return NextResponse.json({

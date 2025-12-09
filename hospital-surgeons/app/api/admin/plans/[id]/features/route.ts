@@ -44,6 +44,7 @@ export async function GET(
             userRole: planData.userRole,
             visibilityWeight: features[0].visibilityWeight,
             maxAffiliations: features[0].maxAffiliations,
+            maxAssignmentsPerMonth: features[0].maxAssignmentsPerMonth,
             notes: features[0].notes,
           },
         });
@@ -62,6 +63,7 @@ export async function GET(
             planId: planId,
             userRole: planData.userRole,
             maxPatientsPerMonth: features[0].maxPatientsPerMonth,
+            maxAssignmentsPerMonth: features[0].maxAssignmentsPerMonth,
             includesPremiumDoctors: features[0].includesPremiumDoctors,
             notes: features[0].notes,
           },
@@ -115,7 +117,7 @@ export async function PUT(
 
     // Update or create features based on user role
     if (planData.userRole === 'doctor') {
-      const { visibilityWeight, maxAffiliations, notes } = body;
+      const { visibilityWeight, maxAffiliations, maxAssignmentsPerMonth, notes } = body;
 
       const existing = await db
         .select()
@@ -130,6 +132,7 @@ export async function PUT(
           .set({
             visibilityWeight: visibilityWeight !== undefined ? visibilityWeight : existing[0].visibilityWeight,
             maxAffiliations: maxAffiliations !== undefined ? maxAffiliations : existing[0].maxAffiliations,
+            maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : existing[0].maxAssignmentsPerMonth,
             notes: notes !== undefined ? notes : existing[0].notes,
           })
           .where(eq(doctorPlanFeatures.planId, planId))
@@ -148,6 +151,7 @@ export async function PUT(
             planId: planId,
             visibilityWeight: visibilityWeight || 1,
             maxAffiliations: maxAffiliations || 1,
+            maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : null,
             notes: notes || null,
           })
           .returning();
@@ -159,7 +163,7 @@ export async function PUT(
         });
       }
     } else if (planData.userRole === 'hospital') {
-      const { maxPatientsPerMonth, includesPremiumDoctors, notes } = body;
+      const { maxPatientsPerMonth, maxAssignmentsPerMonth, includesPremiumDoctors, notes } = body;
 
       const existing = await db
         .select()
@@ -173,6 +177,7 @@ export async function PUT(
           .update(hospitalPlanFeatures)
           .set({
             maxPatientsPerMonth: maxPatientsPerMonth !== undefined ? maxPatientsPerMonth : existing[0].maxPatientsPerMonth,
+            maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : existing[0].maxAssignmentsPerMonth,
             includesPremiumDoctors: includesPremiumDoctors !== undefined ? includesPremiumDoctors : existing[0].includesPremiumDoctors,
             notes: notes !== undefined ? notes : existing[0].notes,
           })
@@ -190,7 +195,8 @@ export async function PUT(
           .insert(hospitalPlanFeatures)
           .values({
             planId: planId,
-            maxPatientsPerMonth: maxPatientsPerMonth || 100,
+            maxPatientsPerMonth: maxPatientsPerMonth !== undefined ? maxPatientsPerMonth : null,
+            maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : null,
             includesPremiumDoctors: includesPremiumDoctors || false,
             notes: notes || null,
           })
