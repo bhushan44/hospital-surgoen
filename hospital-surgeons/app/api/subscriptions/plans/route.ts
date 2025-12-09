@@ -7,8 +7,14 @@ async function getHandler(req: NextRequest) {
     const subscriptionsService = new SubscriptionsService();
     const result = await subscriptionsService.listPlans();
     
-    return NextResponse.json(result, { status: result.success ? 200 : 400 });
+    if (!result.success) {
+      console.error('Failed to list plans:', result.error || result.message);
+      return NextResponse.json(result, { status: 400 });
+    }
+    
+    return NextResponse.json(result, { status: 200 });
   } catch (error) {
+    console.error('Error in getHandler:', error);
     return NextResponse.json(
       { success: false, message: 'Internal server error', error: String(error) },
       { status: 500 }
@@ -33,6 +39,8 @@ async function postHandler(req: NextRequest) {
 
 export const GET = getHandler;
 export const POST = withAuth(postHandler, ['admin']);
+
+
 
 
 

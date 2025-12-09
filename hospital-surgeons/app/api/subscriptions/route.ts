@@ -92,9 +92,17 @@ async function getHandler(req: NextRequest) {
 
 async function postHandler(req: NextRequest) {
   try {
+    const user = (req as any).user;
     const body = await req.json();
+    
+    // Use authenticated user's ID
+    const subscriptionData = {
+      ...body,
+      userId: user.userId,
+    };
+    
     const subscriptionsService = new SubscriptionsService();
-    const result = await subscriptionsService.create(body);
+    const result = await subscriptionsService.create(subscriptionData);
     
     return NextResponse.json(result, { status: result.success ? 201 : 400 });
   } catch (error) {

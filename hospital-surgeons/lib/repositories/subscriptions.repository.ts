@@ -1,5 +1,5 @@
 import { getDb } from '@/lib/db';
-import { subscriptionPlans, subscriptions, hospitalPlanFeatures } from '@/src/db/drizzle/migrations/schema';
+import { subscriptionPlans, subscriptions, hospitalPlanFeatures, doctorPlanFeatures } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql, desc, gte, lte } from 'drizzle-orm';
 
 export interface CreateSubscriptionPlanData {
@@ -62,46 +62,84 @@ export class SubscriptionsRepository {
   }
 
   async listPlans() {
-    const plans = await this.db
+    try {
+      // Get all plans with both doctor and hospital features
+      // Select only columns that actually exist in the database
+      const plans = await this.db
+        .select({
+          plan: subscriptionPlans,
+          doctorFeatures: {
+            id: doctorPlanFeatures.id,
+            planId: doctorPlanFeatures.planId,
+            visibilityWeight: doctorPlanFeatures.visibilityWeight,
+            maxAffiliations: doctorPlanFeatures.maxAffiliations,
+            notes: doctorPlanFeatures.notes,
+          },
+          hospitalFeatures: hospitalPlanFeatures,
+        })
+        .from(subscriptionPlans)
+        .leftJoin(
+          doctorPlanFeatures,
+          eq(subscriptionPlans.id, doctorPlanFeatures.planId)
+        )
+        .leftJoin(
+          hospitalPlanFeatures,
+          eq(subscriptionPlans.id, hospitalPlanFeatures.planId)
+        )
+        .orderBy(desc(subscriptionPlans.id));
+
+      // Group plans with their features
+      const plansMap = new Map();
+      plans.forEach((row) => {
+        const planId = row.plan.id;
+        if (!plansMap.has(planId)) {
+          plansMap.set(planId, {
+            ...row.plan,
+            doctorFeatures: row.doctorFeatures?.id ? row.doctorFeatures : null,
+            hospitalFeatures: row.hospitalFeatures?.id ? row.hospitalFeatures : null,
+          });
+        }
+      });
+
+      return Array.from(plansMap.values());
+    } catch (error) {
+      console.error('Error in listPlans repository:', error);
+      throw error;
+    }
+  }
+
+  async getPlan(id: string) {
+    const [row] = await this.db
       .select({
         plan: subscriptionPlans,
+        doctorFeatures: {
+          id: doctorPlanFeatures.id,
+          planId: doctorPlanFeatures.planId,
+          visibilityWeight: doctorPlanFeatures.visibilityWeight,
+          maxAffiliations: doctorPlanFeatures.maxAffiliations,
+          notes: doctorPlanFeatures.notes,
+        },
         hospitalFeatures: hospitalPlanFeatures,
       })
       .from(subscriptionPlans)
       .leftJoin(
+        doctorPlanFeatures,
+        eq(subscriptionPlans.id, doctorPlanFeatures.planId)
+      )
+      .leftJoin(
         hospitalPlanFeatures,
         eq(subscriptionPlans.id, hospitalPlanFeatures.planId)
       )
-      .orderBy(desc(subscriptionPlans.id));
-
-    // Group plans with their features (in case there are multiple features per plan)
-    const plansMap = new Map();
-    plans.forEach((row) => {
-      const planId = row.plan.id;
-      if (!plansMap.has(planId)) {
-        plansMap.set(planId, {
-          ...row.plan,
-          hospitalFeatures: row.hospitalFeatures ? [row.hospitalFeatures] : [],
-        });
-      } else {
-        if (row.hospitalFeatures) {
-          const existing = plansMap.get(planId);
-          if (existing && existing.hospitalFeatures) {
-            // Only add if not already in array (avoid duplicates)
-            if (!existing.hospitalFeatures.some((f: any) => f?.id === row.hospitalFeatures?.id)) {
-              existing.hospitalFeatures.push(row.hospitalFeatures);
-            }
-          }
-        }
-      }
-    });
-
-    return Array.from(plansMap.values());
-  }
-
-  async getPlan(id: string) {
-    const [row] = await this.db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id)).limit(1);
-    return row;
+      .where(eq(subscriptionPlans.id, id))
+      .limit(1);
+    
+    if (!row) return null;
+    
+    return {
+      ...row.plan,
+      doctorFeatures: row.doctorFeatures?.id ? row.doctorFeatures : null,
+      hospitalFeatures: row.hospitalFeatures?.id ? row.hospitalFeatures : null,
+    };
   }
 
   async updatePlan(id: string, dto: Partial<CreateSubscriptionPlanData>) {
@@ -181,9 +219,28 @@ export class SubscriptionsRepository {
   async getActiveSubscriptionByUserId(userId: string) {
     const now = new Date().toISOString();
     const [row] = await this.db
-      .select({ subscription: subscriptions, plan: subscriptionPlans })
+      .select({
+        subscription: subscriptions,
+        plan: subscriptionPlans,
+        doctorFeatures: {
+          id: doctorPlanFeatures.id,
+          planId: doctorPlanFeatures.planId,
+          visibilityWeight: doctorPlanFeatures.visibilityWeight,
+          maxAffiliations: doctorPlanFeatures.maxAffiliations,
+          notes: doctorPlanFeatures.notes,
+        },
+        hospitalFeatures: hospitalPlanFeatures,
+      })
       .from(subscriptions)
       .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+      .leftJoin(
+        doctorPlanFeatures,
+        eq(subscriptionPlans.id, doctorPlanFeatures.planId)
+      )
+      .leftJoin(
+        hospitalPlanFeatures,
+        eq(subscriptionPlans.id, hospitalPlanFeatures.planId)
+      )
       .where(
         and(
           eq(subscriptions.userId, userId),
@@ -193,7 +250,17 @@ export class SubscriptionsRepository {
       )
       .orderBy(desc(subscriptions.createdAt))
       .limit(1);
-    return row;
+    
+    if (!row) return null;
+    
+    return {
+      subscription: row.subscription,
+      plan: {
+        ...row.plan,
+        doctorFeatures: row.doctorFeatures?.id ? row.doctorFeatures : null,
+        hospitalFeatures: row.hospitalFeatures?.id ? row.hospitalFeatures : null,
+      },
+    };
   }
 
   async update(id: string, dto: UpdateSubscriptionData) {

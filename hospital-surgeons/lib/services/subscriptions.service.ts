@@ -26,13 +26,18 @@ export class SubscriptionsService {
       return {
         success: true,
         message: 'Subscription plans retrieved successfully',
-        data: plans,
+        data: plans || [],
       };
     } catch (error) {
+      console.error('Error in listPlans service:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
       return {
         success: false,
         message: 'Failed to retrieve subscription plans',
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
+        data: [], // Always include data field to prevent frontend errors
+        ...(errorStack && { stack: errorStack }),
       };
     }
   }

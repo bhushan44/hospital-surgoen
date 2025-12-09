@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { assignments, doctorAvailability, enumPriority } from '@/src/db/drizzle/migrations/schema';
+import { assignments, doctorAvailability, enumPriority, doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql } from 'drizzle-orm';
+import { getMaxAssignments, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
 
 /**
  * Create a new assignment
@@ -39,6 +40,23 @@ export async function POST(
     }
 
     const { patientId, doctorId, availabilitySlotId, priority = 'routine', consultationFee } = validation.data;
+
+    // Check assignment limit before creating
+    try {
+      await checkAssignmentLimit(doctorId, db);
+    } catch (error: any) {
+      if (error.message === 'ASSIGNMENT_LIMIT_REACHED') {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'This doctor has reached their monthly assignment limit. Please try another doctor.',
+            code: 'ASSIGNMENT_LIMIT_REACHED',
+          },
+          { status: 403 }
+        );
+      }
+      throw error;
+    }
 
     // Calculate expiresAt based on priority
     const expiresAt = new Date();
@@ -81,14 +99,19 @@ export async function POST(
       .returning();
 
     // Mark availability slot as booked
-    await db
-      .update(doctorAvailability)
-      .set({
-        status: 'booked',
-        bookedByHospitalId: hospitalId,
-        bookedAt: new Date().toISOString(),
-      })
-      .where(eq(doctorAvailability.id, availabilitySlotId));
+    if (availabilitySlotId) {
+      await db
+        .update(doctorAvailability)
+        .set({
+          status: 'booked',
+          bookedByHospitalId: hospitalId,
+          bookedAt: new Date().toISOString(),
+        })
+        .where(eq(doctorAvailability.id, availabilitySlotId));
+    }
+
+    // Increment assignment usage count
+    await incrementAssignmentUsage(doctorId, db);
 
     return NextResponse.json({
       success: true,
@@ -105,6 +128,167 @@ export async function POST(
       },
       { status: 500 }
     );
+  }
+}
+
+// Helper function: Check assignment limit
+async function checkAssignmentLimit(doctorId: string, db: any) {
+  // Get doctor's userId
+  const doctor = await db
+    .select({ userId: doctors.userId })
+    .from(doctors)
+    .where(eq(doctors.id, doctorId))
+    .limit(1);
+
+  if (doctor.length === 0) {
+    throw new Error('Doctor not found');
+  }
+
+  // Get active subscription with plan
+  const subscription = await db
+    .select({
+      planId: subscriptionPlans.id,
+      tier: subscriptionPlans.tier,
+    })
+    .from(subscriptions)
+    .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+    .where(
+      and(
+        eq(subscriptions.userId, doctor[0].userId),
+        eq(subscriptions.status, 'active')
+      )
+    )
+    .limit(1);
+
+  // Determine max assignments based on tier
+  let maxAssignments: number;
+  if (subscription.length > 0) {
+    const tier = subscription[0].tier;
+    maxAssignments = getMaxAssignments(tier);
+  } else {
+    // No subscription = free plan
+    maxAssignments = DEFAULT_ASSIGNMENT_LIMIT;
+  }
+
+  // If unlimited, skip check
+  if (maxAssignments === -1) {
+    return;
+  }
+
+  // Get or create usage record for current month
+  const currentMonth = new Date().toISOString().slice(0, 7); // "2024-03"
+  
+  let usage = await db
+    .select()
+    .from(doctorAssignmentUsage)
+    .where(
+      and(
+        eq(doctorAssignmentUsage.doctorId, doctorId),
+        eq(doctorAssignmentUsage.month, currentMonth)
+      )
+    )
+    .limit(1);
+
+  if (usage.length === 0) {
+    // Create new usage record
+    const resetDate = new Date();
+    resetDate.setMonth(resetDate.getMonth() + 1);
+    resetDate.setDate(1);
+    resetDate.setHours(0, 0, 0, 0);
+
+    [usage] = await db
+      .insert(doctorAssignmentUsage)
+      .values({
+        doctorId,
+        month: currentMonth,
+        count: 0,
+        limitCount: maxAssignments,
+        resetDate: resetDate.toISOString(),
+      })
+      .returning();
+  }
+
+  const usageData = usage[0] || usage;
+
+  // Check if limit reached
+  if (usageData.count >= maxAssignments) {
+    throw new Error('ASSIGNMENT_LIMIT_REACHED');
+  }
+}
+
+// Helper function: Increment assignment usage
+async function incrementAssignmentUsage(doctorId: string, db: any) {
+  const currentMonth = new Date().toISOString().slice(0, 7);
+
+  // Get or create usage record
+  let usage = await db
+    .select()
+    .from(doctorAssignmentUsage)
+    .where(
+      and(
+        eq(doctorAssignmentUsage.doctorId, doctorId),
+        eq(doctorAssignmentUsage.month, currentMonth)
+      )
+    )
+    .limit(1);
+
+  if (usage.length === 0) {
+    // Get doctor's userId to determine limit
+    const doctor = await db
+      .select({ userId: doctors.userId })
+      .from(doctors)
+      .where(eq(doctors.id, doctorId))
+      .limit(1);
+
+    if (doctor.length === 0) return;
+
+    // Get subscription to determine limit
+    const subscription = await db
+      .select({
+        tier: subscriptionPlans.tier,
+      })
+      .from(subscriptions)
+      .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+      .where(
+        and(
+          eq(subscriptions.userId, doctor[0].userId),
+          eq(subscriptions.status, 'active')
+        )
+      )
+      .limit(1);
+
+    let maxAssignments = DEFAULT_ASSIGNMENT_LIMIT;
+    if (subscription.length > 0) {
+      const tier = subscription[0].tier;
+      maxAssignments = getMaxAssignments(tier);
+    }
+
+    const resetDate = new Date();
+    resetDate.setMonth(resetDate.getMonth() + 1);
+    resetDate.setDate(1);
+    resetDate.setHours(0, 0, 0, 0);
+
+    await db.insert(doctorAssignmentUsage).values({
+      doctorId,
+      month: currentMonth,
+      count: 1,
+      limitCount: maxAssignments,
+      resetDate: resetDate.toISOString(),
+    });
+  } else {
+    // Increment existing count
+    await db
+      .update(doctorAssignmentUsage)
+      .set({
+        count: sql`${doctorAssignmentUsage.count} + 1`,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(doctorAssignmentUsage.doctorId, doctorId),
+          eq(doctorAssignmentUsage.month, currentMonth)
+        )
+      );
   }
 }
 

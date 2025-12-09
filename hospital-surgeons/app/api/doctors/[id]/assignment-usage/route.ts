@@ -1,0 +1,125 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@/lib/db';
+import { doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage } from '@/src/db/drizzle/migrations/schema';
+import { eq, and } from 'drizzle-orm';
+import { getMaxAssignments, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
+
+export async function GET(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const params = await context.params;
+    const doctorId = params.id;
+    const db = getDb();
+
+    const currentMonth = new Date().toISOString().slice(0, 7); // "2024-03"
+
+    // Get doctor's userId
+    const doctor = await db
+      .select({ userId: doctors.userId })
+      .from(doctors)
+      .where(eq(doctors.id, doctorId))
+      .limit(1);
+
+    if (doctor.length === 0) {
+      return NextResponse.json(
+        { success: false, message: 'Doctor not found' },
+        { status: 404 }
+      );
+    }
+
+    // Get active subscription with plan
+    const subscription = await db
+      .select({
+        plan: {
+          tier: subscriptionPlans.tier,
+          name: subscriptionPlans.name,
+        },
+      })
+      .from(subscriptions)
+      .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+      .where(
+        and(
+          eq(subscriptions.userId, doctor[0].userId),
+          eq(subscriptions.status, 'active')
+        )
+      )
+      .limit(1);
+
+    // Determine max assignments based on tier
+    let maxAssignments: number;
+    let planName = 'Free Plan';
+    
+    if (subscription.length > 0) {
+      planName = subscription[0].plan.name;
+      const tier = subscription[0].plan.tier;
+      maxAssignments = getMaxAssignments(tier);
+    } else {
+      maxAssignments = DEFAULT_ASSIGNMENT_LIMIT;
+    }
+
+    // Get usage record
+    const usage = await db
+      .select()
+      .from(doctorAssignmentUsage)
+      .where(
+        and(
+          eq(doctorAssignmentUsage.doctorId, doctorId),
+          eq(doctorAssignmentUsage.month, currentMonth)
+        )
+      )
+      .limit(1);
+
+    const usageData = usage.length > 0 ? usage[0] : {
+      count: 0,
+      limitCount: maxAssignments,
+      month: currentMonth,
+    };
+
+    // Calculate percentage (skip if unlimited)
+    const percentage = maxAssignments === -1 
+      ? 0 
+      : Math.round((usageData.count / maxAssignments) * 100);
+
+    // Calculate status
+    let status: 'ok' | 'warning' | 'critical' | 'reached' = 'ok';
+    if (maxAssignments !== -1) {
+      if (usageData.count >= maxAssignments) {
+        status = 'reached';
+      } else if (percentage >= 80) {
+        status = 'critical';
+      } else if (percentage >= 60) {
+        status = 'warning';
+      }
+    }
+
+    // Calculate reset date (1st of next month)
+    const resetDate = new Date();
+    resetDate.setMonth(resetDate.getMonth() + 1);
+    resetDate.setDate(1);
+    resetDate.setHours(0, 0, 0, 0);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        used: usageData.count,
+        limit: maxAssignments,
+        percentage,
+        status,
+        resetDate: resetDate.toISOString(),
+        remaining: maxAssignments === -1 ? -1 : Math.max(0, maxAssignments - usageData.count),
+        plan: planName,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching assignment usage:', error);
+    return NextResponse.json(
+      { success: false, message: 'Failed to fetch usage', error: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+
+

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { ActionCenter } from '../_components/ActionCenter';
 import { TodaySchedule } from '../_components/TodaySchedule';
 import { ManagementStats } from '../_components/ManagementStats';
+import { AssignmentUsageWidget } from '../_components/AssignmentUsageWidget';
 import { isAuthenticated } from '@/lib/auth/utils';
 import apiClient from '@/lib/api/httpClient';
 import type { AxiosError } from 'axios';
@@ -110,11 +111,13 @@ export default function DoctorDashboardPage() {
               const planResponse = await apiClient.get(`/api/subscriptions/plans/${subscription.planId}`);
               const planData = planResponse.data;
               if (planData.success && planData.data) {
+                const plan = planData.data;
+                const doctorFeatures = plan.doctorFeatures;
                 data.subscription = {
-                  planName: planData.data.name || 'PLATINUM',
-                  visibilityWeight: planData.data.visibilityWeight || 100,
-                  maxAffiliations: planData.data.maxAffiliations || 10,
-                  featured: planData.data.featured || false,
+                  planName: plan.name || 'PLATINUM',
+                  visibilityWeight: doctorFeatures?.visibilityWeight || 100,
+                  maxAffiliations: doctorFeatures?.maxAffiliations || 10,
+                  featured: false, // Not stored in database currently
                   renewalDate: subscription.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                 };
               }
@@ -348,8 +351,9 @@ export default function DoctorDashboardPage() {
           <TodaySchedule />
         </div>
 
-        {/* Right Column - Management Stats */}
-        <div>
+        {/* Right Column - Management Stats & Assignment Usage */}
+        <div className="space-y-6">
+          <AssignmentUsageWidget />
           <ManagementStats />
         </div>
       </div>
