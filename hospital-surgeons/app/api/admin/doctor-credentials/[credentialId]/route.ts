@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DoctorsService } from '@/lib/services/doctors.service';
-import { getDb } from '@/lib/db';
-import { auditLogs } from '@/src/db/drizzle/migrations/schema';
-
-const ALLOWED_STATUSES = ['pending', 'verified', 'rejected'] as const;
-
-type AllowedStatus = (typeof ALLOWED_STATUSES)[number];
+import { validateRequest } from '@/lib/utils/validate-request';
+import { UpdateCredentialStatusDtoSchema } from '@/lib/validations/verification.dto';
+import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 export async function PUT(
   req: NextRequest,
@@ -13,18 +10,14 @@ export async function PUT(
 ) {
   try {
     const { credentialId } = await params;
-    const body = await req.json();
-    const { verificationStatus, notes } = body as {
-      verificationStatus?: AllowedStatus;
-      notes?: string;
-    };
-
-    if (!verificationStatus || !ALLOWED_STATUSES.includes(verificationStatus)) {
-      return NextResponse.json(
-        { success: false, message: 'Invalid verification status' },
-        { status: 400 }
-      );
+    
+    // Validate request body with Zod schema
+    const validation = await validateRequest(req, UpdateCredentialStatusDtoSchema);
+    if (!validation.success) {
+      return validation.response;
     }
+
+    const { verificationStatus, notes } = validation.data;
 
     const doctorsService = new DoctorsService();
     const result = await doctorsService.updateCredentialStatus(credentialId, verificationStatus);
@@ -35,20 +28,37 @@ export async function PUT(
 
     const credential = result.data as any;
 
-    const db = getDb();
-    await db.insert(auditLogs).values({
-      // For credential actions, we don't currently have the acting admin userId here,
-      // and doctorId is not a valid foreign key into users.id, so leave userId null.
-      userId: null,
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: verificationStatus === 'verified' ? 'credential_verified' : 'credential_rejected',
       entityType: 'doctor_credential',
       entityId: credentialId,
-      details: {
-        verificationStatus,
-        notes,
+      entityName: credential.title || 'Credential',
+      httpMethod: 'PUT',
+      endpoint: `/api/admin/doctor-credentials/${credentialId}`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      previousStatus: credential.verificationStatus,
+      newStatus: verificationStatus,
+      changes: {
+        verificationStatus: {
+          old: credential.verificationStatus,
+          new: verificationStatus,
+        },
       },
-      createdAt: new Date().toISOString(),
+      notes: notes || undefined,
+      details: {
+        doctorId: credential.doctorId,
+        credentialType: credential.credentialType,
+        institution: credential.institution,
+        updatedAt: new Date().toISOString(),
+      },
     });
 
     return NextResponse.json({

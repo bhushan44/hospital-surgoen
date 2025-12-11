@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { users, doctors, hospitals, subscriptions, subscriptionPlans } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, or, like, sql, desc, asc } from 'drizzle-orm';
+import { eq, and, or, like, sql, desc, asc, count } from 'drizzle-orm';
 
 export async function GET(req: NextRequest) {
   try {
@@ -52,13 +52,42 @@ export async function GET(req: NextRequest) {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Get total count
+    // Get total count for filtered results
     const countResult = await db
       .select({ count: sql<number>`count(*)` })
       .from(users)
       .where(whereClause);
     
     const total = Number(countResult[0]?.count || 0);
+
+    // Get total counts by role (for tab counts - without filters)
+    // Count all users by role (matching what the list shows - uses LEFT JOIN, so counts all users with role)
+    const doctorCountResult = await db
+      .select({ count: count() })
+      .from(users)
+      .where(eq(users.role, 'doctor'));
+    const doctorCount = Number(doctorCountResult[0]?.count || 0);
+
+    // Count hospitals
+    const hospitalCountResult = await db
+      .select({ count: count() })
+      .from(users)
+      .where(eq(users.role, 'hospital'));
+    const hospitalCount = Number(hospitalCountResult[0]?.count || 0);
+
+    // Count admins
+    const adminCountResult = await db
+      .select({ count: count() })
+      .from(users)
+      .where(eq(users.role, 'admin'));
+    const adminCount = Number(adminCountResult[0]?.count || 0);
+
+    const countsByRole = {
+      doctor: doctorCount,
+      hospital: hospitalCount,
+      admin: adminCount,
+      all: doctorCount + hospitalCount + adminCount,
+    };
 
     // Map sortBy to actual column references
     const sortColumnMap: Record<string, any> = {
@@ -86,17 +115,17 @@ export async function GET(req: NextRequest) {
         lastLoginAt: users.lastLoginAt,
         createdAt: users.createdAt,
         // Doctor info
-        doctorId: sql<string | null>`d.id`,
-        doctorFirstName: sql<string | null>`d.first_name`,
-        doctorLastName: sql<string | null>`d.last_name`,
-        doctorLicenseStatus: sql<string | null>`d.license_verification_status`,
+        doctorId: doctors.id,
+        doctorFirstName: doctors.firstName,
+        doctorLastName: doctors.lastName,
+        doctorLicenseStatus: doctors.licenseVerificationStatus,
         // Hospital info
-        hospitalId: sql<string | null>`h.id`,
-        hospitalName: sql<string | null>`h.name`,
-        hospitalLicenseStatus: sql<string | null>`h.license_verification_status`,
+        hospitalId: hospitals.id,
+        hospitalName: hospitals.name,
+        hospitalLicenseStatus: hospitals.licenseVerificationStatus,
         // Subscription info
-        subscriptionId: sql<string | null>`s.id`,
-        subscriptionPlanName: sql<string | null>`sp.name`,
+        subscriptionId: subscriptions.id,
+        subscriptionPlanName: subscriptionPlans.name,
       })
       .from(users)
       .leftJoin(doctors, eq(users.id, doctors.userId))
@@ -156,6 +185,7 @@ export async function GET(req: NextRequest) {
         total,
         totalPages: Math.ceil(total / limit),
       },
+      counts: countsByRole,
     });
   } catch (error) {
     console.error('Error fetching users:', error);

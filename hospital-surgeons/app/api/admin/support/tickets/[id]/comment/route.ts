@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { supportTickets, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { supportTickets, users } from '@/src/db/drizzle/migrations/schema';
 import { eq } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 export async function POST(
   req: NextRequest,
@@ -35,15 +36,37 @@ export async function POST(
       );
     }
 
-    // Create audit log as comment
-    await db.insert(auditLogs).values({
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    
+    // Get user email if userId provided
+    let userEmail = null;
+    if (userId) {
+      const userResult = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      userEmail = userResult[0]?.email || null;
+    }
+
+    // Create comprehensive audit log
+    await createAuditLog({
       userId: userId || null,
       actorType: userId ? 'user' : 'admin',
       action: 'comment',
       entityType: 'support_ticket',
       entityId: ticketId,
+      entityName: existing[0].subject,
+      httpMethod: 'POST',
+      endpoint: `/api/admin/support/tickets/${ticketId}/comment`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
       details: {
         comment,
+        ticketSubject: existing[0].subject,
+        ticketStatus: existing[0].status,
+        userEmail: userEmail,
         timestamp: new Date().toISOString(),
       },
     });

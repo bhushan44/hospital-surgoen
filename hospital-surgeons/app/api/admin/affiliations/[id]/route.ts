@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { doctorHospitalAffiliations, doctors, hospitals, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { doctorHospitalAffiliations, doctors, hospitals } from '@/src/db/drizzle/migrations/schema';
 import { eq, sql } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
 
 export async function GET(
   req: NextRequest,
@@ -90,6 +91,23 @@ export async function PUT(
       );
     }
 
+    const oldAffiliation = existing[0];
+
+    // Get doctor and hospital names
+    const doctorResult = await db
+      .select({ firstName: doctors.firstName, lastName: doctors.lastName })
+      .from(doctors)
+      .where(eq(doctors.id, oldAffiliation.doctorId))
+      .limit(1);
+    const hospitalResult = await db
+      .select({ name: hospitals.name })
+      .from(hospitals)
+      .where(eq(hospitals.id, oldAffiliation.hospitalId))
+      .limit(1);
+
+    const doctorName = doctorResult[0] ? `Dr. ${doctorResult[0].firstName} ${doctorResult[0].lastName}` : null;
+    const hospitalName = hospitalResult[0]?.name || null;
+
     // Build update object
     const updateData: any = {};
     if (status !== undefined) updateData.status = status;
@@ -102,16 +120,40 @@ export async function PUT(
       .where(eq(doctorHospitalAffiliations.id, affiliationId))
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Build changes object
+    const oldData: any = {
+      status: oldAffiliation.status,
+      isPreferred: oldAffiliation.isPreferred,
+    };
+    const newData: any = {
+      status: updatedAffiliation.status,
+      isPreferred: updatedAffiliation.isPreferred,
+    };
+    const changes = buildChangesObject(oldData, newData, ['status', 'isPreferred']);
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'update',
       entityType: 'affiliation',
       entityId: affiliationId,
+      entityName: `${doctorName} - ${hospitalName}`,
+      httpMethod: 'PUT',
+      endpoint: `/api/admin/affiliations/${affiliationId}`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      changes: changes,
+      previousStatus: oldAffiliation.status,
+      newStatus: updatedAffiliation.status,
       details: {
-        changes: updateData,
-        previousStatus: existing[0].status,
-        newStatus: status || existing[0].status,
+        doctorId: oldAffiliation.doctorId,
+        hospitalId: oldAffiliation.hospitalId,
+        updatedAt: new Date().toISOString(),
       },
     });
 
@@ -156,20 +198,51 @@ export async function DELETE(
       );
     }
 
+    const oldAffiliation = existing[0];
+
+    // Get doctor and hospital names
+    const doctorResult = await db
+      .select({ firstName: doctors.firstName, lastName: doctors.lastName })
+      .from(doctors)
+      .where(eq(doctors.id, oldAffiliation.doctorId))
+      .limit(1);
+    const hospitalResult = await db
+      .select({ name: hospitals.name })
+      .from(hospitals)
+      .where(eq(hospitals.id, oldAffiliation.hospitalId))
+      .limit(1);
+
+    const doctorName = doctorResult[0] ? `Dr. ${doctorResult[0].firstName} ${doctorResult[0].lastName}` : null;
+    const hospitalName = hospitalResult[0]?.name || null;
+
     // Delete affiliation
     await db
       .delete(doctorHospitalAffiliations)
       .where(eq(doctorHospitalAffiliations.id, affiliationId));
 
-    // Create audit log
-    await db.insert(auditLogs).values({
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'delete',
       entityType: 'affiliation',
       entityId: affiliationId,
+      entityName: `${doctorName} - ${hospitalName}`,
+      httpMethod: 'DELETE',
+      endpoint: `/api/admin/affiliations/${affiliationId}`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
       details: {
-        doctorId: existing[0].doctorId,
-        hospitalId: existing[0].hospitalId,
+        doctorId: oldAffiliation.doctorId,
+        hospitalId: oldAffiliation.hospitalId,
+        doctorName,
+        hospitalName,
+        status: oldAffiliation.status,
+        deletedAt: new Date().toISOString(),
       },
     });
 

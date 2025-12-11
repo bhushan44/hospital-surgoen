@@ -8,7 +8,7 @@ async function getHandler(req: NextRequest) {
     const result = await subscriptionsService.listPlans();
     
     if (!result.success) {
-      console.error('Failed to list plans:', result.error || result.message);
+      console.error('Failed to list plans:', 'error' in result ? result.error : result.message);
       return NextResponse.json(result, { status: 400 });
     }
     

@@ -59,10 +59,18 @@ export function SpecialtiesManagement() {
     }
   };
 
+  const validateForm = () => {
+    // Name is required
+    if (!formData.name.trim()) return false;
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
-      toast.error('Specialty name is required');
+    
+    // Validate required fields
+    if (!validateForm()) {
+      toast.error('Please fill all required fields');
       return;
     }
 
@@ -287,7 +295,7 @@ export function SpecialtiesManagement() {
               <Button 
                 type="submit"
                 className="bg-navy-600 hover:bg-navy-700"
-                disabled={submitting}
+                disabled={submitting || !validateForm()}
               >
                 {submitting ? (
                   <>

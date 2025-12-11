@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageHeader } from '../PageHeader';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -29,15 +29,20 @@ export function AuditLogs() {
   const [actorTypeFilter, setActorTypeFilter] = useState<string>('all');
   const [actionFilter, setActionFilter] = useState<string>('all');
   const [entityTypeFilter, setEntityTypeFilter] = useState<string>('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     fetchLogs();
-  }, [actorTypeFilter, actionFilter, entityTypeFilter]);
+  }, [actorTypeFilter, actionFilter, entityTypeFilter, page]);
 
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '20',
+      });
       if (actorTypeFilter !== 'all') {
         params.append('actorType', actorTypeFilter);
       }
@@ -47,13 +52,13 @@ export function AuditLogs() {
       if (entityTypeFilter !== 'all') {
         params.append('entityType', entityTypeFilter);
       }
-      params.append('limit', '100');
 
       const res = await fetch(`/api/admin/audit-logs?${params.toString()}`);
       const data = await res.json();
 
       if (data.success) {
         setLogs(data.data || []);
+        setTotalPages(data.pagination?.totalPages || 1);
       } else {
         toast.error(data.message || 'Failed to fetch audit logs');
       }
@@ -125,23 +130,39 @@ export function AuditLogs() {
                 <Input
                   placeholder="Search logs..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
                   className="pl-10"
                 />
               </div>
-              <Select value={actorTypeFilter} onValueChange={setActorTypeFilter}>
+              <Select 
+                value={actorTypeFilter} 
+                onValueChange={(value) => {
+                  setActorTypeFilter(value);
+                  setPage(1);
+                }}
+              >
                 <SelectTrigger className="w-40">
                   <SelectValue placeholder="Actor Type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Actors</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="system">System</SelectItem>
                   <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="system">System</SelectItem>
+                  <SelectItem value="webhook">Webhook</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={actionFilter} onValueChange={setActionFilter}>
-                <SelectTrigger className="w-40">
+              <Select 
+                value={actionFilter} 
+                onValueChange={(value) => {
+                  setActionFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-48">
                   <SelectValue placeholder="Action Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -150,10 +171,23 @@ export function AuditLogs() {
                   <SelectItem value="update">Update</SelectItem>
                   <SelectItem value="delete">Delete</SelectItem>
                   <SelectItem value="verify">Verify</SelectItem>
+                  <SelectItem value="reject">Reject</SelectItem>
+                  <SelectItem value="assign">Assign</SelectItem>
+                  <SelectItem value="comment">Comment</SelectItem>
+                  <SelectItem value="update_status">Update Status</SelectItem>
+                  <SelectItem value="update_role">Update Role</SelectItem>
+                  <SelectItem value="credential_verified">Credential Verified</SelectItem>
+                  <SelectItem value="credential_rejected">Credential Rejected</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={entityTypeFilter} onValueChange={setEntityTypeFilter}>
-                <SelectTrigger className="w-40">
+              <Select 
+                value={entityTypeFilter} 
+                onValueChange={(value) => {
+                  setEntityTypeFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-48">
                   <SelectValue placeholder="Entity Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -163,6 +197,11 @@ export function AuditLogs() {
                   <SelectItem value="hospital">Hospital</SelectItem>
                   <SelectItem value="assignment">Assignment</SelectItem>
                   <SelectItem value="subscription">Subscription</SelectItem>
+                  <SelectItem value="subscription_plan">Subscription Plan</SelectItem>
+                  <SelectItem value="specialty">Specialty</SelectItem>
+                  <SelectItem value="support_ticket">Support Ticket</SelectItem>
+                  <SelectItem value="affiliation">Affiliation</SelectItem>
+                  <SelectItem value="doctor_credential">Doctor Credential</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -193,8 +232,8 @@ export function AuditLogs() {
                     </tr>
                   ) : (
                     filteredLogs.map((log) => (
-                      <>
-                        <tr key={log.id} className="hover:bg-slate-50">
+                      <React.Fragment key={log.id}>
+                        <tr className="hover:bg-slate-50">
                           <td className="px-6 py-4 text-slate-600">
                             {new Date(log.createdAt).toLocaleString()}
                           </td>
@@ -242,11 +281,37 @@ export function AuditLogs() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     ))
                   )}
                 </tbody>
               </table>
+              {/* Pagination */}
+              {!loading && totalPages > 1 && (
+                <div className="p-4 border-t border-slate-200 flex items-center justify-between">
+                  <div className="text-sm text-slate-600">
+                    Page {page} of {totalPages}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

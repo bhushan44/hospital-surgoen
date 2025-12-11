@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { users, doctors, hospitals, subscriptions, subscriptionPlans, auditLogs, assignments, orders, paymentTransactions } from '@/src/db/drizzle/migrations/schema';
+import { users, doctors, hospitals, subscriptions, subscriptionPlans, assignments, orders, paymentTransactions, auditLogs } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 export async function GET(
   req: NextRequest,
@@ -29,25 +30,25 @@ export async function GET(
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
         // Doctor info
-        doctorId: sql<string | null>`d.id`,
-        doctorFirstName: sql<string | null>`d.first_name`,
-        doctorLastName: sql<string | null>`d.last_name`,
-        doctorLicenseNumber: sql<string | null>`d.medical_license_number`,
-        doctorLicenseStatus: sql<string | null>`d.license_verification_status`,
-        doctorYearsOfExperience: sql<number | null>`d.years_of_experience`,
-        doctorBio: sql<string | null>`d.bio`,
-        doctorAverageRating: sql<string | null>`d.average_rating`,
-        doctorTotalRatings: sql<number | null>`d.total_ratings`,
-        doctorCompletedAssignments: sql<number | null>`d.completed_assignments`,
+        doctorId: doctors.id,
+        doctorFirstName: doctors.firstName,
+        doctorLastName: doctors.lastName,
+        doctorLicenseNumber: doctors.medicalLicenseNumber,
+        doctorLicenseStatus: doctors.licenseVerificationStatus,
+        doctorYearsOfExperience: doctors.yearsOfExperience,
+        doctorBio: doctors.bio,
+        doctorAverageRating: doctors.averageRating,
+        doctorTotalRatings: doctors.totalRatings,
+        doctorCompletedAssignments: doctors.completedAssignments,
         // Hospital info
-        hospitalId: sql<string | null>`h.id`,
-        hospitalName: sql<string | null>`h.name`,
-        hospitalType: sql<string | null>`h.hospital_type`,
-        hospitalRegistrationNumber: sql<string | null>`h.registration_number`,
-        hospitalLicenseStatus: sql<string | null>`h.license_verification_status`,
-        hospitalAddress: sql<string | null>`h.address`,
-        hospitalCity: sql<string | null>`h.city`,
-        hospitalNumberOfBeds: sql<number | null>`h.number_of_beds`,
+        hospitalId: hospitals.id,
+        hospitalName: hospitals.name,
+        hospitalType: hospitals.hospitalType,
+        hospitalRegistrationNumber: hospitals.registrationNumber,
+        hospitalLicenseStatus: hospitals.licenseVerificationStatus,
+        hospitalAddress: hospitals.address,
+        hospitalCity: hospitals.city,
+        hospitalNumberOfBeds: hospitals.numberOfBeds,
       })
       .from(users)
       .leftJoin(doctors, eq(users.id, doctors.userId))
@@ -232,6 +233,8 @@ export async function DELETE(
       );
     }
 
+    const oldUser = existingUser[0];
+
     // Soft delete: Update status to 'suspended' instead of actually deleting
     const [updatedUser] = await db
       .update(users)
@@ -242,19 +245,35 @@ export async function DELETE(
       .where(eq(users.id, userId))
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
-      userId: userId,
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'delete',
       entityType: 'user',
       entityId: userId,
-      details: {
-        previousStatus: existingUser[0].status,
-        newStatus: 'suspended',
-        reason: 'User deleted (soft delete) by admin',
+      entityName: oldUser.email,
+      httpMethod: 'DELETE',
+      endpoint: `/api/admin/users/${userId}`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      previousStatus: oldUser.status,
+      newStatus: 'suspended',
+      changes: {
+        status: {
+          old: oldUser.status,
+          new: 'suspended',
+        },
       },
-      createdAt: new Date().toISOString(),
+      reason: 'User deleted (soft delete) by admin',
+      details: {
+        userRole: oldUser.role,
+        deletedAt: new Date().toISOString(),
+      },
     });
 
     return NextResponse.json({

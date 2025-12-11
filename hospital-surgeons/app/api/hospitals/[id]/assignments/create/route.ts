@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { assignments, doctorAvailability, enumPriority, doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage } from '@/src/db/drizzle/migrations/schema';
+import { assignments, doctorAvailability, enumPriority, doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, hospitals, patients, users } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { getMaxAssignments, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
+import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 /**
  * Create a new assignment
@@ -133,6 +134,47 @@ export async function POST(
     // Increment assignment usage count for both hospital and doctor
     await hospitalUsageService.incrementAssignmentUsage(hospitalId);
     await incrementAssignmentUsage(doctorId, db);
+
+    // Get request metadata and entity names for audit log
+    const metadata = getRequestMetadata(req);
+    const hospitalUserId = req.headers.get('x-user-id') || null;
+
+    // Get hospital, doctor, and patient names
+    const [hospitalResult, doctorResult, patientResult] = await Promise.all([
+      db.select({ name: hospitals.name }).from(hospitals).where(eq(hospitals.id, hospitalId)).limit(1),
+      db.select({ firstName: doctors.firstName, lastName: doctors.lastName }).from(doctors).where(eq(doctors.id, doctorId)).limit(1),
+      db.select({ fullName: patients.fullName }).from(patients).where(eq(patients.id, patientId)).limit(1),
+    ]);
+
+    const hospitalName = hospitalResult[0]?.name || null;
+    const doctorName = doctorResult[0] ? `Dr. ${doctorResult[0].firstName} ${doctorResult[0].lastName}` : null;
+    const patientName = patientResult[0]?.fullName || null;
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: hospitalUserId,
+      actorType: 'user',
+      action: 'create',
+      entityType: 'assignment',
+      entityId: newAssignment[0].id,
+      entityName: `Assignment: ${doctorName} → ${patientName}`,
+      httpMethod: 'POST',
+      endpoint: `/api/hospitals/${hospitalId}/assignments/create`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      details: {
+        hospitalId,
+        hospitalName,
+        doctorId,
+        doctorName,
+        patientId,
+        patientName,
+        priority,
+        consultationFee: consultationFee || null,
+        expiresAt: expiresAt.toISOString(),
+        createdAt: new Date().toISOString(),
+      },
+    });
 
     return NextResponse.json({
       success: true,

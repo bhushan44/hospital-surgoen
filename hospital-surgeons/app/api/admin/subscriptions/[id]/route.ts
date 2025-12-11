@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { subscriptions, users, subscriptionPlans, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { subscriptions, users, subscriptionPlans } from '@/src/db/drizzle/migrations/schema';
 import { eq, sql } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
 
 export async function GET(
   req: NextRequest,
@@ -100,6 +101,8 @@ export async function PUT(
       );
     }
 
+    const oldSubscription = existing[0];
+
     // Build update object
     const updateData: any = {
       updatedAt: new Date().toISOString(),
@@ -115,16 +118,51 @@ export async function PUT(
       .where(eq(subscriptions.id, subscriptionId))
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Get user email
+    const userResult = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, oldSubscription.userId))
+      .limit(1);
+    const userEmail = userResult[0]?.email || null;
+
+    // Build changes object
+    const oldData: any = {
+      status: oldSubscription.status,
+      autoRenew: oldSubscription.autoRenew,
+      endDate: oldSubscription.endDate,
+    };
+    const newData: any = {
+      status: updatedSubscription.status,
+      autoRenew: updatedSubscription.autoRenew,
+      endDate: updatedSubscription.endDate,
+    };
+    const changes = buildChangesObject(oldData, newData, ['status', 'autoRenew', 'endDate']);
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'update',
       entityType: 'subscription',
       entityId: subscriptionId,
+      entityName: `Subscription for ${userEmail}`,
+      httpMethod: 'PUT',
+      endpoint: `/api/admin/subscriptions/${subscriptionId}`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      changes: changes,
+      previousStatus: oldSubscription.status,
+      newStatus: updatedSubscription.status,
       details: {
-        changes: updateData,
-        previousStatus: existing[0].status,
-        newStatus: status || existing[0].status,
+        userId: oldSubscription.userId,
+        userEmail: userEmail,
+        planId: oldSubscription.planId,
+        updatedAt: new Date().toISOString(),
       },
     });
 

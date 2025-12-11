@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { hospitals, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { hospitals, users } from '@/src/db/drizzle/migrations/schema';
 import { eq } from 'drizzle-orm';
+import { validateRequest } from '@/lib/utils/validate-request';
+import { VerifyDtoSchema } from '@/lib/validations/verification.dto';
+import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 export async function PUT(
   req: NextRequest,
@@ -11,13 +14,27 @@ export async function PUT(
     const db = getDb();
     const { id } = await params;
     const hospitalId = id;
-    const body = await req.json();
-    const { notes } = body;
+    
+    // Validate request body with Zod schema
+    const validation = await validateRequest(req, VerifyDtoSchema);
+    if (!validation.success) {
+      return validation.response;
+    }
 
-    // Check if hospital exists
+    const { notes } = validation.data;
+
+    // Check if hospital exists with user info
     const existingHospital = await db
-      .select()
+      .select({
+        id: hospitals.id,
+        userId: hospitals.userId,
+        name: hospitals.name,
+        registrationNumber: hospitals.registrationNumber,
+        licenseVerificationStatus: hospitals.licenseVerificationStatus,
+        userEmail: users.email,
+      })
       .from(hospitals)
+      .leftJoin(users, eq(hospitals.userId, users.id))
       .where(eq(hospitals.id, hospitalId))
       .limit(1);
 
@@ -28,6 +45,9 @@ export async function PUT(
       );
     }
 
+    const hospital = existingHospital[0];
+    const previousStatus = hospital.licenseVerificationStatus;
+
     // Update hospital verification status
     const [updatedHospital] = await db
       .update(hospitals)
@@ -37,20 +57,36 @@ export async function PUT(
       .where(eq(hospitals.id, hospitalId))
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
-      userId: existingHospital[0].userId,
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'verify',
       entityType: 'hospital',
       entityId: hospitalId,
+      entityName: hospital.name,
+      httpMethod: 'PUT',
+      endpoint: `/api/admin/verifications/hospitals/${hospitalId}/verify`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      previousStatus: previousStatus,
+      newStatus: 'verified',
+      changes: {
+        licenseVerificationStatus: {
+          old: previousStatus,
+          new: 'verified',
+        },
+      },
+      notes: notes || 'Hospital verified by admin',
       details: {
-        previousStatus: existingHospital[0].licenseVerificationStatus,
-        newStatus: 'verified',
-        notes: notes || 'Hospital verified by admin',
+        hospitalEmail: hospital.userEmail || undefined,
+        registrationNumber: hospital.registrationNumber || undefined,
         verifiedAt: new Date().toISOString(),
       },
-      createdAt: new Date().toISOString(),
     });
 
     return NextResponse.json({

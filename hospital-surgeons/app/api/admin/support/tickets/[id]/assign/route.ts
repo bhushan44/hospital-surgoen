@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { supportTickets, users, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { supportTickets, users } from '@/src/db/drizzle/migrations/schema';
 import { eq } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
 
 export async function POST(
   req: NextRequest,
@@ -49,6 +50,8 @@ export async function POST(
       );
     }
 
+    const oldTicket = existing[0];
+
     // Update ticket
     const [updatedTicket] = await db
       .update(supportTickets)
@@ -56,15 +59,39 @@ export async function POST(
       .where(eq(supportTickets.id, ticketId))
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Get assigned user email
+    const assignedUserEmail = assignedUser[0]?.email || null;
+
+    // Build changes object
+    const changes = buildChangesObject(
+      { assignedTo: oldTicket.assignedTo },
+      { assignedTo: updatedTicket.assignedTo },
+      ['assignedTo']
+    );
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'assign',
       entityType: 'support_ticket',
       entityId: ticketId,
+      entityName: oldTicket.subject,
+      httpMethod: 'POST',
+      endpoint: `/api/admin/support/tickets/${ticketId}/assign`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      changes: changes,
       details: {
-        assignedTo,
-        previousAssignedTo: existing[0].assignedTo,
+        assignedTo: assignedTo,
+        assignedToEmail: assignedUserEmail,
+        previousAssignedTo: oldTicket.assignedTo,
+        ticketStatus: oldTicket.status,
+        assignedAt: new Date().toISOString(),
       },
     });
 

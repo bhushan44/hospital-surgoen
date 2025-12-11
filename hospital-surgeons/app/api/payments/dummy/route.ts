@@ -61,7 +61,7 @@ async function postHandler(req: NextRequest) {
         userId: user.userId,
         orderType: 'subscription',
         planId: planId,
-        amount: BigInt(planPriceInCents),
+        amount: Number(planPriceInCents),
         currency: 'USD',
         description: `Subscription payment for ${planData.name}`,
         status: 'paid',
@@ -79,7 +79,7 @@ async function postHandler(req: NextRequest) {
         paymentGateway: 'dummy',
         paymentId: transactionId,
         paymentMethod: paymentMethod || 'card',
-        amount: BigInt(planPriceInCents),
+        amount: Number(planPriceInCents),
         currency: 'USD',
         status: 'success', // Always success for dummy payment
         gatewayResponse: {

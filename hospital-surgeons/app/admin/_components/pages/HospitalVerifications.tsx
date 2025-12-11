@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '../PageHeader';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Search, Filter, Eye, Check, X, MessageSquare, Download, ZoomIn, ZoomOut, Loader2 } from 'lucide-react';
+import { Search, Eye, Check, X, MessageSquare, Download, ZoomIn, ZoomOut, Loader2 } from 'lucide-react';
 import { StatusBadge } from '../StatusBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../ui/dialog';
@@ -200,29 +200,26 @@ export function HospitalVerifications() {
     });
   };
 
-  const pendingCount = hospitals.filter(h => h.licenseVerificationStatus === 'pending').length;
-  const verifiedCount = hospitals.filter(h => h.licenseVerificationStatus === 'verified').length;
-  const rejectedCount = hospitals.filter(h => h.licenseVerificationStatus === 'rejected').length;
-
   return (
     <div className="min-h-screen bg-slate-50">
       <PageHeader 
         title="Hospital Verifications" 
         description="Review and verify hospital registration applications"
-        actions={
-          <Button variant="outline">
-            <Filter className="w-4 h-4 mr-2" />
-            Filters
-          </Button>
-        }
       />
 
       <div className="p-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs 
+          value={activeTab} 
+          onValueChange={(value) => {
+            setActiveTab(value);
+            setPage(1);
+          }} 
+          className="space-y-6"
+        >
           <TabsList>
-            <TabsTrigger value="pending">Pending ({pendingCount})</TabsTrigger>
-            <TabsTrigger value="approved">Approved ({verifiedCount})</TabsTrigger>
-            <TabsTrigger value="rejected">Rejected ({rejectedCount})</TabsTrigger>
+            <TabsTrigger value="pending">Pending</TabsTrigger>
+            <TabsTrigger value="approved">Approved</TabsTrigger>
+            <TabsTrigger value="rejected">Rejected</TabsTrigger>
           </TabsList>
 
           <TabsContent value={activeTab} className="space-y-4">

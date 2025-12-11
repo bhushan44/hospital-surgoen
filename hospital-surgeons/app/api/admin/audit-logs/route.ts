@@ -60,32 +60,41 @@ export async function GET(req: NextRequest) {
     
     const total = Number(countResult[0]?.count || 0);
 
-    // Get audit logs with user info
-    const logsList = await db.execute(sql`
-      SELECT 
-        al.*,
-        u.email as user_email,
-        u.role as user_role
-      FROM audit_logs al
-      LEFT JOIN users u ON al.user_id = u.id
-      ${whereClause ? sql`WHERE ${whereClause}` : sql``}
-      ORDER BY al.created_at ${sortOrder === 'asc' ? sql`ASC` : sql`DESC`}
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `);
+    // Get audit logs with user info using Drizzle query builder
+    const logsQuery = db
+      .select({
+        id: auditLogs.id,
+        userId: auditLogs.userId,
+        actorType: auditLogs.actorType,
+        action: auditLogs.action,
+        entityType: auditLogs.entityType,
+        entityId: auditLogs.entityId,
+        details: auditLogs.details,
+        createdAt: auditLogs.createdAt,
+        userEmail: users.email,
+        userRole: users.role,
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(auditLogs.userId, users.id))
+      .where(whereClause)
+      .orderBy(sortOrder === 'asc' ? asc(auditLogs.createdAt) : desc(auditLogs.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const logsList = await logsQuery;
 
     // Format response
-    const formattedLogs = (logsList.rows || []).map((log: any) => ({
+    const formattedLogs = logsList.map((log) => ({
       id: log.id,
-      userId: log.user_id,
-      userEmail: log.user_email,
-      userRole: log.user_role,
-      actorType: log.actor_type,
+      userId: log.userId,
+      userEmail: log.userEmail,
+      userRole: log.userRole,
+      actorType: log.actorType,
       action: log.action,
-      entityType: log.entity_type,
-      entityId: log.entity_id,
+      entityType: log.entityType,
+      entityId: log.entityId,
       details: log.details,
-      createdAt: log.created_at,
+      createdAt: log.createdAt,
     }));
 
     return NextResponse.json({

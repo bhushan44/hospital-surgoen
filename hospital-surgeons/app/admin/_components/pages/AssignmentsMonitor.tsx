@@ -33,7 +33,9 @@ export function AssignmentsMonitor() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState<string>('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -43,22 +45,28 @@ export function AssignmentsMonitor() {
   useEffect(() => {
     fetchAssignments();
     fetchStats();
-  }, [statusFilter]);
+  }, [activeTab, searchQuery, page]);
 
   const fetchAssignments = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '10',
+      });
+      if (activeTab !== 'all') {
+        params.append('status', activeTab);
       }
-      params.append('limit', '100');
+      if (searchQuery) {
+        params.append('search', searchQuery);
+      }
 
       const res = await fetch(`/api/admin/assignments?${params.toString()}`);
       const data = await res.json();
 
       if (data.success) {
         setAssignments(data.data || []);
+        setTotalPages(data.pagination?.totalPages || 1);
       } else {
         toast.error(data.message || 'Failed to fetch assignments');
       }
@@ -134,31 +142,14 @@ export function AssignmentsMonitor() {
     }
   };
 
-  const filteredAssignments = assignments.filter((assignment) =>
-    assignment.hospital.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    assignment.doctor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    assignment.patient.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const statusCounts = {
-    all: assignments.length,
-    pending: assignments.filter(a => a.status === 'pending').length,
-    accepted: assignments.filter(a => a.status === 'accepted').length,
-    completed: assignments.filter(a => a.status === 'completed').length,
-    cancelled: assignments.filter(a => a.status === 'cancelled').length,
-  };
+  // Use assignments directly from API (already filtered on backend)
+  const filteredAssignments = assignments;
 
   return (
     <div className="min-h-screen bg-slate-50">
       <PageHeader 
         title="Assignments Monitor" 
         description="Track and manage doctor-hospital assignments"
-        actions={
-          <Button variant="outline">
-            <Filter className="w-4 h-4 mr-2" />
-            Advanced Filters
-          </Button>
-        }
       />
 
       <div className="p-8 space-y-8">
@@ -183,16 +174,23 @@ export function AssignmentsMonitor() {
           />
         </div>
 
-        <Tabs value={statusFilter} onValueChange={setStatusFilter} className="space-y-6">
+        <Tabs 
+          value={activeTab} 
+          onValueChange={(value) => {
+            setActiveTab(value);
+            setPage(1);
+          }} 
+          className="space-y-6"
+        >
           <TabsList>
-            <TabsTrigger value="all">All ({statusCounts.all})</TabsTrigger>
-            <TabsTrigger value="pending">Pending ({statusCounts.pending})</TabsTrigger>
-            <TabsTrigger value="accepted">Accepted ({statusCounts.accepted})</TabsTrigger>
-            <TabsTrigger value="completed">Completed ({statusCounts.completed})</TabsTrigger>
-            <TabsTrigger value="cancelled">Cancelled ({statusCounts.cancelled})</TabsTrigger>
+            <TabsTrigger value="all">All</TabsTrigger>
+            <TabsTrigger value="pending">Pending</TabsTrigger>
+            <TabsTrigger value="accepted">Accepted</TabsTrigger>
+            <TabsTrigger value="completed">Completed</TabsTrigger>
+            <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
           </TabsList>
 
-          <TabsContent value={statusFilter} className="space-y-4">
+          <TabsContent value={activeTab} className="space-y-4">
             <div className="bg-white rounded-lg shadow">
               <div className="p-4 border-b border-slate-200">
                 <div className="relative">
@@ -200,7 +198,16 @@ export function AssignmentsMonitor() {
                   <Input
                     placeholder="Search assignments..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setPage(1);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setPage(1);
+                        fetchAssignments();
+                      }
+                    }}
                     className="pl-10"
                   />
                 </div>
@@ -260,6 +267,32 @@ export function AssignmentsMonitor() {
                       )}
                     </tbody>
                   </table>
+                  {/* Pagination */}
+                  {!loading && totalPages > 1 && (
+                    <div className="p-4 border-t border-slate-200 flex items-center justify-between">
+                      <div className="text-sm text-slate-600">
+                        Page {page} of {totalPages}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(p => Math.max(1, p - 1))}
+                          disabled={page === 1}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                          disabled={page === totalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

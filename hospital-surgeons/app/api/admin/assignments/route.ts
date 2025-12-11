@@ -51,6 +51,30 @@ export async function GET(req: NextRequest) {
       conditions.push(lte(assignments.requestedAt, endDate));
     }
 
+    // Add search filter to WHERE clause
+    if (search) {
+      const searchPattern = `%${search}%`;
+      conditions.push(
+        or(
+          sql`EXISTS (
+            SELECT 1 FROM hospitals h 
+            WHERE h.id = ${assignments.hospitalId} 
+            AND h.name ILIKE ${searchPattern}
+          )`,
+          sql`EXISTS (
+            SELECT 1 FROM doctors d 
+            WHERE d.id = ${assignments.doctorId} 
+            AND (d.first_name || ' ' || d.last_name) ILIKE ${searchPattern}
+          )`,
+          sql`EXISTS (
+            SELECT 1 FROM patients p 
+            WHERE p.id = ${assignments.patientId} 
+            AND p.full_name ILIKE ${searchPattern}
+          )`
+        )!
+      );
+    }
+
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     // Get total count
@@ -137,25 +161,14 @@ export async function GET(req: NextRequest) {
       paidAt: assignment.paidAt,
     }));
 
-    // Filter by search if provided
-    let filteredAssignments = formattedAssignments;
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filteredAssignments = formattedAssignments.filter(a =>
-        a.hospital.name.toLowerCase().includes(searchLower) ||
-        a.doctor.name.toLowerCase().includes(searchLower) ||
-        a.patient.name.toLowerCase().includes(searchLower)
-      );
-    }
-
     return NextResponse.json({
       success: true,
-      data: filteredAssignments,
+      data: formattedAssignments,
       pagination: {
         page,
         limit,
-        total: search ? filteredAssignments.length : total,
-        totalPages: Math.ceil((search ? filteredAssignments.length : total) / limit),
+        total,
+        totalPages: Math.ceil(total / limit),
       },
     });
   } catch (error) {

@@ -83,11 +83,11 @@ export function Dashboard() {
       setError(null);
 
       // Fetch all data in parallel
-      const [statsRes, trendsRes, activityRes, alertsRes, usersRes] = await Promise.all([
+      const [statsRes, trendsRes, activityRes, usersRes] = await Promise.all([
         fetch('/api/admin/dashboard/stats'),
         fetch('/api/admin/dashboard/trends?months=6'),
         fetch('/api/admin/dashboard/recent-activity?limit=10'),
-        fetch('/api/admin/dashboard/alerts'),
+        // fetch('/api/admin/dashboard/alerts'), // COMMENTED OUT
         fetch('/api/admin/users?limit=100'), // Get user counts
       ]);
 
@@ -116,13 +116,13 @@ export function Dashboard() {
         }
       }
 
-      // Handle alerts
-      if (alertsRes.ok) {
-        const alertsData = await alertsRes.json();
-        if (alertsData.success) {
-          setAlerts(alertsData.data || []);
-        }
-      }
+      // Handle alerts - COMMENTED OUT
+      // if (alertsRes.ok) {
+      //   const alertsData = await alertsRes.json();
+      //   if (alertsData.success) {
+      //     setAlerts(alertsData.data || []);
+      //   }
+      // }
 
       // Handle user stats
       if (usersRes.ok) {
@@ -278,13 +278,24 @@ export function Dashboard() {
         </div>
 
         {/* Activity and Alerts */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-lg shadow">
-            <div className="p-6 border-b border-slate-200">
-              <h3 className="text-slate-900">Recent Activity</h3>
-              <p className="text-slate-600 mt-1">Latest system events and updates</p>
+        <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-slate-900">Recent Activity</h3>
+                <p className="text-slate-600 mt-1">Latest system events and updates</p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => router.push('/admin/audit-logs')}
+                className="flex items-center gap-2"
+              >
+                View All
+                <ArrowRight className="w-4 h-4" />
+              </Button>
             </div>
-            <div className="p-6">
+            <div className="p-6 max-h-[400px] overflow-y-auto">
               {recentActivity.length > 0 ? (
                 <div className="space-y-4">
                   {recentActivity.map((activity) => (
@@ -306,7 +317,8 @@ export function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow">
+          {/* Alerts section - COMMENTED OUT */}
+          {/* <div className="bg-white rounded-lg shadow">
             <div className="p-6 border-b border-slate-200">
               <h3 className="text-slate-900">Alerts</h3>
               <p className="text-slate-600 mt-1">Critical notifications</p>
@@ -341,7 +353,7 @@ export function Dashboard() {
                 </div>
               )}
             </div>
-          </div>
+          </div> */}
         </div>
 
         {/* Users Overview Widget */}

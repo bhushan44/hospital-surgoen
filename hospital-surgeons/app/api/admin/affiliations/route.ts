@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { doctorHospitalAffiliations, doctors, hospitals, users, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { doctorHospitalAffiliations, doctors, hospitals, users } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, or, sql, desc, asc } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 export async function GET(req: NextRequest) {
   try {
@@ -139,6 +140,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Get doctor and hospital names for logging
+    const doctorResult = await db
+      .select({ firstName: doctors.firstName, lastName: doctors.lastName })
+      .from(doctors)
+      .where(eq(doctors.id, doctorId))
+      .limit(1);
+    const hospitalResult = await db
+      .select({ name: hospitals.name })
+      .from(hospitals)
+      .where(eq(hospitals.id, hospitalId))
+      .limit(1);
+
+    const doctorName = doctorResult[0] ? `Dr. ${doctorResult[0].firstName} ${doctorResult[0].lastName}` : null;
+    const hospitalName = hospitalResult[0]?.name || null;
+
     // Create new affiliation
     const [newAffiliation] = await db
       .insert(doctorHospitalAffiliations)
@@ -150,17 +166,30 @@ export async function POST(req: NextRequest) {
       })
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'create',
       entityType: 'affiliation',
       entityId: newAffiliation.id,
+      entityName: `${doctorName} - ${hospitalName}`,
+      httpMethod: 'POST',
+      endpoint: '/api/admin/affiliations',
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
       details: {
         doctorId,
         hospitalId,
+        doctorName,
+        hospitalName,
         status,
         isPreferred,
+        createdAt: new Date().toISOString(),
       },
     });
 

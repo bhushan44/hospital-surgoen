@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { users, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { users } from '@/src/db/drizzle/migrations/schema';
 import { eq } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
 
 export async function PUT(
   req: NextRequest,
@@ -45,6 +46,8 @@ export async function PUT(
       );
     }
 
+    const oldUser = existingUser[0];
+
     // Update user role
     const [updatedUser] = await db
       .update(users)
@@ -55,19 +58,37 @@ export async function PUT(
       .where(eq(users.id, userId))
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
-      userId: userId,
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Build changes object
+    const changes = buildChangesObject(
+      { role: oldUser.role },
+      { role: updatedUser.role },
+      ['role']
+    );
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'update_role',
       entityType: 'user',
       entityId: userId,
+      entityName: oldUser.email,
+      httpMethod: 'PUT',
+      endpoint: `/api/admin/users/${userId}/role`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      changes: changes,
+      reason: body.reason || 'Role updated by admin',
       details: {
-        previousRole: existingUser[0].role,
-        newRole: role,
-        reason: body.reason || 'Role updated by admin',
+        previousRole: oldUser.role,
+        newRole: updatedUser.role,
+        userRole: oldUser.role,
+        updatedAt: new Date().toISOString(),
       },
-      createdAt: new Date().toISOString(),
     });
 
     return NextResponse.json({

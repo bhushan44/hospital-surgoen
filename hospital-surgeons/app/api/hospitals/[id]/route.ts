@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { HospitalsService } from '@/lib/services/hospitals.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
+import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
+import { getDb } from '@/lib/db';
+import { hospitals, users } from '@/src/db/drizzle/migrations/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * @swagger
@@ -132,8 +136,61 @@ async function patchHandler(req: AuthenticatedRequest, context: { params: Promis
       }
     }
 
+    // Get existing hospital data for audit log
+    const db = getDb();
+    const existingHospital = await db
+      .select({
+        id: hospitals.id,
+        name: hospitals.name,
+        userId: hospitals.userId,
+        registrationNumber: hospitals.registrationNumber,
+        userEmail: users.email,
+      })
+      .from(hospitals)
+      .leftJoin(users, eq(hospitals.userId, users.id))
+      .where(eq(hospitals.id, params.id))
+      .limit(1);
+
     const hospitalsService = new HospitalsService();
     const result = await hospitalsService.updateHospital(params.id, validation.data);
+    
+    if (result.success && existingHospital.length > 0) {
+      // Get request metadata
+      const metadata = getRequestMetadata(req);
+      const actorUserId = user.userId;
+      const hospitalName = existingHospital[0].name;
+
+      // Build changes object
+      const oldData: any = {
+        name: existingHospital[0].name,
+        registrationNumber: existingHospital[0].registrationNumber,
+      };
+      const newData: any = {
+        name: validation.data.name,
+        registrationNumber: validation.data.registrationNumber,
+      };
+      const changes = buildChangesObject(oldData, newData, Object.keys(validation.data));
+
+      // Create comprehensive audit log
+      await createAuditLog({
+        userId: actorUserId,
+        actorType: user.userRole === 'admin' ? 'admin' : 'user',
+        action: 'update',
+        entityType: 'hospital',
+        entityId: params.id,
+        entityName: hospitalName,
+        httpMethod: 'PATCH',
+        endpoint: `/api/hospitals/${params.id}`,
+        ipAddress: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+        changes: changes,
+        details: {
+          hospitalEmail: existingHospital[0].userEmail,
+          updatedFields: Object.keys(validation.data),
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    }
     
     return NextResponse.json(result, { status: result.success ? 200 : 400 });
   } catch (error) {
@@ -147,8 +204,49 @@ async function patchHandler(req: AuthenticatedRequest, context: { params: Promis
 async function deleteHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const params = await context.params;
+    const user = (req as any).user;
+    
+    // Get existing hospital data for audit log
+    const db = getDb();
+    const existingHospital = await db
+      .select({
+        id: hospitals.id,
+        name: hospitals.name,
+        userId: hospitals.userId,
+        userEmail: users.email,
+      })
+      .from(hospitals)
+      .leftJoin(users, eq(hospitals.userId, users.id))
+      .where(eq(hospitals.id, params.id))
+      .limit(1);
+
     const hospitalsService = new HospitalsService();
     const result = await hospitalsService.deleteHospital(params.id);
+    
+    if (result.success && existingHospital.length > 0) {
+      // Get request metadata
+      const metadata = getRequestMetadata(req);
+      const actorUserId = user.userId;
+      const hospitalName = existingHospital[0].name;
+
+      // Create comprehensive audit log
+      await createAuditLog({
+        userId: actorUserId,
+        actorType: 'admin',
+        action: 'delete',
+        entityType: 'hospital',
+        entityId: params.id,
+        entityName: hospitalName,
+        httpMethod: 'DELETE',
+        endpoint: `/api/hospitals/${params.id}`,
+        ipAddress: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+        details: {
+          hospitalEmail: existingHospital[0].userEmail,
+          deletedAt: new Date().toISOString(),
+        },
+      });
+    }
     
     return NextResponse.json(result, { status: result.success ? 200 : 400 });
   } catch (error) {

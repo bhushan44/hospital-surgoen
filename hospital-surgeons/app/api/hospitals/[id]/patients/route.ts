@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { patients, assignments, doctors, doctorSpecialties, specialties } from '@/src/db/drizzle/migrations/schema';
+import { patients, assignments, doctors, doctorSpecialties, specialties, hospitals, users } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, or, like, sql, desc, asc } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 /**
  * Get all patients for a hospital
@@ -187,6 +188,18 @@ export async function POST(
     // Room type is already normalized by Zod transform
     const roomType = body.roomType;
 
+    // Get hospital info for audit log
+    const hospitalResult = await db
+      .select({
+        name: hospitals.name,
+        userId: hospitals.userId,
+        userEmail: users.email,
+      })
+      .from(hospitals)
+      .leftJoin(users, eq(hospitals.userId, users.id))
+      .where(eq(hospitals.id, hospitalId))
+      .limit(1);
+
     const newPatient = await db
       .insert(patients)
       .values({
@@ -211,6 +224,33 @@ export async function POST(
       console.error('Error incrementing patient usage:', error);
       // Don't fail the request if usage increment fails
     }
+
+    // Get request metadata for audit log
+    const metadata = getRequestMetadata(req);
+    const hospitalUserId = hospitalResult[0]?.userId || null;
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: hospitalUserId,
+      actorType: 'user',
+      action: 'create',
+      entityType: 'patient',
+      entityId: newPatient[0].id,
+      entityName: newPatient[0].fullName,
+      httpMethod: 'POST',
+      endpoint: `/api/hospitals/${hospitalId}/patients`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      details: {
+        hospitalId,
+        hospitalName: hospitalResult[0]?.name || null,
+        hospitalEmail: hospitalResult[0]?.userEmail || null,
+        patientName: newPatient[0].fullName,
+        gender: newPatient[0].gender,
+        roomType: newPatient[0].roomType,
+        createdAt: new Date().toISOString(),
+      },
+    });
 
     return NextResponse.json({
       success: true,

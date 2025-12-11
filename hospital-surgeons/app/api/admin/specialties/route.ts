@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { specialties, doctorSpecialties, hospitalDepartments } from '@/src/db/drizzle/migrations/schema';
-import { eq, like, sql, desc, asc } from 'drizzle-orm';
+import { eq, like, sql, desc, asc, count, inArray } from 'drizzle-orm';
+import { validateRequest } from '@/lib/utils/validate-request';
+import { CreateSpecialtyDtoSchema } from '@/lib/validations/specialty.dto';
+import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 export async function GET(req: NextRequest) {
   try {
@@ -45,24 +48,12 @@ export async function GET(req: NextRequest) {
 
     const sortColumn = sortColumnMap[sortBy] || specialties.name;
 
-    // Get specialties with usage counts
+    // Get specialties
     const specialtiesList = await db
       .select({
         id: specialties.id,
         name: specialties.name,
         description: specialties.description,
-        // Count doctors using this specialty
-        doctorCount: sql<number>`(
-          SELECT COUNT(DISTINCT doctor_id)::int 
-          FROM doctor_specialties 
-          WHERE specialty_id = ${specialties.id}
-        )`,
-        // Count hospitals using this specialty
-        hospitalCount: sql<number>`(
-          SELECT COUNT(DISTINCT hospital_id)::int 
-          FROM hospital_departments 
-          WHERE specialty_id = ${specialties.id}
-        )`,
       })
       .from(specialties)
       .where(whereClause)
@@ -70,13 +61,48 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .offset(offset);
 
+    // Get usage counts for all specialties
+    const specialtyIds = specialtiesList.map(s => s.id);
+    const doctorCountsMap = new Map<string, number>();
+    const hospitalCountsMap = new Map<string, number>();
+
+    if (specialtyIds.length > 0) {
+      // Get doctor counts grouped by specialty
+      const doctorCounts = await db
+        .select({
+          specialtyId: doctorSpecialties.specialtyId,
+          count: count(),
+        })
+        .from(doctorSpecialties)
+        .where(inArray(doctorSpecialties.specialtyId, specialtyIds))
+        .groupBy(doctorSpecialties.specialtyId);
+
+      doctorCounts.forEach(dc => {
+        doctorCountsMap.set(dc.specialtyId, Number(dc.count));
+      });
+
+      // Get hospital counts grouped by specialty
+      const hospitalCounts = await db
+        .select({
+          specialtyId: hospitalDepartments.specialtyId,
+          count: count(),
+        })
+        .from(hospitalDepartments)
+        .where(inArray(hospitalDepartments.specialtyId, specialtyIds))
+        .groupBy(hospitalDepartments.specialtyId);
+
+      hospitalCounts.forEach(hc => {
+        hospitalCountsMap.set(hc.specialtyId, Number(hc.count));
+      });
+    }
+
     // Format response
     const formattedSpecialties = specialtiesList.map((specialty) => ({
       id: specialty.id,
       name: specialty.name,
       description: specialty.description,
-      activeDoctors: specialty.doctorCount || 0,
-      activeHospitals: specialty.hospitalCount || 0,
+      activeDoctors: doctorCountsMap.get(specialty.id) || 0,
+      activeHospitals: hospitalCountsMap.get(specialty.id) || 0,
       status: 'Active', // Specialties are always active in the schema
     }));
 
@@ -106,17 +132,16 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const db = getDb();
-    const body = await req.json();
-    const { name, description } = body;
-
-    if (!name || !name.trim()) {
-      return NextResponse.json(
-        { success: false, message: 'Specialty name is required' },
-        { status: 400 }
-      );
+    
+    // Validate request body with Zod schema
+    const validation = await validateRequest(req, CreateSpecialtyDtoSchema);
+    if (!validation.success) {
+      return validation.response;
     }
 
-    // Check if specialty with same name already exists
+    const { name, description } = validation.data;
+
+    // Check if specialty with same name already exists (duplicate check)
     const existing = await db
       .select()
       .from(specialties)
@@ -138,6 +163,28 @@ export async function POST(req: NextRequest) {
         description: description?.trim() || null,
       })
       .returning();
+
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
+      actorType: 'admin',
+      action: 'create',
+      entityType: 'specialty',
+      entityId: newSpecialty.id,
+      entityName: newSpecialty.name,
+      httpMethod: 'POST',
+      endpoint: '/api/admin/specialties',
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      details: {
+        description: newSpecialty.description,
+        createdAt: new Date().toISOString(),
+      },
+    });
 
     return NextResponse.json({
       success: true,

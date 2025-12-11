@@ -163,12 +163,6 @@ export function SupportTickets() {
       <PageHeader 
         title="Support Tickets" 
         description="Manage user support requests and issues"
-        actions={
-          <Button variant="outline">
-            <Filter className="w-4 h-4 mr-2" />
-            Filters
-          </Button>
-        }
       />
 
       <div className="p-8">

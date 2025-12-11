@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { specialties, doctorSpecialties, hospitalDepartments } from '@/src/db/drizzle/migrations/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, count } from 'drizzle-orm';
+import { validateRequest } from '@/lib/utils/validate-request';
+import { UpdateSpecialtyDtoSchema } from '@/lib/validations/specialty.dto';
+import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
 
 export async function GET(
   req: NextRequest,
@@ -12,24 +15,12 @@ export async function GET(
     const { id } = await params;
     const specialtyId = id;
 
-    // Get specialty with usage counts
+    // Get specialty
     const specialtyResult = await db
       .select({
         id: specialties.id,
         name: specialties.name,
         description: specialties.description,
-        // Count doctors using this specialty
-        doctorCount: sql<number>`(
-          SELECT COUNT(DISTINCT doctor_id)::int 
-          FROM doctor_specialties 
-          WHERE specialty_id = ${specialtyId}
-        )`,
-        // Count hospitals using this specialty
-        hospitalCount: sql<number>`(
-          SELECT COUNT(DISTINCT hospital_id)::int 
-          FROM hospital_departments 
-          WHERE specialty_id = ${specialtyId}
-        )`,
       })
       .from(specialties)
       .where(eq(specialties.id, specialtyId))
@@ -44,14 +35,28 @@ export async function GET(
 
     const specialty = specialtyResult[0];
 
+    // Get usage counts separately
+    const doctorCountResult = await db
+      .select({ count: count() })
+      .from(doctorSpecialties)
+      .where(eq(doctorSpecialties.specialtyId, specialtyId));
+
+    const hospitalCountResult = await db
+      .select({ count: count() })
+      .from(hospitalDepartments)
+      .where(eq(hospitalDepartments.specialtyId, specialtyId));
+
+    const doctorCount = Number(doctorCountResult[0]?.count || 0);
+    const hospitalCount = Number(hospitalCountResult[0]?.count || 0);
+
     return NextResponse.json({
       success: true,
       data: {
         id: specialty.id,
         name: specialty.name,
         description: specialty.description,
-        activeDoctors: specialty.doctorCount || 0,
-        activeHospitals: specialty.hospitalCount || 0,
+        activeDoctors: doctorCount,
+        activeHospitals: hospitalCount,
         status: 'Active',
       },
     });
@@ -76,15 +81,14 @@ export async function PUT(
     const db = getDb();
     const { id } = await params;
     const specialtyId = id;
-    const body = await req.json();
-    const { name, description } = body;
-
-    if (!name || !name.trim()) {
-      return NextResponse.json(
-        { success: false, message: 'Specialty name is required' },
-        { status: 400 }
-      );
+    
+    // Validate request body with Zod schema
+    const validation = await validateRequest(req, UpdateSpecialtyDtoSchema);
+    if (!validation.success) {
+      return validation.response;
     }
+
+    const { name, description } = validation.data;
 
     // Check if specialty exists
     const existing = await db
@@ -100,29 +104,65 @@ export async function PUT(
       );
     }
 
-    // Check if another specialty with same name exists
-    const duplicate = await db
-      .select()
-      .from(specialties)
-      .where(eq(specialties.name, name.trim()))
-      .limit(1);
+    // Check if another specialty with same name exists (duplicate check)
+    if (name && name.trim() !== existing[0].name) {
+      const duplicate = await db
+        .select()
+        .from(specialties)
+        .where(eq(specialties.name, name.trim()))
+        .limit(1);
 
-    if (duplicate.length > 0 && duplicate[0].id !== specialtyId) {
-      return NextResponse.json(
-        { success: false, message: 'Specialty with this name already exists' },
-        { status: 409 }
-      );
+      if (duplicate.length > 0 && duplicate[0].id !== specialtyId) {
+        return NextResponse.json(
+          { success: false, message: 'Specialty with this name already exists' },
+          { status: 409 }
+        );
+      }
     }
 
     // Update specialty
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name.trim();
+    if (description !== undefined) updateData.description = description?.trim() || null;
+
     const [updatedSpecialty] = await db
       .update(specialties)
-      .set({
-        name: name.trim(),
-        description: description?.trim() || null,
-      })
+      .set(updateData)
       .where(eq(specialties.id, specialtyId))
       .returning();
+
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Build changes object
+    const oldData: any = {
+      name: existing[0].name,
+      description: existing[0].description,
+    };
+    const newData: any = {
+      name: updatedSpecialty.name,
+      description: updatedSpecialty.description,
+    };
+    const changes = buildChangesObject(oldData, newData, ['name', 'description']);
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
+      actorType: 'admin',
+      action: 'update',
+      entityType: 'specialty',
+      entityId: specialtyId,
+      entityName: updatedSpecialty.name,
+      httpMethod: 'PUT',
+      endpoint: `/api/admin/specialties/${specialtyId}`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      changes: changes,
+      details: {
+        updatedAt: new Date().toISOString(),
+      },
+    });
 
     return NextResponse.json({
       success: true,
@@ -169,27 +209,32 @@ export async function DELETE(
       );
     }
 
-    // Check if specialty is being used by doctors
+    // Step 1: Check if specialty is being used by doctors before deletion
     const doctorUsage = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: count() })
       .from(doctorSpecialties)
       .where(eq(doctorSpecialties.specialtyId, specialtyId));
 
     const doctorCount = Number(doctorUsage[0]?.count || 0);
 
-    // Check if specialty is being used by hospitals
+    // Step 2: Check if specialty is being used by hospitals before deletion
     const hospitalUsage = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: count() })
       .from(hospitalDepartments)
       .where(eq(hospitalDepartments.specialtyId, specialtyId));
 
     const hospitalCount = Number(hospitalUsage[0]?.count || 0);
 
+    // Step 3: Prevent deletion if specialty is being used
     if (doctorCount > 0 || hospitalCount > 0) {
+      const parts = [];
+      if (doctorCount > 0) parts.push(`${doctorCount} doctor(s)`);
+      if (hospitalCount > 0) parts.push(`${hospitalCount} hospital(s)`);
+      
       return NextResponse.json(
         {
           success: false,
-          message: `Cannot delete specialty. It is being used by ${doctorCount} doctor(s) and ${hospitalCount} hospital(s).`,
+          message: `Cannot delete specialty. It is being used by ${parts.join(' and ')}.`,
           data: {
             doctorCount,
             hospitalCount,
@@ -203,6 +248,30 @@ export async function DELETE(
     await db
       .delete(specialties)
       .where(eq(specialties.id, specialtyId));
+
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
+      actorType: 'admin',
+      action: 'delete',
+      entityType: 'specialty',
+      entityId: specialtyId,
+      entityName: existing[0].name,
+      httpMethod: 'DELETE',
+      endpoint: `/api/admin/specialties/${specialtyId}`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      details: {
+        description: existing[0].description,
+        doctorCountAtDeletion: doctorCount,
+        hospitalCountAtDeletion: hospitalCount,
+        deletedAt: new Date().toISOString(),
+      },
+    });
 
     return NextResponse.json({
       success: true,

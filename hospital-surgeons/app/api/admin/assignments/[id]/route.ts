@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { assignments, doctors, hospitals, patients, users, assignmentRatings, assignmentPayments, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { assignments, doctors, hospitals, patients, users, assignmentRatings, assignmentPayments } from '@/src/db/drizzle/migrations/schema';
 import { eq, sql } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
 
 export async function GET(
   req: NextRequest,
@@ -179,6 +180,8 @@ export async function PUT(
     }
     if (treatmentNotes !== undefined) updateData.treatmentNotes = treatmentNotes;
 
+    const oldAssignment = existing[0];
+
     // Update assignment
     const [updatedAssignment] = await db
       .update(assignments)
@@ -186,16 +189,47 @@ export async function PUT(
       .where(eq(assignments.id, assignmentId))
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Build changes object
+    const oldData: any = {
+      status: oldAssignment.status,
+      treatmentNotes: oldAssignment.treatmentNotes,
+      cancellationReason: oldAssignment.cancellationReason,
+    };
+    const newData: any = {
+      status: updatedAssignment.status,
+      treatmentNotes: updatedAssignment.treatmentNotes,
+      cancellationReason: updatedAssignment.cancellationReason,
+    };
+    const changes = buildChangesObject(oldData, newData, ['status', 'treatmentNotes', 'cancellationReason']);
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'update',
       entityType: 'assignment',
       entityId: assignmentId,
+      entityName: `Assignment ${assignmentId}`,
+      httpMethod: 'PUT',
+      endpoint: `/api/admin/assignments/${assignmentId}`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      changes: changes,
+      previousStatus: oldAssignment.status,
+      newStatus: updatedAssignment.status,
+      reason: cancellationReason || null,
       details: {
-        changes: updateData,
-        previousStatus: existing[0].status,
-        newStatus: status || existing[0].status,
+        doctorId: oldAssignment.doctorId,
+        hospitalId: oldAssignment.hospitalId,
+        patientId: oldAssignment.patientId,
+        requestedAt: oldAssignment.requestedAt,
+        expiresAt: oldAssignment.expiresAt,
+        priority: oldAssignment.priority,
+        updatedAt: new Date().toISOString(),
       },
     });
 

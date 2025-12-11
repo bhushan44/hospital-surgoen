@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '../PageHeader';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Search, Filter, Eye, Check, X, MessageSquare, Download, ZoomIn, ZoomOut, Loader2 } from 'lucide-react';
+import { Search, Eye, Check, X, MessageSquare, Download, ZoomIn, ZoomOut, Loader2 } from 'lucide-react';
 import { StatusBadge } from '../StatusBadge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../ui/dialog';
@@ -75,7 +75,6 @@ export function DoctorVerifications() {
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('pending');
   const [activeTab, setActiveTab] = useState('pending');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -84,7 +83,7 @@ export function DoctorVerifications() {
 
   useEffect(() => {
     fetchDoctors();
-  }, [page, statusFilter, searchQuery, activeTab]);
+  }, [page, searchQuery, activeTab]);
 
   const fetchDoctors = async () => {
     try {
@@ -251,29 +250,26 @@ export function DoctorVerifications() {
     });
   };
 
-  const pendingCount = doctors.filter(d => d.licenseVerificationStatus === 'pending').length;
-  const verifiedCount = doctors.filter(d => d.licenseVerificationStatus === 'verified').length;
-  const rejectedCount = doctors.filter(d => d.licenseVerificationStatus === 'rejected').length;
-
   return (
     <div className="min-h-screen bg-slate-50">
       <PageHeader 
         title="Doctor Verifications" 
         description="Review and verify doctor registration applications"
-        actions={
-          <Button variant="outline">
-            <Filter className="w-4 h-4 mr-2" />
-            Filters
-          </Button>
-        }
       />
 
       <div className="p-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs 
+          value={activeTab} 
+          onValueChange={(value) => {
+            setActiveTab(value);
+            setPage(1);
+          }} 
+          className="space-y-6"
+        >
           <TabsList>
-            <TabsTrigger value="pending">Pending ({pendingCount})</TabsTrigger>
-            <TabsTrigger value="approved">Approved ({verifiedCount})</TabsTrigger>
-            <TabsTrigger value="rejected">Rejected ({rejectedCount})</TabsTrigger>
+            <TabsTrigger value="pending">Pending</TabsTrigger>
+            <TabsTrigger value="approved">Approved</TabsTrigger>
+            <TabsTrigger value="rejected">Rejected</TabsTrigger>
           </TabsList>
 
           <TabsContent value={activeTab} className="space-y-4">
@@ -407,24 +403,24 @@ export function DoctorVerifications() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+          <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0 overflow-x-hidden">
             {loadingDetail ? (
               <div className="p-8 text-center">
                 <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
                 <p className="text-slate-600">Loading doctor details...</p>
               </div>
             ) : selectedDoctor ? (
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Left Panel - Profile */}
-              <div className="space-y-6">
+              <div className="space-y-6 min-w-0">
                 <div className="bg-slate-50 rounded-lg p-6">
                   <div className="flex items-start gap-4">
-                    <div className="w-20 h-20 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold text-xl">
+                    <div className="w-20 h-20 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold text-xl flex-shrink-0">
                       {selectedDoctor.firstName.charAt(0)}{selectedDoctor.lastName.charAt(0)}
                     </div>
-                    <div className="flex-1">
-                      <h3 className="text-slate-900">{selectedDoctor.name}</h3>
-                      <p className="text-slate-600 mt-1">{selectedDoctor.email}</p>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-slate-900 break-words">{selectedDoctor.name}</h3>
+                      <p className="text-slate-600 mt-1 break-words">{selectedDoctor.email}</p>
                       <div className="flex items-center gap-2 mt-2">
                         <StatusBadge status={selectedDoctor.licenseVerificationStatus} />
                       </div>
@@ -435,7 +431,7 @@ export function DoctorVerifications() {
                 <div className="space-y-4">
                   <div>
                     <label className="text-sm font-medium text-slate-600">License Number</label>
-                    <p className="text-slate-900 mt-1">{selectedDoctor.medicalLicenseNumber}</p>
+                    <p className="text-slate-900 mt-1 break-words">{selectedDoctor.medicalLicenseNumber}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-slate-600">Years of Experience</label>
@@ -443,13 +439,13 @@ export function DoctorVerifications() {
                   </div>
                   <div>
                     <label className="text-sm font-medium text-slate-600">Primary Location</label>
-                    <p className="text-slate-900 mt-1">{selectedDoctor.primaryLocation || 'N/A'}</p>
+                    <p className="text-slate-900 mt-1 break-words">{selectedDoctor.primaryLocation || 'N/A'}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-slate-600">Specialties</label>
                     <div className="flex flex-wrap gap-2 mt-1">
                       {selectedDoctor.specialties.map((spec) => (
-                        <span key={spec.id} className="px-2 py-1 bg-teal-100 text-teal-700 rounded text-sm">
+                        <span key={spec.id} className="px-2 py-1 bg-teal-100 text-teal-700 rounded text-sm break-words">
                           {spec.name}
                         </span>
                       ))}
@@ -458,7 +454,7 @@ export function DoctorVerifications() {
                   {selectedDoctor.bio && (
                     <div>
                       <label className="text-sm font-medium text-slate-600">Bio</label>
-                      <p className="text-slate-900 mt-1">{selectedDoctor.bio}</p>
+                      <p className="text-slate-900 mt-1 break-words whitespace-pre-wrap overflow-wrap-anywhere">{selectedDoctor.bio}</p>
                     </div>
                   )}
                   <div>
@@ -481,68 +477,70 @@ export function DoctorVerifications() {
               </div>
 
               {/* Right Panel - Documents */}
-              <div className="space-y-4">
+              <div className="space-y-4 min-w-0">
                 <div>
                   <label className="text-sm font-medium text-slate-600 mb-2 block">Credentials & Documents</label>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                  <div className="space-y-2 max-h-96 overflow-y-auto overflow-x-hidden">
                     {selectedDoctor.credentials.length === 0 ? (
                       <p className="text-slate-500 text-center py-8">No credentials uploaded</p>
                     ) : (
                       selectedDoctor.credentials.map((cred) => (
-                        <div key={cred.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className="w-8 h-8 bg-red-100 rounded flex items-center justify-center">
-                              <span className="text-red-600 text-xs">PDF</span>
+                        <div key={cred.id} className="p-3 bg-slate-50 rounded-lg">
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className="w-8 h-8 bg-red-100 rounded flex items-center justify-center flex-shrink-0">
+                                <span className="text-red-600 text-xs">PDF</span>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-slate-900 font-medium break-words">{cred.title}</p>
+                                <p className="text-slate-500 text-sm break-words">{cred.credentialType} • {cred.institution || 'N/A'}</p>
+                                <p className="text-slate-400 text-xs mt-1 break-words">
+                                  {formatDate(cred.uploadedAt)} • <StatusBadge status={cred.verificationStatus} variant="small" />
+                                </p>
+                              </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-slate-900 font-medium">{cred.title}</p>
-                              <p className="text-slate-500 text-sm">{cred.credentialType} • {cred.institution || 'N/A'}</p>
-                              <p className="text-slate-400 text-xs mt-1">
-                                {formatDate(cred.uploadedAt)} • <StatusBadge status={cred.verificationStatus} variant="small" />
-                              </p>
+                            <div className="flex gap-2 flex-shrink-0">
+                              <Button 
+                                size="sm" 
+                                variant="ghost"
+                                onClick={() => cred.file?.url && window.open(cred.file.url, '_blank')}
+                                disabled={!cred.file?.url}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="ghost"
+                                onClick={async () => {
+                                  if (!cred.file?.id) return;
+                                  try {
+                                    const response = await fetch(`/api/files/${cred.file.id}/download`);
+                                    if (!response.ok) throw new Error('Download failed');
+                                    const blob = await response.blob();
+                                    const url = window.URL.createObjectURL(blob);
+                                    const link = document.createElement('a');
+                                    link.href = url;
+                                    link.download = cred.file.filename;
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+                                    window.URL.revokeObjectURL(url);
+                                  } catch (err) {
+                                    console.error('Download error:', err);
+                                    toast.error('Failed to download file');
+                                  }
+                                }}
+                                disabled={!cred.file?.id}
+                              >
+                                <Download className="w-4 h-4" />
+                              </Button>
                             </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button 
-                              size="sm" 
-                              variant="ghost"
-                              onClick={() => cred.file?.url && window.open(cred.file.url, '_blank')}
-                              disabled={!cred.file?.url}
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant="ghost"
-                              onClick={async () => {
-                                if (!cred.file?.id) return;
-                                try {
-                                  const response = await fetch(`/api/files/${cred.file.id}/download`);
-                                  if (!response.ok) throw new Error('Download failed');
-                                  const blob = await response.blob();
-                                  const url = window.URL.createObjectURL(blob);
-                                  const link = document.createElement('a');
-                                  link.href = url;
-                                  link.download = cred.file.filename;
-                                  document.body.appendChild(link);
-                                  link.click();
-                                  document.body.removeChild(link);
-                                  window.URL.revokeObjectURL(url);
-                                } catch (err) {
-                                  console.error('Download error:', err);
-                                  toast.error('Failed to download file');
-                                }
-                              }}
-                              disabled={!cred.file?.id}
-                            >
-                              <Download className="w-4 h-4" />
-                            </Button>
                           </div>
                           {cred.verificationStatus === 'pending' && (
-                            <div className="flex gap-2 mt-2">
+                            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200">
                               <Button
                                 size="sm"
-                                className="bg-green-600 hover:bg-green-700 text-white"
+                                className="bg-green-600 hover:bg-green-700 text-white flex-1"
                                 onClick={() => handleCredentialApprove(cred.id)}
                                 disabled={credentialActionId === `${cred.id}-verified`}
                               >
@@ -558,6 +556,7 @@ export function DoctorVerifications() {
                                 variant="destructive"
                                 onClick={() => handleCredentialReject(cred.id)}
                                 disabled={credentialActionId === `${cred.id}-rejected`}
+                                className="flex-1"
                               >
                                 {credentialActionId === `${cred.id}-rejected` ? (
                                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -577,14 +576,14 @@ export function DoctorVerifications() {
                 {selectedDoctor.verificationHistory.length > 0 && (
                   <div>
                     <label className="text-sm font-medium text-slate-600 mb-2 block">Verification History</label>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                    <div className="space-y-2 max-h-48 overflow-y-auto overflow-x-hidden">
                       {selectedDoctor.verificationHistory.map((log) => (
                         <div key={log.id} className="p-2 bg-slate-50 rounded text-sm">
-                          <p className="text-slate-900">
+                          <p className="text-slate-900 break-words">
                             <span className="font-medium">{log.action}</span> - {formatDate(log.createdAt)}
                           </p>
                           {log.details?.notes && (
-                            <p className="text-slate-600 mt-1">{log.details.notes}</p>
+                            <p className="text-slate-600 mt-1 break-words whitespace-pre-wrap">{log.details.notes}</p>
                           )}
                         </div>
                       ))}

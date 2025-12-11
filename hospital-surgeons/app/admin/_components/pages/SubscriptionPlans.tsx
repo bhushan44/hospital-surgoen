@@ -24,7 +24,7 @@ interface Plan {
   features?: any;
 }
 
-function PlanCard({ plan, onEdit, onDelete, onEditFeatures, deleting }: { plan: Plan; onEdit: (plan: Plan) => void; onDelete: (plan: Plan) => void; onEditFeatures: (plan: Plan) => void; deleting: boolean }) {
+function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (plan: Plan) => void; onDelete: (plan: Plan) => void; deleting: boolean }) {
   const getTierColor = (tier: string) => {
     if (tier === 'free' || tier === 'basic') return 'bg-blue-100 text-blue-700';
     if (tier === 'premium') return 'bg-purple-100 text-purple-700';
@@ -89,7 +89,7 @@ function PlanCard({ plan, onEdit, onDelete, onEditFeatures, deleting }: { plan: 
   const displayFeatures = formatFeatures();
 
   return (
-    <div className="bg-white rounded-lg shadow p-6 border border-slate-200">
+    <div className="bg-white rounded-lg shadow p-6 border border-slate-200 relative z-0">
       <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="text-slate-900 font-semibold">{plan.name}</h3>
@@ -98,11 +98,8 @@ function PlanCard({ plan, onEdit, onDelete, onEditFeatures, deleting }: { plan: 
           </span>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="ghost" onClick={() => onEdit(plan)} disabled={deleting} title="Edit Plan">
+          <Button size="sm" variant="ghost" onClick={() => onEdit(plan)} disabled={deleting} title="Edit Plan & Features">
             <Edit className="w-4 h-4" />
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => onEditFeatures(plan)} disabled={deleting} title="Edit Limits & Features" className="text-blue-600 hover:text-blue-700">
-            <span className="text-xs">Limits</span>
           </Button>
           <Button size="sm" variant="ghost" onClick={() => onDelete(plan)} disabled={deleting} title="Delete Plan">
             {deleting ? (
@@ -140,12 +137,10 @@ export function SubscriptionPlans() {
   const [hospitalPlans, setHospitalPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showFeaturesModal, setShowFeaturesModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
-  const [editingFeaturesPlan, setEditingFeaturesPlan] = useState<Plan | null>(null);
   const [activeTab, setActiveTab] = useState<'doctors' | 'hospitals'>('doctors');
+  const [modalTab, setModalTab] = useState<'details' | 'features'>('details');
   const [submitting, setSubmitting] = useState(false);
-  const [savingFeatures, setSavingFeatures] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -197,8 +192,7 @@ export function SubscriptionPlans() {
     }
   };
 
-  const handleEditFeatures = async (plan: Plan) => {
-    setEditingFeaturesPlan(plan);
+  const loadPlanFeatures = async (plan: Plan) => {
     try {
       const res = await fetch(`/api/admin/plans/${plan.id}/features`);
       const data = await res.json();
@@ -232,7 +226,6 @@ export function SubscriptionPlans() {
             notes: features.notes || '',
           });
         }
-        setShowFeaturesModal(true);
       } else {
         // No features yet, set defaults
         if (plan.userRole === 'doctor') {
@@ -256,68 +249,59 @@ export function SubscriptionPlans() {
             notes: '',
           });
         }
-        setShowFeaturesModal(true);
       }
     } catch (error) {
       console.error('Error fetching plan features:', error);
-      toast.error('Failed to load plan features');
-    }
-  };
-
-  const handleSaveFeatures = async () => {
-    if (!editingFeaturesPlan) return;
-
-    try {
-      setSavingFeatures(true);
-      const plan = editingFeaturesPlan;
-      
-      let body: any = {};
-      
+      // Set defaults on error
       if (plan.userRole === 'doctor') {
-        body = {
-          visibilityWeight: featuresData.visibilityWeight,
-          maxAffiliations: featuresData.maxAffiliations,
-          maxAssignmentsPerMonth: featuresData.maxAssignmentsPerMonth === 'unlimited' || featuresData.maxAssignmentsPerMonth === ''
-            ? (featuresData.maxAssignmentsPerMonth === 'unlimited' ? -1 : null)
-            : parseInt(featuresData.maxAssignmentsPerMonth),
-          notes: featuresData.notes || null,
-        };
+        setFeaturesData({
+          visibilityWeight: 1,
+          maxAffiliations: 1,
+          maxAssignmentsPerMonth: '',
+          maxPatientsPerMonth: '',
+          hospitalMaxAssignmentsPerMonth: '',
+          includesPremiumDoctors: false,
+          notes: '',
+        });
       } else {
-        body = {
-          maxPatientsPerMonth: featuresData.maxPatientsPerMonth === 'unlimited' || featuresData.maxPatientsPerMonth === ''
-            ? (featuresData.maxPatientsPerMonth === 'unlimited' ? -1 : null)
-            : parseInt(featuresData.maxPatientsPerMonth),
-          maxAssignmentsPerMonth: featuresData.maxAssignmentsPerMonth === 'unlimited' || featuresData.maxAssignmentsPerMonth === ''
-            ? (featuresData.maxAssignmentsPerMonth === 'unlimited' ? -1 : null)
-            : parseInt(featuresData.maxAssignmentsPerMonth),
-          includesPremiumDoctors: featuresData.includesPremiumDoctors,
-          notes: featuresData.notes || null,
-        };
+        setFeaturesData({
+          visibilityWeight: 1,
+          maxAffiliations: 1,
+          maxAssignmentsPerMonth: '',
+          maxPatientsPerMonth: '',
+          hospitalMaxAssignmentsPerMonth: '',
+          includesPremiumDoctors: false,
+          notes: '',
+        });
       }
-
-      const res = await fetch(`/api/admin/plans/${plan.id}/features`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        toast.success('Plan features updated successfully');
-        setShowFeaturesModal(false);
-        setEditingFeaturesPlan(null);
-        fetchPlans();
-      } else {
-        toast.error(data.message || 'Failed to update plan features');
-      }
-    } catch (error) {
-      console.error('Error saving plan features:', error);
-      toast.error('Failed to save plan features');
-    } finally {
-      setSavingFeatures(false);
     }
   };
+
+
+  const formatFeaturesForAPI = (userRole: 'doctor' | 'hospital') => {
+    if (userRole === 'doctor') {
+      return {
+        visibilityWeight: featuresData.visibilityWeight,
+        maxAffiliations: featuresData.maxAffiliations,
+        maxAssignmentsPerMonth: featuresData.maxAssignmentsPerMonth === 'unlimited' || featuresData.maxAssignmentsPerMonth === ''
+          ? (featuresData.maxAssignmentsPerMonth === 'unlimited' ? -1 : null)
+          : (featuresData.maxAssignmentsPerMonth ? parseInt(featuresData.maxAssignmentsPerMonth) : null),
+        notes: featuresData.notes || null,
+      };
+    } else {
+      return {
+        maxPatientsPerMonth: featuresData.maxPatientsPerMonth === 'unlimited' || featuresData.maxPatientsPerMonth === ''
+          ? (featuresData.maxPatientsPerMonth === 'unlimited' ? -1 : null)
+          : (featuresData.maxPatientsPerMonth ? parseInt(featuresData.maxPatientsPerMonth) : null),
+        maxAssignmentsPerMonth: featuresData.hospitalMaxAssignmentsPerMonth === 'unlimited' || featuresData.hospitalMaxAssignmentsPerMonth === ''
+          ? (featuresData.hospitalMaxAssignmentsPerMonth === 'unlimited' ? -1 : null)
+          : (featuresData.hospitalMaxAssignmentsPerMonth ? parseInt(featuresData.hospitalMaxAssignmentsPerMonth) : null),
+        includesPremiumDoctors: featuresData.includesPremiumDoctors,
+        notes: featuresData.notes || null,
+      };
+    }
+  };
+
 
   const fetchPlanFeatures = async (plan: Plan) => {
     try {
@@ -336,21 +320,52 @@ export function SubscriptionPlans() {
     }
   };
 
+  const validateForm = () => {
+    // Plan Details validation
+    if (!formData.name.trim()) return false;
+    if (!formData.userRole) return false;
+    if (!formData.tier) return false;
+    if (!formData.price || parseFloat(formData.price) <= 0) return false;
+    if (!formData.currency) return false;
+
+    // Features validation based on user role
+    if (formData.userRole === 'doctor') {
+      if (!featuresData.visibilityWeight || featuresData.visibilityWeight < 1) return false;
+      if (!featuresData.maxAffiliations || featuresData.maxAffiliations < 1) return false;
+      if (!featuresData.maxAssignmentsPerMonth.trim()) return false;
+    } else {
+      // Hospital: all features required except notes
+      if (!featuresData.maxPatientsPerMonth.trim()) return false;
+      if (!featuresData.hospitalMaxAssignmentsPerMonth.trim()) return false;
+      // includesPremiumDoctors is a checkbox, always has a value (true/false)
+    }
+
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim() || !formData.price) {
-      toast.error('Name and price are required');
+    
+    // Validate all required fields
+    if (!validateForm()) {
+      toast.error('Please fill all required fields in both tabs');
       return;
     }
 
     try {
       setSubmitting(true);
+      
+      // Single API for both create and update
       const url = editingPlan
         ? `/api/admin/plans/${editingPlan.id}`
         : '/api/admin/plans';
       
       const method = editingPlan ? 'PUT' : 'POST';
       
+      // Format features for API
+      const features = formatFeaturesForAPI(formData.userRole);
+      
+      // Send plan and features together in one request
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -360,16 +375,28 @@ export function SubscriptionPlans() {
           userRole: formData.userRole,
           price: parseFloat(formData.price), // API will convert to cents
           currency: formData.currency,
+          features: features, // Always include features
         }),
       });
 
       const data = await res.json();
 
       if (data.success) {
-        toast.success(editingPlan ? 'Plan updated successfully' : 'Plan created successfully');
+        toast.success(editingPlan ? 'Plan and features updated successfully' : 'Plan and features created successfully');
+        
         setShowAddModal(false);
         setEditingPlan(null);
+        setModalTab('details');
         setFormData({ name: '', tier: 'basic', userRole: 'doctor', price: '', currency: 'USD' });
+        setFeaturesData({
+          visibilityWeight: 1,
+          maxAffiliations: 1,
+          maxAssignmentsPerMonth: '',
+          maxPatientsPerMonth: '',
+          hospitalMaxAssignmentsPerMonth: '',
+          includesPremiumDoctors: false,
+          notes: '',
+        });
         fetchPlans();
       } else {
         toast.error(data.message || 'Failed to save plan');
@@ -382,7 +409,7 @@ export function SubscriptionPlans() {
     }
   };
 
-  const handleEdit = (plan: Plan) => {
+  const handleEdit = async (plan: Plan) => {
     setEditingPlan(plan);
     // Price is stored in cents, convert to dollars for display
     const priceInDollars = plan.price / 100;
@@ -393,7 +420,9 @@ export function SubscriptionPlans() {
       price: priceInDollars.toFixed(2),
       currency: plan.currency,
     });
+    await loadPlanFeatures(plan);
     setActiveTab(plan.userRole === 'doctor' ? 'doctors' : 'hospitals');
+    setModalTab('details');
     setShowAddModal(true);
   };
 
@@ -427,17 +456,37 @@ export function SubscriptionPlans() {
   const handleCloseModal = () => {
     setShowAddModal(false);
     setEditingPlan(null);
+    setModalTab('details');
     setFormData({ name: '', tier: 'basic', userRole: 'doctor', price: '', currency: 'USD' });
+    setFeaturesData({
+      visibilityWeight: 1,
+      maxAffiliations: 1,
+      maxAssignmentsPerMonth: '',
+      maxPatientsPerMonth: '',
+      hospitalMaxAssignmentsPerMonth: '',
+      includesPremiumDoctors: false,
+      notes: '',
+    });
   };
 
   const handleAddNew = () => {
     setEditingPlan(null);
+    setModalTab('details');
     setFormData({ 
       name: '', 
       tier: 'basic', 
       userRole: activeTab === 'doctors' ? 'doctor' : 'hospital', 
       price: '', 
       currency: 'USD' 
+    });
+    setFeaturesData({
+      visibilityWeight: 1,
+      maxAffiliations: 1,
+      maxAssignmentsPerMonth: '',
+      maxPatientsPerMonth: '',
+      hospitalMaxAssignmentsPerMonth: '',
+      includesPremiumDoctors: false,
+      notes: '',
     });
     setShowAddModal(true);
   };
@@ -480,7 +529,6 @@ export function SubscriptionPlans() {
                       plan={plan} 
                       onEdit={handleEdit}
                       onDelete={handleDelete}
-                      onEditFeatures={handleEditFeatures}
                       deleting={deletingId === plan.id}
                     />
                   ))}
@@ -501,7 +549,6 @@ export function SubscriptionPlans() {
                       plan={plan} 
                       onEdit={handleEdit}
                       onDelete={handleDelete}
-                      onEditFeatures={handleEditFeatures}
                       deleting={deletingId === plan.id}
                     />
                   ))}
@@ -512,93 +559,222 @@ export function SubscriptionPlans() {
         )}
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Combined Add/Edit Modal with Tabs */}
       <Dialog open={showAddModal} onOpenChange={handleCloseModal}>
-        <DialogContent aria-describedby={undefined} className="max-w-2xl bg-white dark:bg-gray-900">
+        <DialogContent aria-describedby={undefined} className="max-w-3xl bg-white dark:bg-gray-900 max-h-[90vh] overflow-y-auto" style={{ zIndex: 100 }}>
           <DialogHeader>
             <DialogTitle>{editingPlan ? 'Edit Subscription Plan' : 'Create New Subscription Plan'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="name">Plan Name *</Label>
-                <Input
-                  id="name"
-                  placeholder="e.g., Basic, Professional, Premium"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="mt-1"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+            <Tabs value={modalTab} onValueChange={(v) => setModalTab(v as 'details' | 'features')} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="details">Plan Details</TabsTrigger>
+                <TabsTrigger value="features">Features & Limits</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="details" className="space-y-4">
                 <div>
-                  <Label htmlFor="userRole">User Role *</Label>
-                  <Select
-                    value={formData.userRole}
-                    onValueChange={(value) => setFormData({ ...formData, userRole: value as 'doctor' | 'hospital' })}
-                    disabled={!!editingPlan}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="doctor">Doctor</SelectItem>
-                      <SelectItem value="hospital">Hospital</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="tier">Tier *</Label>
-                  <Select
-                    value={formData.tier}
-                    onValueChange={(value) => setFormData({ ...formData, tier: value })}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="free">Free</SelectItem>
-                      <SelectItem value="basic">Basic</SelectItem>
-                      <SelectItem value="premium">Premium</SelectItem>
-                      <SelectItem value="enterprise">Enterprise</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="price">Price *</Label>
+                  <Label htmlFor="name">Plan Name *</Label>
                   <Input
-                    id="price"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    id="name"
+                    placeholder="e.g., Basic, Professional, Premium"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="mt-1"
                     required
                   />
                 </div>
-                <div>
-                  <Label htmlFor="currency">Currency *</Label>
-                  <Select
-                    value={formData.currency}
-                    onValueChange={(value) => setFormData({ ...formData, currency: value })}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="USD">USD ($)</SelectItem>
-                      <SelectItem value="EUR">EUR (€)</SelectItem>
-                      <SelectItem value="GBP">GBP (£)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="userRole">User Role *</Label>
+                    <Select
+                      value={formData.userRole}
+                      onValueChange={(value) => {
+                        setFormData({ ...formData, userRole: value as 'doctor' | 'hospital' });
+                        // Reset features when role changes
+                        if (value === 'doctor') {
+                          setFeaturesData({
+                            visibilityWeight: 1,
+                            maxAffiliations: 1,
+                            maxAssignmentsPerMonth: '',
+                            maxPatientsPerMonth: '',
+                            hospitalMaxAssignmentsPerMonth: '',
+                            includesPremiumDoctors: false,
+                            notes: '',
+                          });
+                        } else {
+                          setFeaturesData({
+                            visibilityWeight: 1,
+                            maxAffiliations: 1,
+                            maxAssignmentsPerMonth: '',
+                            maxPatientsPerMonth: '',
+                            hospitalMaxAssignmentsPerMonth: '',
+                            includesPremiumDoctors: false,
+                            notes: '',
+                          });
+                        }
+                      }}
+                      disabled={!!editingPlan}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="doctor">Doctor</SelectItem>
+                        <SelectItem value="hospital">Hospital</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="tier">Tier *</Label>
+                    <Select
+                      value={formData.tier}
+                      onValueChange={(value) => setFormData({ ...formData, tier: value })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="free">Free</SelectItem>
+                        <SelectItem value="basic">Basic</SelectItem>
+                        <SelectItem value="premium">Premium</SelectItem>
+                        <SelectItem value="enterprise">Enterprise</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-            </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="price">Price *</Label>
+                    <Input
+                      id="price"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={formData.price}
+                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                      className="mt-1"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="currency">Currency *</Label>
+                    <Select
+                      value={formData.currency}
+                      onValueChange={(value) => setFormData({ ...formData, currency: value })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="USD">USD ($)</SelectItem>
+                        <SelectItem value="EUR">EUR (€)</SelectItem>
+                        <SelectItem value="GBP">GBP (£)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="features" className="space-y-4">
+                {formData.userRole === 'doctor' ? (
+                  <>
+                    <div>
+                      <Label htmlFor="visibilityWeight">Visibility Weight *</Label>
+                      <Input
+                        id="visibilityWeight"
+                        type="number"
+                        min="1"
+                        value={featuresData.visibilityWeight}
+                        onChange={(e) => setFeaturesData({ ...featuresData, visibilityWeight: parseInt(e.target.value) || 1 })}
+                        className="mt-1"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Higher weight = better visibility in search results</p>
+                    </div>
+                    <div>
+                      <Label htmlFor="maxAffiliations">Max Affiliations *</Label>
+                      <Input
+                        id="maxAffiliations"
+                        type="number"
+                        min="1"
+                        value={featuresData.maxAffiliations}
+                        onChange={(e) => setFeaturesData({ ...featuresData, maxAffiliations: parseInt(e.target.value) || 1 })}
+                        className="mt-1"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="maxAssignmentsPerMonth">Max Assignments Per Month *</Label>
+                      <Input
+                        id="maxAssignmentsPerMonth"
+                        type="text"
+                        placeholder="Enter number or 'unlimited'"
+                        value={featuresData.maxAssignmentsPerMonth}
+                        onChange={(e) => setFeaturesData({ ...featuresData, maxAssignmentsPerMonth: e.target.value })}
+                        className="mt-1"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Enter a number or 'unlimited' for -1</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <Label htmlFor="maxPatientsPerMonth">Max Patients Per Month *</Label>
+                      <Input
+                        id="maxPatientsPerMonth"
+                        type="text"
+                        placeholder="Enter number or 'unlimited'"
+                        value={featuresData.maxPatientsPerMonth}
+                        onChange={(e) => setFeaturesData({ ...featuresData, maxPatientsPerMonth: e.target.value })}
+                        className="mt-1"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Enter a number or 'unlimited' for -1</p>
+                    </div>
+                    <div>
+                      <Label htmlFor="hospitalMaxAssignmentsPerMonth">Max Assignments Per Month *</Label>
+                      <Input
+                        id="hospitalMaxAssignmentsPerMonth"
+                        type="text"
+                        placeholder="Enter number or 'unlimited'"
+                        value={featuresData.hospitalMaxAssignmentsPerMonth}
+                        onChange={(e) => setFeaturesData({ ...featuresData, hospitalMaxAssignmentsPerMonth: e.target.value })}
+                        className="mt-1"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Enter a number or 'unlimited' for -1</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="includesPremiumDoctors"
+                        checked={featuresData.includesPremiumDoctors}
+                        onChange={(e) => setFeaturesData({ ...featuresData, includesPremiumDoctors: e.target.checked })}
+                        className="rounded border-gray-300"
+                      />
+                      <Label htmlFor="includesPremiumDoctors" className="cursor-pointer">
+                        Includes Premium Doctors Access
+                      </Label>
+                    </div>
+                  </>
+                )}
+                <div>
+                  <Label htmlFor="notes">Notes</Label>
+                  <Textarea
+                    id="notes"
+                    placeholder="Additional notes about this plan..."
+                    value={featuresData.notes}
+                    onChange={(e) => setFeaturesData({ ...featuresData, notes: e.target.value })}
+                    className="mt-1"
+                    rows={3}
+                  />
+                </div>
+              </TabsContent>
+            </Tabs>
+            
             <DialogFooter className="mt-6">
               <Button 
                 type="button"
@@ -611,7 +787,7 @@ export function SubscriptionPlans() {
               <Button 
                 type="submit"
                 className="bg-navy-600 hover:bg-navy-700"
-                disabled={submitting}
+                disabled={submitting || !validateForm()}
               >
                 {submitting ? (
                   <>
@@ -619,146 +795,11 @@ export function SubscriptionPlans() {
                     {editingPlan ? 'Updating...' : 'Creating...'}
                   </>
                 ) : (
-                  editingPlan ? 'Update' : 'Create'
+                  editingPlan ? 'Update Plan & Features' : 'Create Plan & Features'
                 )}
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Features/Limits Edit Modal */}
-      <Dialog open={showFeaturesModal} onOpenChange={(open) => {
-        if (!open) {
-          setShowFeaturesModal(false);
-          setEditingFeaturesPlan(null);
-        }
-      }}>
-        <DialogContent aria-describedby={undefined} className="max-w-2xl bg-white dark:bg-gray-900 max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              Edit Limits & Features - {editingFeaturesPlan?.name}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {editingFeaturesPlan?.userRole === 'doctor' ? (
-              <>
-                <div>
-                  <Label htmlFor="visibilityWeight">Visibility Weight</Label>
-                  <Input
-                    id="visibilityWeight"
-                    type="number"
-                    min="1"
-                    value={featuresData.visibilityWeight}
-                    onChange={(e) => setFeaturesData({ ...featuresData, visibilityWeight: parseInt(e.target.value) || 1 })}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Higher weight = better visibility in search results</p>
-                </div>
-                <div>
-                  <Label htmlFor="maxAffiliations">Max Affiliations</Label>
-                  <Input
-                    id="maxAffiliations"
-                    type="number"
-                    min="1"
-                    value={featuresData.maxAffiliations}
-                    onChange={(e) => setFeaturesData({ ...featuresData, maxAffiliations: parseInt(e.target.value) || 1 })}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="maxAssignmentsPerMonth">Max Assignments Per Month</Label>
-                  <Input
-                    id="maxAssignmentsPerMonth"
-                    type="text"
-                    placeholder="Enter number or 'unlimited'"
-                    value={featuresData.maxAssignmentsPerMonth}
-                    onChange={(e) => setFeaturesData({ ...featuresData, maxAssignmentsPerMonth: e.target.value })}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Enter a number or 'unlimited' for -1</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <Label htmlFor="maxPatientsPerMonth">Max Patients Per Month</Label>
-                  <Input
-                    id="maxPatientsPerMonth"
-                    type="text"
-                    placeholder="Enter number or 'unlimited'"
-                    value={featuresData.maxPatientsPerMonth}
-                    onChange={(e) => setFeaturesData({ ...featuresData, maxPatientsPerMonth: e.target.value })}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Enter a number or 'unlimited' for -1</p>
-                </div>
-                <div>
-                  <Label htmlFor="maxAssignmentsPerMonth">Max Assignments Per Month</Label>
-                  <Input
-                    id="maxAssignmentsPerMonth"
-                    type="text"
-                    placeholder="Enter number or 'unlimited'"
-                    value={featuresData.maxAssignmentsPerMonth}
-                    onChange={(e) => setFeaturesData({ ...featuresData, maxAssignmentsPerMonth: e.target.value })}
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Enter a number or 'unlimited' for -1</p>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="includesPremiumDoctors"
-                    checked={featuresData.includesPremiumDoctors}
-                    onChange={(e) => setFeaturesData({ ...featuresData, includesPremiumDoctors: e.target.checked })}
-                    className="rounded border-gray-300"
-                  />
-                  <Label htmlFor="includesPremiumDoctors" className="cursor-pointer">
-                    Includes Premium Doctors Access
-                  </Label>
-                </div>
-              </>
-            )}
-            <div>
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                placeholder="Additional notes about this plan..."
-                value={featuresData.notes}
-                onChange={(e) => setFeaturesData({ ...featuresData, notes: e.target.value })}
-                className="mt-1"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter className="mt-6">
-            <Button 
-              type="button"
-              variant="outline" 
-              onClick={() => {
-                setShowFeaturesModal(false);
-                setEditingFeaturesPlan(null);
-              }}
-              disabled={savingFeatures}
-            >
-              Cancel
-            </Button>
-            <Button 
-              type="button"
-              onClick={handleSaveFeatures}
-              className="bg-navy-600 hover:bg-navy-700"
-              disabled={savingFeatures}
-            >
-              {savingFeatures ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                'Save Features'
-              )}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

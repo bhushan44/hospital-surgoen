@@ -31,8 +31,8 @@ export async function GET(req: NextRequest) {
         h.name as hospital_name
       FROM audit_logs al
       LEFT JOIN users u ON al.user_id = u.id
-      LEFT JOIN doctors d ON al.entity_type = 'doctor' AND al.entity_id::text = d.user_id::text
-      LEFT JOIN hospitals h ON al.entity_type = 'hospital' AND al.entity_id::text = h.user_id::text
+      LEFT JOIN doctors d ON al.entity_type = 'doctor' AND al.entity_id::text = d.id::text
+      LEFT JOIN hospitals h ON al.entity_type = 'hospital' AND al.entity_id::text = h.id::text
       WHERE al.action IN ('verify', 'reject', 'verification_requested')
         AND al.entity_type IN ('doctor', 'hospital')
       ORDER BY al.created_at DESC
@@ -42,14 +42,17 @@ export async function GET(req: NextRequest) {
 
     // Format verification activities
     (recentVerifications.rows || []).forEach((row: any) => {
+      const doctorName = row.doctor_name || 'Unknown Doctor';
+      const hospitalName = row.hospital_name || 'Unknown Hospital';
+      
       activities.push({
         id: row.id,
         type: 'verification',
         message: row.action === 'verify' 
-          ? `${row.entity_type === 'doctor' ? 'Dr. ' + row.doctor_name : row.hospital_name} verified`
+          ? `${row.entity_type === 'doctor' ? 'Dr. ' + doctorName : hospitalName} verified`
           : row.action === 'reject'
-          ? `${row.entity_type === 'doctor' ? 'Dr. ' + row.doctor_name : row.hospital_name} verification rejected`
-          : `${row.entity_type === 'doctor' ? 'Dr. ' + row.doctor_name : row.hospital_name} verification requested`,
+          ? `${row.entity_type === 'doctor' ? 'Dr. ' + doctorName : hospitalName} verification rejected`
+          : `${row.entity_type === 'doctor' ? 'Dr. ' + doctorName : hospitalName} verification requested`,
         time: formatTimeAgo(new Date(row.created_at)),
         status: row.action === 'verify' ? 'success' : row.action === 'reject' ? 'rejected' : 'pending',
         entityType: row.entity_type,

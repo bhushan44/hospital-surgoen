@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { supportTickets, users, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { supportTickets, users } from '@/src/db/drizzle/migrations/schema';
 import { eq, sql } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
 
 export async function GET(
   req: NextRequest,
@@ -105,6 +106,8 @@ export async function PUT(
       );
     }
 
+    const oldTicket = existing[0];
+
     // Build update object
     const updateData: any = {};
     if (status !== undefined) updateData.status = status;
@@ -119,16 +122,43 @@ export async function PUT(
       .where(eq(supportTickets.id, ticketId))
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Build changes object
+    const oldData: any = {
+      status: oldTicket.status,
+      priority: oldTicket.priority,
+      category: oldTicket.category,
+      assignedTo: oldTicket.assignedTo,
+    };
+    const newData: any = {
+      status: updatedTicket.status,
+      priority: updatedTicket.priority,
+      category: updatedTicket.category,
+      assignedTo: updatedTicket.assignedTo,
+    };
+    const changes = buildChangesObject(oldData, newData, ['status', 'priority', 'category', 'assignedTo']);
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'update',
       entityType: 'support_ticket',
       entityId: ticketId,
+      entityName: oldTicket.subject,
+      httpMethod: 'PUT',
+      endpoint: `/api/admin/support/tickets/${ticketId}`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      changes: changes,
+      previousStatus: oldTicket.status || undefined,
+      newStatus: updatedTicket.status || undefined,
       details: {
-        changes: updateData,
-        previousStatus: existing[0].status,
-        newStatus: status || existing[0].status,
+        userId: oldTicket.userId,
+        updatedAt: new Date().toISOString(),
       },
     });
 

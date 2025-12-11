@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { users, auditLogs } from '@/src/db/drizzle/migrations/schema';
+import { users } from '@/src/db/drizzle/migrations/schema';
 import { eq } from 'drizzle-orm';
+import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
 
 export async function PUT(
   req: NextRequest,
@@ -37,6 +38,9 @@ export async function PUT(
       );
     }
 
+    const oldUser = existingUser[0];
+    const previousStatus = oldUser.status;
+
     // Update user status
     const [updatedUser] = await db
       .update(users)
@@ -47,19 +51,40 @@ export async function PUT(
       .where(eq(users.id, userId))
       .returning();
 
-    // Create audit log
-    await db.insert(auditLogs).values({
-      userId: userId,
+    // Get request metadata
+    const metadata = getRequestMetadata(req);
+    
+    // Get admin user ID from request (adjust based on your auth setup)
+    const adminUserId = req.headers.get('x-user-id') || null;
+
+    // Build changes object
+    const changes = buildChangesObject(
+      { status: previousStatus },
+      { status: status },
+      ['status']
+    );
+
+    // Create comprehensive audit log
+    await createAuditLog({
+      userId: adminUserId,
       actorType: 'admin',
       action: 'update_status',
       entityType: 'user',
       entityId: userId,
+      entityName: oldUser.email,
+      httpMethod: 'PUT',
+      endpoint: `/api/admin/users/${userId}/status`,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      previousStatus: previousStatus,
+      newStatus: status,
+      changes: changes,
+      reason: body.reason || 'Status updated by admin',
       details: {
-        previousStatus: existingUser[0].status,
-        newStatus: status,
-        reason: body.reason || 'Status updated by admin',
+        userRole: oldUser.role,
+        userEmail: oldUser.email,
+        updatedAt: new Date().toISOString(),
       },
-      createdAt: new Date().toISOString(),
     });
 
     return NextResponse.json({

@@ -51,7 +51,7 @@ export async function GET(
     let maxAssignments: number;
     let planName = 'Free Plan';
     
-    if (subscription.length > 0) {
+    if (subscription.length > 0 && subscription[0].plan) {
       planName = subscription[0].plan.name;
       const tier = subscription[0].plan.tier;
       maxAssignments = getMaxAssignments(tier);
