@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { subscriptionPlans, subscriptions, doctorPlanFeatures, hospitalPlanFeatures } from '@/src/db/drizzle/migrations/schema';
-import { eq, sql, and, ne, count } from 'drizzle-orm';
+import { subscriptionPlans, subscriptions, doctorPlanFeatures, hospitalPlanFeatures, planPricing } from '@/src/db/drizzle/migrations/schema';
+import { eq, sql, and, ne, count, asc } from 'drizzle-orm';
 import { validateRequest } from '@/lib/utils/validate-request';
 import { UpdatePlanDtoSchema } from '@/lib/validations/plan.dto';
 import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
@@ -22,12 +22,32 @@ export async function GET(
         name: subscriptionPlans.name,
         tier: subscriptionPlans.tier,
         userRole: subscriptionPlans.userRole,
-        price: subscriptionPlans.price,
-        currency: subscriptionPlans.currency,
+        isActive: subscriptionPlans.isActive,
+        description: subscriptionPlans.description,
+        defaultBillingCycle: subscriptionPlans.defaultBillingCycle,
       })
       .from(subscriptionPlans)
       .where(eq(subscriptionPlans.id, planId))
       .limit(1);
+
+    // Get pricing options for this plan
+    let pricingOptions: any[] = [];
+    try {
+      pricingOptions = await db
+        .select()
+        .from(planPricing)
+        .where(
+          and(
+            eq(planPricing.planId, planId),
+            eq(planPricing.isActive, true),
+            sql`(${planPricing.validUntil} IS NULL OR ${planPricing.validUntil} > NOW())`
+          )
+        )
+        .orderBy(asc(planPricing.billingPeriodMonths));
+    } catch (error) {
+      console.error('Error fetching pricing options:', error);
+      // Continue without pricing if table doesn't exist yet
+    }
 
     // Get subscriber count separately
     const subscriberCountResult = await db
@@ -50,6 +70,7 @@ export async function GET(
     }
 
     const plan = planResult[0];
+    const primaryPricing = pricingOptions.find(p => p.billingCycle === 'monthly') || pricingOptions[0];
 
     // Get plan features
     let features = null;
@@ -83,9 +104,6 @@ export async function GET(
       }
     }
 
-    const priceInCents = Number(plan.price);
-    const priceInDollars = priceInCents / 100;
-    
     return NextResponse.json({
       success: true,
       data: {
@@ -93,9 +111,23 @@ export async function GET(
         name: plan.name,
         tier: plan.tier,
         userRole: plan.userRole,
-        price: priceInCents,
-        currency: plan.currency,
-        priceFormatted: `${plan.currency} ${priceInDollars.toFixed(2)}`,
+        isActive: plan.isActive,
+        description: plan.description,
+        defaultBillingCycle: plan.defaultBillingCycle,
+        pricingOptions: pricingOptions.map(p => ({
+          id: p.id,
+          billingCycle: p.billingCycle,
+          billingPeriodMonths: p.billingPeriodMonths,
+          price: Number(p.price),
+          currency: p.currency,
+          discountPercentage: Number(p.discountPercentage),
+          isActive: p.isActive,
+        })),
+        price: primaryPricing ? Number(primaryPricing.price) : 0,
+        currency: primaryPricing ? primaryPricing.currency : 'USD',
+        priceFormatted: primaryPricing 
+          ? `${primaryPricing.currency} ${(Number(primaryPricing.price) / 100).toFixed(2)}`
+          : 'No pricing',
         subscribers: Number(subscriberCount),
         features,
       },
@@ -128,7 +160,7 @@ export async function PUT(
       return validation.response;
     }
 
-    const { name, tier, price, currency, features } = validation.data;
+    const { name, tier, description, isActive, defaultBillingCycle, features } = validation.data;
 
     // Check if plan exists
     const existing = await db
@@ -147,12 +179,13 @@ export async function PUT(
     const planData = existing[0];
     const userRole = planData.userRole;
 
-    // Build update object
+    // Build update object (no price/currency - Approach 3)
     const updateData: any = {};
     if (name !== undefined) updateData.name = name.trim();
     if (tier !== undefined) updateData.tier = tier;
-    if (price !== undefined) updateData.price = BigInt(Math.round(price * 100));
-    if (currency !== undefined) updateData.currency = currency;
+    if (description !== undefined) updateData.description = description;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (defaultBillingCycle !== undefined) updateData.defaultBillingCycle = defaultBillingCycle;
 
     // Check for duplicate name if name is being updated
     if (name && name.trim() !== existing[0].name) {
@@ -276,16 +309,18 @@ export async function PUT(
     const oldData: any = {
       name: planData.name,
       tier: planData.tier,
-      price: Number(planData.price),
-      currency: planData.currency,
+      isActive: planData.isActive,
+      description: planData.description,
+      defaultBillingCycle: planData.defaultBillingCycle,
     };
     const newData: any = {
       name: updatedPlan.name,
       tier: updatedPlan.tier,
-      price: Number(updatedPlan.price),
-      currency: updatedPlan.currency,
+      isActive: updatedPlan.isActive,
+      description: updatedPlan.description,
+      defaultBillingCycle: updatedPlan.defaultBillingCycle,
     };
-    const changes = buildChangesObject(oldData, newData, ['name', 'tier', 'price', 'currency']);
+    const changes = buildChangesObject(oldData, newData, ['name', 'tier', 'isActive', 'description', 'defaultBillingCycle']);
 
     // Create comprehensive audit log
     await createAuditLog({
@@ -324,9 +359,9 @@ export async function PUT(
         name: updatedPlan.name,
         tier: updatedPlan.tier,
         userRole: updatedPlan.userRole,
-        price: Number(updatedPlan.price),
-        currency: updatedPlan.currency,
-        priceFormatted: `${updatedPlan.currency} ${(Number(updatedPlan.price) / 100).toFixed(2)}`,
+        isActive: updatedPlan.isActive,
+        description: updatedPlan.description,
+        defaultBillingCycle: updatedPlan.defaultBillingCycle,
       },
     });
   } catch (error) {
@@ -427,8 +462,6 @@ export async function DELETE(
       details: {
         tier: existing[0].tier,
         userRole: existing[0].userRole,
-        price: Number(existing[0].price),
-        currency: existing[0].currency,
         activeSubscriptionsAtDeletion: activeSubscriptionCount,
         deletedAt: new Date().toISOString(),
       },

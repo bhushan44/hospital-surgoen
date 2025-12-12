@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
-    // Build where conditions
+    // Build where conditions for Drizzle query builder
     const conditions = [];
     
     if (status) {
@@ -45,6 +45,27 @@ export async function GET(req: NextRequest) {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
+    // Build WHERE clause for raw SQL query (using alias 's')
+    const rawWhereConditions = [];
+    if (status) {
+      rawWhereConditions.push(sql`s.status = ${status}`);
+    }
+    if (planId) {
+      rawWhereConditions.push(sql`s.plan_id = ${planId}`);
+    }
+    if (userId) {
+      rawWhereConditions.push(sql`s.user_id = ${userId}`);
+    }
+    if (expiringSoon === 'true') {
+      const sevenDaysFromNow = new Date();
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+      rawWhereConditions.push(sql`s.end_date <= ${sevenDaysFromNow.toISOString()}`);
+      rawWhereConditions.push(sql`s.end_date >= ${new Date().toISOString()}`);
+    }
+    const rawWhereClause = rawWhereConditions.length > 0 
+      ? sql`WHERE ${sql.join(rawWhereConditions, sql` AND `)}`
+      : sql``;
+
     // Get total count
     const countResult = await db
       .select({ count: sql<number>`count(*)` })
@@ -62,12 +83,12 @@ export async function GET(req: NextRequest) {
         sp.name as plan_name,
         sp.tier as plan_tier,
         sp.user_role as plan_user_role,
-        sp.price as plan_price,
-        sp.currency as plan_currency
+        s.price_at_purchase as plan_price,
+        s.currency_at_purchase as plan_currency
       FROM subscriptions s
       LEFT JOIN users u ON s.user_id = u.id
       LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
-      ${whereClause ? sql`WHERE ${whereClause}` : sql``}
+      ${rawWhereClause}
       ORDER BY s.created_at ${sortOrder === 'asc' ? sql`ASC` : sql`DESC`}
       LIMIT ${limit}
       OFFSET ${offset}

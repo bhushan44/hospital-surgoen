@@ -28,13 +28,13 @@ export async function GET(req: NextRequest) {
       ORDER BY DATE_TRUNC('month', created_at) ASC
     `);
 
-    // Revenue by plan (from subscriptions)
+    // Revenue by plan (from subscriptions - using price_at_purchase)
     const revenueByPlan = await db.execute(sql`
       SELECT 
         sp.name as plan_name,
         sp.tier as plan_tier,
         COUNT(s.id)::int as subscription_count,
-        COALESCE(SUM(sp.price)::bigint, 0) as total_revenue
+        COALESCE(SUM(s.price_at_purchase)::bigint, 0) as total_revenue
       FROM subscriptions s
       JOIN subscription_plans sp ON s.plan_id = sp.id
       WHERE s.status = 'active'

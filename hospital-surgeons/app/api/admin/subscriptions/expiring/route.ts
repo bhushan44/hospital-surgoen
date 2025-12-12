@@ -22,8 +22,8 @@ export async function GET(req: NextRequest) {
         sp.name as plan_name,
         sp.tier as plan_tier,
         sp.user_role as plan_user_role,
-        sp.price as plan_price,
-        sp.currency as plan_currency
+        s.price_at_purchase as plan_price,
+        s.currency_at_purchase as plan_currency
       FROM subscriptions s
       LEFT JOIN users u ON s.user_id = u.id
       LEFT JOIN subscription_plans sp ON s.plan_id = sp.id

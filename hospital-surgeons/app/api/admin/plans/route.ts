@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { subscriptionPlans, subscriptions, doctorPlanFeatures, hospitalPlanFeatures } from '@/src/db/drizzle/migrations/schema';
+import { subscriptionPlans, subscriptions, doctorPlanFeatures, hospitalPlanFeatures, planPricing } from '@/src/db/drizzle/migrations/schema';
 import { eq, sql, desc, asc, and, count } from 'drizzle-orm';
 import { validateRequest } from '@/lib/utils/validate-request';
 import { CreatePlanDtoSchema } from '@/lib/validations/plan.dto';
@@ -33,18 +33,53 @@ export async function GET(req: NextRequest) {
         name: subscriptionPlans.name,
         tier: subscriptionPlans.tier,
         userRole: subscriptionPlans.userRole,
-        price: subscriptionPlans.price,
-        currency: subscriptionPlans.currency,
+        isActive: subscriptionPlans.isActive,
+        description: subscriptionPlans.description,
+        defaultBillingCycle: subscriptionPlans.defaultBillingCycle,
       })
       .from(subscriptionPlans)
       .where(conditions.length > 0 ? conditions[0] : undefined)
       .orderBy(asc(subscriptionPlans.userRole), asc(subscriptionPlans.tier));
 
-    // Get subscriber counts for all plans using aggregation
+    // Get pricing and subscriber counts for all plans
     const planIds = plansList.map(p => p.id);
+    const pricingMap = new Map<string, any[]>();
     const countMap = new Map<string, number>();
     
     if (planIds.length > 0) {
+      // Get pricing options
+      try {
+        const allPricing = await db
+          .select()
+          .from(planPricing)
+          .where(
+            and(
+              sql`${planPricing.planId} IN (${sql.join(planIds.map(id => sql`${id}`), sql`, `)})`,
+              eq(planPricing.isActive, true),
+              sql`(${planPricing.validUntil} IS NULL OR ${planPricing.validUntil} > NOW())`
+            )
+          );
+
+        allPricing.forEach(p => {
+          if (!pricingMap.has(p.planId)) {
+            pricingMap.set(p.planId, []);
+          }
+          pricingMap.get(p.planId)!.push({
+            id: p.id,
+            billingCycle: p.billingCycle,
+            billingPeriodMonths: p.billingPeriodMonths,
+            price: Number(p.price),
+            currency: p.currency,
+            discountPercentage: Number(p.discountPercentage),
+            isActive: p.isActive,
+          });
+        });
+      } catch (error) {
+        console.error('Error fetching pricing:', error);
+        // Continue without pricing if table doesn't exist yet
+      }
+
+      // Get subscriber counts
       // Query subscriber counts grouped by planId
       const subscriberCounts = await db
         .select({
@@ -68,16 +103,24 @@ export async function GET(req: NextRequest) {
 
     // Format response
     const formattedPlans = plansList.map((plan) => {
-      const priceInCents = Number(plan.price);
-      const priceInDollars = priceInCents / 100;
+      const pricingOptions = pricingMap.get(plan.id) || [];
+      // Get default/primary price (monthly if available, or first one)
+      const primaryPricing = pricingOptions.find(p => p.billingCycle === 'monthly') || pricingOptions[0];
+      
       return {
         id: plan.id,
         name: plan.name,
         tier: plan.tier,
         userRole: plan.userRole,
-        price: priceInCents,
-        currency: plan.currency,
-        priceFormatted: `${plan.currency} ${priceInDollars.toFixed(2)}`,
+        isActive: plan.isActive,
+        description: plan.description,
+        defaultBillingCycle: plan.defaultBillingCycle,
+        pricingOptions: pricingOptions,
+        price: primaryPricing ? primaryPricing.price : 0,
+        currency: primaryPricing ? primaryPricing.currency : 'USD',
+        priceFormatted: primaryPricing 
+          ? `${primaryPricing.currency} ${(primaryPricing.price / 100).toFixed(2)}`
+          : 'No pricing',
         subscribers: countMap.get(plan.id) || 0,
       };
     });
@@ -117,7 +160,7 @@ export async function POST(req: NextRequest) {
       return validation.response;
     }
 
-    const { name, tier, userRole, price, currency = 'USD', features } = validation.data;
+    const { name, tier, userRole, description, isActive = true, defaultBillingCycle, features } = validation.data;
 
     // Check for duplicate: same name should not exist
     const existingByName = await db
@@ -152,15 +195,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create new plan
+    // Create new plan (no price/currency - Approach 3)
     const [newPlan] = await db
       .insert(subscriptionPlans)
       .values({
         name: name.trim(),
         tier: tier,
         userRole: userRole,
-        price: Math.round(price * 100), // Convert to cents (bigint with mode: "number" accepts number)
-        currency: currency,
+        description: description || null,
+        isActive: isActive,
+        defaultBillingCycle: defaultBillingCycle || null,
       })
       .returning();
 
@@ -213,8 +257,7 @@ export async function POST(req: NextRequest) {
       details: {
         tier: newPlan.tier,
         userRole: newPlan.userRole,
-        price: Number(newPlan.price),
-        currency: newPlan.currency,
+        isActive: newPlan.isActive,
         hasFeatures: !!features,
         features: features ? (userRole === 'doctor' 
           ? {
@@ -237,8 +280,9 @@ export async function POST(req: NextRequest) {
         name: newPlan.name,
         tier: newPlan.tier,
         userRole: newPlan.userRole,
-        price: Number(newPlan.price),
-        currency: newPlan.currency,
+        isActive: newPlan.isActive,
+        description: newPlan.description,
+        defaultBillingCycle: newPlan.defaultBillingCycle,
       },
     }, { status: 201 });
   } catch (error) {

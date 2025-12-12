@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
-    // Build where conditions
+    // Build where conditions for Drizzle query (for count)
     const conditions = [];
     
     if (status) {
@@ -51,6 +51,24 @@ export async function GET(req: NextRequest) {
     
     const total = Number(countResult[0]?.count || 0);
 
+    // Build WHERE clause for raw SQL query (using alias 'st')
+    const rawWhereConditions: any[] = [];
+    if (status) {
+      rawWhereConditions.push(sql`st.status = ${status}`);
+    }
+    if (priority) {
+      rawWhereConditions.push(sql`st.priority = ${priority}`);
+    }
+    if (category) {
+      rawWhereConditions.push(sql`st.category = ${category}`);
+    }
+    if (assignedTo) {
+      rawWhereConditions.push(sql`st.assigned_to = ${assignedTo}`);
+    }
+    const rawWhereClause = rawWhereConditions.length > 0
+      ? sql`WHERE ${sql.join(rawWhereConditions, sql` AND `)}`
+      : sql``;
+
     // Get tickets with related data
     const ticketsList = await db.execute(sql`
       SELECT 
@@ -62,7 +80,7 @@ export async function GET(req: NextRequest) {
       FROM support_tickets st
       LEFT JOIN users u ON st.user_id = u.id
       LEFT JOIN users a ON st.assigned_to = a.id
-      ${whereClause ? sql`WHERE ${whereClause}` : sql``}
+      ${rawWhereClause}
       ORDER BY st.created_at ${sortOrder === 'asc' ? sql`ASC` : sql`DESC`}
       LIMIT ${limit}
       OFFSET ${offset}

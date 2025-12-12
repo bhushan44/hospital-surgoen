@@ -17,11 +17,25 @@ interface Plan {
   name: string;
   tier: string;
   userRole: 'doctor' | 'hospital';
-  price: number;
-  currency: string;
-  priceFormatted: string;
+  isActive?: boolean;
+  description?: string;
+  defaultBillingCycle?: string;
+  price?: number;
+  currency?: string;
+  priceFormatted?: string;
+  pricingOptions?: PricingOption[];
   subscribers: number;
   features?: any;
+}
+
+interface PricingOption {
+  id: string;
+  billingCycle: string;
+  billingPeriodMonths: number;
+  price: number;
+  currency: string;
+  discountPercentage: number;
+  isActive: boolean;
 }
 
 function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (plan: Plan) => void; onDelete: (plan: Plan) => void; deleting: boolean }) {
@@ -110,7 +124,22 @@ function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (p
           </Button>
         </div>
       </div>
-      <p className="text-2xl font-bold text-slate-900 mb-4">{plan.priceFormatted}/month</p>
+      {plan.pricingOptions && plan.pricingOptions.length > 0 ? (
+        <div className="mb-4">
+          <p className="text-sm text-slate-600 mb-2">Pricing Options:</p>
+          {plan.pricingOptions.map((pricing) => (
+            <div key={pricing.id} className="text-sm mb-1">
+              <span className="font-medium">{pricing.billingCycle}:</span>
+              <span className="ml-2">{pricing.currency} {(pricing.price / 100).toFixed(2)}</span>
+              {pricing.discountPercentage > 0 && (
+                <span className="text-green-600 ml-2">({pricing.discountPercentage}% off)</span>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-lg text-slate-500 mb-4 italic">No pricing options</p>
+      )}
       {displayFeatures.length > 0 ? (
         <ul className="space-y-2 mb-4">
           {displayFeatures.map((feature, idx) => (
@@ -146,8 +175,29 @@ export function SubscriptionPlans() {
     name: '',
     tier: 'basic',
     userRole: 'doctor' as 'doctor' | 'hospital',
+    description: '',
+    isActive: true,
+    defaultBillingCycle: 'monthly' as 'monthly' | 'quarterly' | 'yearly' | 'custom',
+  });
+  const [pricingData, setPricingData] = useState<PricingOption[]>([]);
+  const [showPricingModal, setShowPricingModal] = useState(false);
+  const [editingPricing, setEditingPricing] = useState<PricingOption | null>(null);
+  const [pricingForm, setPricingForm] = useState<{
+    billingCycle: 'monthly' | 'quarterly' | 'yearly' | 'custom';
+    billingPeriodMonths: number | string;
+    price: string;
+    currency: string;
+    setupFee: string;
+    discountPercentage: string;
+    isActive: boolean;
+  }>({
+    billingCycle: 'monthly',
+    billingPeriodMonths: 1,
     price: '',
-    currency: 'USD',
+    currency: 'INR',
+    setupFee: '',
+    discountPercentage: '',
+    isActive: true,
   });
   const [featuresData, setFeaturesData] = useState({
     // Doctor features
@@ -173,6 +223,7 @@ export function SubscriptionPlans() {
       const data = await res.json();
 
       if (data.success) {
+        // Pricing options are already included in the response from API
         setDoctorPlans(data.grouped?.doctors || []);
         setHospitalPlans(data.grouped?.hospitals || []);
         
@@ -321,12 +372,10 @@ export function SubscriptionPlans() {
   };
 
   const validateForm = () => {
-    // Plan Details validation
+    // Plan Details validation (no price/currency needed - Approach 3)
     if (!formData.name.trim()) return false;
     if (!formData.userRole) return false;
     if (!formData.tier) return false;
-    if (!formData.price || parseFloat(formData.price) <= 0) return false;
-    if (!formData.currency) return false;
 
     // Features validation based on user role
     if (formData.userRole === 'doctor') {
@@ -365,7 +414,7 @@ export function SubscriptionPlans() {
       // Format features for API
       const features = formatFeaturesForAPI(formData.userRole);
       
-      // Send plan and features together in one request
+      // Send plan and features together in one request (no price/currency - Approach 3)
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -373,8 +422,9 @@ export function SubscriptionPlans() {
           name: formData.name.trim(),
           tier: formData.tier,
           userRole: formData.userRole,
-          price: parseFloat(formData.price), // API will convert to cents
-          currency: formData.currency,
+          description: formData.description || null,
+          isActive: formData.isActive,
+          defaultBillingCycle: formData.defaultBillingCycle,
           features: features, // Always include features
         }),
       });
@@ -382,12 +432,34 @@ export function SubscriptionPlans() {
       const data = await res.json();
 
       if (data.success) {
-        toast.success(editingPlan ? 'Plan and features updated successfully' : 'Plan and features created successfully');
+        const successMessage = editingPlan 
+          ? 'Plan and features updated successfully' 
+          : 'Plan created successfully! You can now add pricing options.';
+        toast.success(successMessage);
         
-        setShowAddModal(false);
-        setEditingPlan(null);
-        setModalTab('details');
-        setFormData({ name: '', tier: 'basic', userRole: 'doctor', price: '', currency: 'USD' });
+        if (editingPlan) {
+          // If editing, refresh pricing and close modal
+          await fetchPricingOptions(editingPlan.id);
+          setShowAddModal(false);
+          setEditingPlan(null);
+          setModalTab('details');
+          setFormData({ name: '', tier: 'basic', userRole: 'doctor', description: '', isActive: true, defaultBillingCycle: 'monthly' });
+          setPricingData([]);
+        } else {
+          // If creating new plan, keep modal open and switch to edit mode to add pricing
+          const newPlanId = data.data?.id;
+          if (newPlanId) {
+            // Fetch the created plan and set it as editing plan
+            const planRes = await fetch(`/api/admin/plans/${newPlanId}`);
+            const planData = await planRes.json();
+            if (planData.success) {
+              setEditingPlan(planData.data);
+              await fetchPricingOptions(newPlanId);
+              toast.info('Plan created! Add pricing options below.');
+            }
+          }
+        }
+        
         setFeaturesData({
           visibilityWeight: 1,
           maxAffiliations: 1,
@@ -411,19 +483,34 @@ export function SubscriptionPlans() {
 
   const handleEdit = async (plan: Plan) => {
     setEditingPlan(plan);
-    // Price is stored in cents, convert to dollars for display
-    const priceInDollars = plan.price / 100;
     setFormData({
       name: plan.name,
       tier: plan.tier,
       userRole: plan.userRole,
-      price: priceInDollars.toFixed(2),
-      currency: plan.currency,
+      description: plan.description || '',
+      isActive: plan.isActive !== undefined ? plan.isActive : true,
+      defaultBillingCycle: (plan.defaultBillingCycle as any) || 'monthly',
     });
+    // Load pricing options
+    if (plan.id) {
+      await fetchPricingOptions(plan.id);
+    }
     await loadPlanFeatures(plan);
     setActiveTab(plan.userRole === 'doctor' ? 'doctors' : 'hospitals');
     setModalTab('details');
     setShowAddModal(true);
+  };
+
+  const fetchPricingOptions = async (planId: string) => {
+    try {
+      const res = await fetch(`/api/admin/plans/${planId}/pricing`);
+      const data = await res.json();
+      if (data.success) {
+        setPricingData(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching pricing options:', error);
+    }
   };
 
   const handleDelete = async (plan: Plan) => {
@@ -457,7 +544,10 @@ export function SubscriptionPlans() {
     setShowAddModal(false);
     setEditingPlan(null);
     setModalTab('details');
-    setFormData({ name: '', tier: 'basic', userRole: 'doctor', price: '', currency: 'USD' });
+    setFormData({ name: '', tier: 'basic', userRole: 'doctor', description: '', isActive: true, defaultBillingCycle: 'monthly' });
+    setPricingData([]);
+    setShowPricingModal(false);
+    setEditingPricing(null);
     setFeaturesData({
       visibilityWeight: 1,
       maxAffiliations: 1,
@@ -475,10 +565,12 @@ export function SubscriptionPlans() {
     setFormData({ 
       name: '', 
       tier: 'basic', 
-      userRole: activeTab === 'doctors' ? 'doctor' : 'hospital', 
-      price: '', 
-      currency: 'USD' 
+      userRole: activeTab === 'doctors' ? 'doctor' : 'hospital',
+      description: '',
+      isActive: true,
+      defaultBillingCycle: 'monthly',
     });
+    setPricingData([]);
     setFeaturesData({
       visibilityWeight: 1,
       maxAffiliations: 1,
@@ -643,37 +735,147 @@ export function SubscriptionPlans() {
                     </Select>
                   </div>
                 </div>
+                <div>
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    placeholder="Optional description for this plan..."
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    className="mt-1"
+                    rows={2}
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="price">Price *</Label>
-                    <Input
-                      id="price"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                      className="mt-1"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="currency">Currency *</Label>
+                    <Label htmlFor="defaultBillingCycle">Default Billing Cycle</Label>
                     <Select
-                      value={formData.currency}
-                      onValueChange={(value) => setFormData({ ...formData, currency: value })}
+                      value={formData.defaultBillingCycle}
+                      onValueChange={(value) => setFormData({ ...formData, defaultBillingCycle: value as any })}
                     >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="USD">USD ($)</SelectItem>
-                        <SelectItem value="EUR">EUR (€)</SelectItem>
-                        <SelectItem value="GBP">GBP (£)</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="quarterly">Quarterly</SelectItem>
+                        <SelectItem value="yearly">Yearly</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="flex items-center space-x-2 pt-8">
+                    <input
+                      type="checkbox"
+                      id="isActive"
+                      checked={formData.isActive}
+                      onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <Label htmlFor="isActive" className="cursor-pointer">Plan is Active</Label>
+                  </div>
+                </div>
+                <div className="pt-4 border-t">
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>Pricing Options {editingPlan ? `(${pricingData.length})` : ''}</Label>
+                    {editingPlan ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingPricing(null);
+                          setPricingForm({
+                            billingCycle: 'monthly',
+                            billingPeriodMonths: 1,
+                            price: '',
+                            currency: 'INR',
+                            setupFee: '',
+                            discountPercentage: '',
+                            isActive: true,
+                          });
+                          setShowPricingModal(true);
+                        }}
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Pricing
+                      </Button>
+                    ) : (
+                      <p className="text-sm text-gray-500">Create plan first, then add pricing options</p>
+                    )}
+                  </div>
+                  {editingPlan ? (
+                    <>
+                      {pricingData.length === 0 ? (
+                        <p className="text-sm text-gray-500">No pricing options added yet</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {pricingData.map((pricing) => (
+                            <div key={pricing.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                              <div>
+                                <span className="font-medium">{pricing.billingCycle}</span>
+                                <span className="text-sm text-gray-600 ml-2">
+                                  {pricing.currency} {(pricing.price / 100).toFixed(2)} / {pricing.billingPeriodMonths} month(s)
+                                  {pricing.discountPercentage > 0 && (
+                                    <span className="text-green-600 ml-2">({pricing.discountPercentage}% off)</span>
+                                  )}
+                                </span>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingPricing(pricing);
+                                    setPricingForm({
+                                      billingCycle: pricing.billingCycle as any,
+                                      billingPeriodMonths: pricing.billingPeriodMonths,
+                                      price: (pricing.price / 100).toFixed(2),
+                                      currency: pricing.currency,
+                                      setupFee: '0',
+                                      discountPercentage: pricing.discountPercentage.toString(),
+                                      isActive: pricing.isActive,
+                                    });
+                                    setShowPricingModal(true);
+                                  }}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={async () => {
+                                    if (confirm('Delete this pricing option?')) {
+                                      try {
+                                        const res = await fetch(`/api/admin/plans/${editingPlan.id}/pricing/${pricing.id}`, {
+                                          method: 'DELETE',
+                                        });
+                                        const data = await res.json();
+                                        if (data.success) {
+                                          toast.success('Pricing option deleted');
+                                          await fetchPricingOptions(editingPlan.id);
+                                        } else {
+                                          toast.error(data.message || 'Failed to delete pricing');
+                                        }
+                                      } catch (error) {
+                                        console.error('Error deleting pricing:', error);
+                                        toast.error('Failed to delete pricing');
+                                      }
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-600" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">Save the plan to add pricing options</p>
+                  )}
                 </div>
               </TabsContent>
 
@@ -797,6 +999,209 @@ export function SubscriptionPlans() {
                 ) : (
                   editingPlan ? 'Update Plan & Features' : 'Create Plan & Features'
                 )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pricing Management Modal */}
+      <Dialog open={showPricingModal} onOpenChange={setShowPricingModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingPricing ? 'Edit Pricing Option' : 'Add Pricing Option'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            if (!editingPlan) return;
+            
+            try {
+              const url = editingPricing
+                ? `/api/admin/plans/${editingPlan.id}/pricing/${editingPricing.id}`
+                : `/api/admin/plans/${editingPlan.id}/pricing`;
+              
+              const method = editingPricing ? 'PUT' : 'POST';
+              
+              const billingPeriodMonths = pricingForm.billingCycle === 'monthly' ? 1
+                : pricingForm.billingCycle === 'quarterly' ? 3
+                : pricingForm.billingCycle === 'yearly' ? 12
+                : (typeof pricingForm.billingPeriodMonths === 'number' 
+                    ? pricingForm.billingPeriodMonths 
+                    : parseInt(pricingForm.billingPeriodMonths.toString()) || 1);
+
+              const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  billingCycle: pricingForm.billingCycle,
+                  billingPeriodMonths: billingPeriodMonths,
+                  price: Math.round(parseFloat(pricingForm.price) * 100), // Convert to cents
+                  currency: pricingForm.currency,
+                  setupFee: Math.round(parseFloat(pricingForm.setupFee || '0') * 100), // Convert to cents
+                  discountPercentage: parseFloat(pricingForm.discountPercentage || '0'),
+                  isActive: pricingForm.isActive,
+                }),
+              });
+
+              const data = await res.json();
+              if (data.success) {
+                toast.success(editingPricing ? 'Pricing updated successfully' : 'Pricing added successfully');
+                setShowPricingModal(false);
+                setEditingPricing(null);
+                await fetchPricingOptions(editingPlan.id);
+              } else {
+                toast.error(data.message || 'Failed to save pricing');
+              }
+            } catch (error) {
+              console.error('Error saving pricing:', error);
+              toast.error('Failed to save pricing');
+            }
+          }}>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="pricingBillingCycle">Billing Cycle *</Label>
+                  <Select
+                    value={pricingForm.billingCycle}
+                    onValueChange={(value) => {
+                      const months = value === 'monthly' ? 1 : value === 'quarterly' ? 3 : value === 'yearly' ? 12 : pricingForm.billingPeriodMonths;
+                      setPricingForm({ ...pricingForm, billingCycle: value as any, billingPeriodMonths: months });
+                    }}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="yearly">Yearly</SelectItem>
+                      <SelectItem value="custom">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {pricingForm.billingCycle === 'custom' && (
+                  <div>
+                    <Label htmlFor="billingPeriodMonths">Period (Months) *</Label>
+                    <Input
+                      id="billingPeriodMonths"
+                      type="number"
+                      min="1"
+                      value={pricingForm.billingPeriodMonths || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setPricingForm({ 
+                          ...pricingForm, 
+                          billingPeriodMonths: value === '' ? '' : parseInt(value) || ''
+                        });
+                      }}
+                      onBlur={(e) => {
+                        const value = e.target.value;
+                        if (value === '' || parseInt(value) < 1) {
+                          setPricingForm({ ...pricingForm, billingPeriodMonths: 1 });
+                        }
+                      }}
+                      className="mt-1"
+                      required
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="pricingPrice">Price *</Label>
+                  <Input
+                    id="pricingPrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={pricingForm.price}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Allow empty string, numbers, and decimal numbers
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        setPricingForm({ ...pricingForm, price: value });
+                      }
+                    }}
+                    className="mt-1"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Enter price in actual currency (e.g., 499.00 for ₹499.00)</p>
+                </div>
+                <div>
+                  <Label htmlFor="pricingCurrency">Currency *</Label>
+                  <Select
+                    value={pricingForm.currency}
+                    onValueChange={(value) => setPricingForm({ ...pricingForm, currency: value })}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="INR">INR (₹)</SelectItem>
+                      <SelectItem value="USD">USD ($)</SelectItem>
+                      <SelectItem value="EUR">EUR (€)</SelectItem>
+                      <SelectItem value="GBP">GBP (£)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="setupFee">Setup Fee</Label>
+                  <Input
+                    id="setupFee"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={pricingForm.setupFee}
+                    onChange={(e) => setPricingForm({ ...pricingForm, setupFee: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="discountPercentage">Discount %</Label>
+                  <Input
+                    id="discountPercentage"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="0.00"
+                    value={pricingForm.discountPercentage}
+                    onChange={(e) => setPricingForm({ ...pricingForm, discountPercentage: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="pricingIsActive"
+                  checked={pricingForm.isActive}
+                  onChange={(e) => setPricingForm({ ...pricingForm, isActive: e.target.checked })}
+                  className="rounded border-gray-300"
+                />
+                <Label htmlFor="pricingIsActive" className="cursor-pointer">Active</Label>
+              </div>
+            </div>
+            <DialogFooter className="mt-6">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowPricingModal(false);
+                  setEditingPricing(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-navy-600 hover:bg-navy-700"
+              >
+                {editingPricing ? 'Update Pricing' : 'Add Pricing'}
               </Button>
             </DialogFooter>
           </form>

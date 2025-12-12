@@ -1,730 +1,696 @@
-import dotenv from 'dotenv';
+/**
+ * Seed Database Script
+ * 
+ * This script seeds up to 30 records in each table with realistic data
+ * 
+ * Usage: npx tsx scripts/seed-database.ts
+ */
+
+import { config } from 'dotenv';
 import { resolve } from 'path';
 
 // Load environment variables
-dotenv.config({ path: resolve(process.cwd(), '.env.local') });
-dotenv.config({ path: resolve(process.cwd(), '.env') });
+config({ path: resolve(process.cwd(), '.env.local') });
+config({ path: resolve(process.cwd(), '.env') });
 
-import { getDb } from '../lib/db';
-import * as schema from '../src/db/drizzle/migrations/schema';
-import bcrypt from 'bcrypt';
+import { getDb } from '../lib/db/index';
+import { sql } from 'drizzle-orm';
+import {
+  notifications,
+  doctorPlanFeatures,
+  orders,
+  paymentTransactions,
+  doctors,
+  files,
+  doctorSpecialties,
+  specialties,
+  hospitals,
+  assignments,
+  hospitalPlanFeatures,
+  subscriptions,
+  subscriptionPlans,
+  planPricing,
+  auditLogs,
+  userDevices,
+  analyticsEvents,
+  supportTickets,
+  notificationPreferences,
+  patients,
+  enumStatus,
+  enumPriority,
+} from '../src/db/drizzle/migrations/schema';
+import { users } from '../src/db/drizzle/migrations/schema';
 
-const db = getDb();
+// Helper function to get random element from array
+const random = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
-// Helper function to generate random data
-const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-const randomFloat = (min: number, max: number) => Math.random() * (max - min) + min;
-const randomChoice = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-const randomString = (length: number) => Math.random().toString(36).substring(2, length + 2);
+// Helper function to generate random date in the past
+const randomDate = (daysAgo: number = 365): string => {
+  const date = new Date();
+  date.setDate(date.getDate() - Math.floor(Math.random() * daysAgo));
+  return date.toISOString();
+};
 
-// Generate arrays of data
-const firstNames = ['John', 'Jane', 'Michael', 'Sarah', 'David', 'Emily', 'Robert', 'Jessica', 'William', 'Ashley', 'James', 'Amanda', 'Richard', 'Melissa', 'Joseph', 'Deborah', 'Thomas', 'Michelle', 'Charles', 'Laura', 'Christopher', 'Kimberly', 'Daniel', 'Amy', 'Matthew', 'Angela', 'Anthony', 'Sharon', 'Mark', 'Lisa'];
-const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young'];
-const cities = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Philadelphia', 'San Antonio', 'San Diego', 'Dallas', 'San Jose', 'Austin', 'Jacksonville', 'Fort Worth', 'Columbus', 'Charlotte', 'San Francisco', 'Indianapolis', 'Seattle', 'Denver', 'Washington', 'Boston', 'El Paso', 'Nashville', 'Detroit', 'Oklahoma City', 'Portland', 'Las Vegas', 'Memphis', 'Louisville', 'Baltimore'];
-const specialties = ['Cardiology', 'Neurology', 'Orthopedics', 'Pediatrics', 'Dermatology', 'Oncology', 'Psychiatry', 'Radiology', 'Surgery', 'Emergency Medicine', 'Internal Medicine', 'Gynecology', 'Urology', 'Ophthalmology', 'ENT', 'Pulmonology', 'Gastroenterology', 'Endocrinology', 'Rheumatology', 'Nephrology', 'Hematology', 'Infectious Disease', 'Allergy', 'Anesthesiology', 'Pathology', 'Physical Medicine', 'Preventive Medicine', 'Sports Medicine', 'Geriatrics', 'Family Medicine'];
-// Allowed hospital types from database constraint
-const hospitalTypes = ['general', 'specialty', 'clinic', 'trauma_center', 'teaching', 'other'];
-const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] ;
-const priorities: string[] = ['low', 'medium', 'high'];
-const statuses = ['pending', 'confirmed', 'completed', 'cancelled'] ;
-const paymentStatuses = ['pending', 'completed', 'failed', 'refunded'] ;
-const subscriptionTiers = ['free', 'basic', 'premium', 'enterprise'] ;
-const subscriptionStatuses = ['active', 'expired', 'cancelled', 'suspended'] ;
+// Helper function to generate random date in the future
+const randomFutureDate = (daysAhead: number = 365): string => {
+  const date = new Date();
+  date.setDate(date.getDate() + Math.floor(Math.random() * daysAhead));
+  return date.toISOString();
+};
 
-async function seedDatabase() {
-  console.log('🌱 Starting database seeding...\n');
-  console.log('⚠️  Note: Script will skip existing records to avoid duplicates\n');
+async function seedEnumTables() {
+  console.log('🌱 Seeding enum tables...');
+  const db = getDb();
+
+  // Seed enum_status
+  const statuses = ['pending', 'accepted', 'rejected', 'completed', 'cancelled'];
+  for (const status of statuses) {
+    try {
+      await db.insert(enumStatus).values({ status, description: `Status: ${status}` }).onConflictDoNothing();
+    } catch (error) {
+      // Ignore if already exists
+    }
+  }
+
+  // Seed enum_priority
+  const priorities = ['low', 'medium', 'high'];
+  for (const priority of priorities) {
+    try {
+      await db.insert(enumPriority).values({ priority, description: `Priority: ${priority}` }).onConflictDoNothing();
+    } catch (error) {
+      // Ignore if already exists
+    }
+  }
+
+  console.log('  ✓ Seeded enum tables\n');
+}
+
+async function seedSpecialties() {
+  console.log('🌱 Seeding specialties...');
+  const db = getDb();
+
+  const specialtyNames = [
+    'Cardiology', 'Neurology', 'Orthopedics', 'Pediatrics', 'Dermatology',
+    'Oncology', 'Psychiatry', 'Radiology', 'Surgery', 'Anesthesiology',
+    'Emergency Medicine', 'Internal Medicine', 'Gynecology', 'Urology',
+    'Ophthalmology', 'ENT', 'Pulmonology', 'Gastroenterology', 'Endocrinology',
+    'Nephrology', 'Hematology', 'Rheumatology', 'Infectious Disease',
+    'Critical Care', 'Family Medicine', 'Sports Medicine', 'Plastic Surgery',
+    'Vascular Surgery', 'Neurosurgery', 'Cardiothoracic Surgery',
+  ];
+
+  for (let i = 0; i < Math.min(30, specialtyNames.length); i++) {
+    await db.insert(specialties).values({
+      name: specialtyNames[i],
+      description: `Specialty in ${specialtyNames[i]}`,
+    });
+  }
+
+  console.log(`  ✓ Seeded ${Math.min(30, specialtyNames.length)} specialties\n`);
+}
+
+async function seedFiles() {
+  console.log('🌱 Seeding files...');
+  const db = getDb();
+
+  const fileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  const extensions = ['.jpg', '.png', '.pdf'];
+
+  for (let i = 0; i < 30; i++) {
+    const type = random(fileTypes);
+    const ext = extensions[fileTypes.indexOf(type)];
+    await db.insert(files).values({
+      filename: `file_${i + 1}${ext}`,
+      url: `https://example.com/files/file_${i + 1}${ext}`,
+      mimetype: type,
+      size: Math.floor(Math.random() * 5000000) + 100000, // 100KB to 5MB
+      isPublic: Math.random() > 0.5,
+      createdAt: randomDate(),
+      updatedAt: randomDate(),
+    });
+  }
+
+  console.log('  ✓ Seeded 30 files\n');
+}
+
+async function seedSubscriptionPlans() {
+  console.log('🌱 Seeding subscription plans...');
+  const db = getDb();
+
+  const planData = [
+    // Doctor plans
+    { name: 'Free Doctor Plan', tier: 'free', userRole: 'doctor', description: 'Basic plan for doctors' },
+    { name: 'Basic Doctor Plan', tier: 'basic', userRole: 'doctor', description: 'Standard plan for doctors' },
+    { name: 'Premium Doctor Plan', tier: 'premium', userRole: 'doctor', description: 'Advanced plan for doctors' },
+    { name: 'Enterprise Doctor Plan', tier: 'enterprise', userRole: 'doctor', description: 'Full-featured plan for doctors' },
+    // Hospital plans
+    { name: 'Free Hospital Plan', tier: 'free', userRole: 'hospital', description: 'Basic plan for hospitals' },
+    { name: 'Basic Hospital Plan', tier: 'basic', userRole: 'hospital', description: 'Standard plan for hospitals' },
+    { name: 'Premium Hospital Plan', tier: 'premium', userRole: 'hospital', description: 'Advanced plan for hospitals' },
+    { name: 'Enterprise Hospital Plan', tier: 'enterprise', userRole: 'hospital', description: 'Full-featured plan for hospitals' },
+  ];
+
+  const planIds: string[] = [];
+  for (const plan of planData) {
+    const [inserted] = await db.insert(subscriptionPlans).values({
+      ...plan,
+      isActive: true,
+      defaultBillingCycle: 'monthly',
+    }).returning({ id: subscriptionPlans.id });
+    planIds.push(inserted.id);
+  }
+
+  console.log(`  ✓ Seeded ${planData.length} subscription plans\n`);
+  return planIds;
+}
+
+async function seedPlanPricing(planIds: string[]) {
+  console.log('🌱 Seeding plan pricing...');
+  const db = getDb();
+
+  const billingCycles = ['monthly', 'quarterly', 'yearly'] as const;
+  const currencies = ['INR', 'USD', 'EUR'] as const;
+
+  let count = 0;
+  for (const planId of planIds) {
+    for (const cycle of billingCycles) {
+      const months = cycle === 'monthly' ? 1 : cycle === 'quarterly' ? 3 : 12;
+      const basePrice = Math.floor(Math.random() * 50000) + 1000; // 1000 to 50000 cents
+      const price = cycle === 'yearly' ? basePrice * 10 : cycle === 'quarterly' ? basePrice * 2.5 : basePrice;
+
+      await db.insert(planPricing).values({
+        planId,
+        billingCycle: cycle,
+        billingPeriodMonths: months,
+        price: Math.round(price),
+        currency: random([...currencies]),
+        setupFee: Math.random() > 0.7 ? Math.floor(Math.random() * 5000) : 0,
+        discountPercentage: (cycle === 'yearly' ? Math.floor(Math.random() * 20) : 0).toString(),
+        isActive: true,
+        validFrom: randomDate(30),
+        validUntil: null,
+      });
+      count++;
+    }
+  }
+
+  console.log(`  ✓ Seeded ${count} pricing options\n`);
+}
+
+async function seedDoctorPlanFeatures(planIds: string[]) {
+  console.log('🌱 Seeding doctor plan features...');
+  const db = getDb();
+
+  const doctorPlans = planIds.slice(0, 4); // First 4 are doctor plans
+
+  for (const planId of doctorPlans) {
+    await db.insert(doctorPlanFeatures).values({
+      planId,
+      visibilityWeight: Math.floor(Math.random() * 10) + 1,
+      maxAffiliations: Math.floor(Math.random() * 5) + 1,
+      notes: `Features for plan ${planId}`,
+    });
+  }
+
+  console.log(`  ✓ Seeded ${doctorPlans.length} doctor plan features\n`);
+}
+
+async function seedHospitalPlanFeatures(planIds: string[]) {
+  console.log('🌱 Seeding hospital plan features...');
+  const db = getDb();
+
+  const hospitalPlans = planIds.slice(4); // Last 4 are hospital plans
+
+  for (const planId of hospitalPlans) {
+    await db.insert(hospitalPlanFeatures).values({
+      planId,
+      maxPatientsPerMonth: Math.floor(Math.random() * 1000) + 100,
+      maxAssignmentsPerMonth: Math.floor(Math.random() * 500) + 50,
+      includesPremiumDoctors: Math.random() > 0.5,
+      notes: `Features for plan ${planId}`,
+    });
+  }
+
+  console.log(`  ✓ Seeded ${hospitalPlans.length} hospital plan features\n`);
+}
+
+async function seedDoctors(userIds: string[]) {
+  console.log('🌱 Seeding doctors...');
+  const db = getDb();
+
+  const firstNames = ['Raj', 'Priya', 'Amit', 'Sneha', 'Vikram', 'Anjali', 'Rohit', 'Kavita'];
+  const lastNames = ['Sharma', 'Patel', 'Kumar', 'Singh', 'Gupta', 'Reddy', 'Mehta', 'Joshi'];
+  const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Kolkata', 'Hyderabad', 'Pune', 'Ahmedabad'];
+
+  const doctorIds: string[] = [];
+  const doctorUserIds = userIds.filter((_, i) => i % 3 === 0).slice(0, 30); // Every 3rd user is a doctor
+
+  for (let i = 0; i < Math.min(30, doctorUserIds.length); i++) {
+    const [inserted] = await db.insert(doctors).values({
+      userId: doctorUserIds[i],
+      firstName: random([...firstNames]),
+      lastName: random([...lastNames]),
+      medicalLicenseNumber: `MED${String(i + 1).padStart(6, '0')}`,
+      yearsOfExperience: Math.floor(Math.random() * 30) + 1,
+      bio: `Experienced doctor with ${Math.floor(Math.random() * 30) + 1} years of practice`,
+      primaryLocation: random([...cities]),
+      latitude: parseFloat((Math.random() * 10 + 18).toFixed(8)),
+      longitude: parseFloat((Math.random() * 10 + 72).toFixed(8)),
+      licenseVerificationStatus: random(['pending', 'verified', 'rejected'] as const),
+      averageRating: parseFloat((Math.random() * 2 + 3).toFixed(2)), // 3.0 to 5.0
+      totalRatings: Math.floor(Math.random() * 100),
+      completedAssignments: Math.floor(Math.random() * 50),
+    }).returning({ id: doctors.id });
+    doctorIds.push(inserted.id);
+  }
+
+  console.log(`  ✓ Seeded ${doctorIds.length} doctors\n`);
+  return doctorIds;
+}
+
+async function seedHospitals(userIds: string[]) {
+  console.log('🌱 Seeding hospitals...');
+  const db = getDb();
+
+  const hospitalNames = [
+    'Apollo Hospital', 'Fortis Healthcare', 'Max Hospital', 'AIIMS', 'Tata Memorial',
+    'Narayana Health', 'Manipal Hospital', 'Medanta', 'BLK Hospital', 'Columbia Asia',
+  ];
+  const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Kolkata', 'Hyderabad', 'Pune', 'Ahmedabad'];
+  const types = ['general', 'specialty', 'clinic', 'trauma_center', 'teaching', 'other'] as const;
+
+  const hospitalIds: string[] = [];
+  const hospitalUserIds = userIds.filter((_, i) => i % 3 === 1).slice(0, 30); // Every 3rd user starting from 1 is a hospital
+
+  for (let i = 0; i < Math.min(30, hospitalUserIds.length); i++) {
+    const city = random([...cities]);
+    const [inserted] = await db.insert(hospitals).values({
+      userId: hospitalUserIds[i],
+      name: `${random([...hospitalNames])} ${city}`,
+      hospitalType: random([...types]),
+      registrationNumber: `HOSP${String(i + 1).padStart(6, '0')}`,
+      address: `${Math.floor(Math.random() * 100)} Main Street`,
+      city,
+      latitude: parseFloat((Math.random() * 10 + 18).toFixed(8)),
+      longitude: parseFloat((Math.random() * 10 + 72).toFixed(8)),
+      numberOfBeds: Math.floor(Math.random() * 500) + 50,
+      contactEmail: `hospital${i + 1}@example.com`,
+      contactPhone: `+91${Math.floor(Math.random() * 9000000000) + 1000000000}`,
+      licenseVerificationStatus: random(['pending', 'verified', 'rejected'] as const),
+      fullAddress: `${Math.floor(Math.random() * 100)} Main Street, ${city}`,
+      state: 'Maharashtra',
+      pincode: String(Math.floor(Math.random() * 900000) + 100000),
+    }).returning({ id: hospitals.id });
+    hospitalIds.push(inserted.id);
+  }
+
+  console.log(`  ✓ Seeded ${hospitalIds.length} hospitals\n`);
+  return hospitalIds;
+}
+
+async function seedPatients(hospitalIds: string[]) {
+  console.log('🌱 Seeding patients...');
+  const db = getDb();
+
+  const firstNames = ['Ramesh', 'Sunita', 'Kiran', 'Meera', 'Arjun', 'Priya', 'Suresh', 'Lakshmi'];
+  const lastNames = ['Patel', 'Sharma', 'Kumar', 'Singh', 'Reddy', 'Gupta', 'Mehta', 'Joshi'];
+  const genders = ['male', 'female', 'other'] as const;
+  const roomTypes = ['general', 'private', 'semi_private', 'icu', 'emergency'] as const;
+
+  const patientIds: string[] = [];
+
+  for (let i = 0; i < 30; i++) {
+    const birthDate = new Date();
+    birthDate.setFullYear(birthDate.getFullYear() - Math.floor(Math.random() * 80) - 1);
+    
+    const [inserted] = await db.insert(patients).values({
+      hospitalId: random([...hospitalIds]),
+      fullName: `${random([...firstNames])} ${random([...lastNames])}`,
+      dateOfBirth: birthDate.toISOString().split('T')[0],
+      gender: random([...genders]),
+      phone: `+91${Math.floor(Math.random() * 9000000000) + 1000000000}`,
+      emergencyContact: `+91${Math.floor(Math.random() * 9000000000) + 1000000000}`,
+      address: `${Math.floor(Math.random() * 100)} Street, City`,
+      medicalCondition: `Condition ${i + 1}`,
+      roomType: random([...roomTypes]),
+      costPerDay: (Math.random() * 10000 + 1000).toFixed(2),
+      medicalNotes: `Medical notes for patient ${i + 1}`,
+      createdAt: randomDate(90),
+    }).returning({ id: patients.id });
+    patientIds.push(inserted.id);
+  }
+
+  console.log(`  ✓ Seeded ${patientIds.length} patients\n`);
+  return patientIds;
+}
+
+async function seedDoctorSpecialties(doctorIds: string[], specialtyIds: string[]) {
+  console.log('🌱 Seeding doctor specialties...');
+  const db = getDb();
+
+  let count = 0;
+  for (const doctorId of doctorIds) {
+    const numSpecialties = Math.floor(Math.random() * 3) + 1; // 1-3 specialties per doctor
+    const selectedSpecialties = [...specialtyIds].sort(() => 0.5 - Math.random()).slice(0, numSpecialties);
+
+    for (let i = 0; i < selectedSpecialties.length; i++) {
+      await db.insert(doctorSpecialties).values({
+        doctorId,
+        specialtyId: selectedSpecialties[i],
+        isPrimary: i === 0,
+        yearsOfExperience: Math.floor(Math.random() * 10) + 1,
+      });
+      count++;
+    }
+  }
+
+  console.log(`  ✓ Seeded ${count} doctor-specialty relationships\n`);
+}
+
+async function seedSubscriptions(userIds: string[], planIds: string[]) {
+  console.log('🌱 Seeding subscriptions...');
+  const db = getDb();
+
+  const statuses = ['active', 'expired', 'cancelled'] as const;
+  const currencies = ['INR', 'USD', 'EUR'] as const;
+
+  let count = 0;
+  for (let i = 0; i < Math.min(30, userIds.length); i++) {
+    const planId = random([...planIds]);
+    const startDate = randomDate(180);
+    const endDate = new Date(startDate);
+    endDate.setMonth(endDate.getMonth() + 1);
+
+    await db.insert(subscriptions).values({
+      userId: userIds[i],
+      planId,
+      status: random([...statuses]),
+      startDate: startDate,
+      endDate: endDate.toISOString(),
+      billingCycle: random(['monthly', 'quarterly', 'yearly'] as const),
+      billingPeriodMonths: random([1, 3, 12]),
+      priceAtPurchase: Math.floor(Math.random() * 50000) + 1000,
+      currencyAtPurchase: random([...currencies]),
+      autoRenew: Math.random() > 0.3,
+      createdAt: startDate,
+      updatedAt: startDate,
+    });
+    count++;
+  }
+
+  console.log(`  ✓ Seeded ${count} subscriptions\n`);
+}
+
+async function seedOrders(userIds: string[], planIds: string[]) {
+  console.log('🌱 Seeding orders...');
+  const db = getDb();
+
+  const statuses = ['pending', 'paid', 'failed', 'expired', 'refunded'] as const;
+  const currencies = ['INR', 'USD', 'EUR'] as const;
+
+  for (let i = 0; i < 30; i++) {
+    await db.insert(orders).values({
+      userId: random([...userIds]),
+      orderType: 'subscription',
+      planId: random([...planIds]),
+      amount: Math.floor(Math.random() * 50000) + 1000,
+      currency: random([...currencies]),
+      description: `Subscription order ${i + 1}`,
+      status: random([...statuses]),
+      createdAt: randomDate(90),
+      expiresAt: randomFutureDate(30),
+      paidAt: Math.random() > 0.5 ? randomDate(30) : null,
+      failureReason: Math.random() > 0.8 ? 'Payment failed' : null,
+      webhookReceived: Math.random() > 0.5,
+    });
+  }
+
+  console.log('  ✓ Seeded 30 orders\n');
+}
+
+async function seedAssignments(doctorIds: string[], hospitalIds: string[], patientIds: string[]) {
+  console.log('🌱 Seeding assignments...');
+  const db = getDb();
+
+  const statuses = ['pending', 'accepted', 'rejected', 'completed', 'cancelled'] as const;
+  const priorities = ['low', 'medium', 'high'] as const;
+
+  for (let i = 0; i < 30; i++) {
+    await db.insert(assignments).values({
+      doctorId: random([...doctorIds]),
+      hospitalId: random([...hospitalIds]),
+      patientId: random([...patientIds]),
+      priority: random([...priorities]),
+      status: random([...statuses]),
+      requestedAt: randomDate(60),
+      expiresAt: randomFutureDate(30),
+      treatmentNotes: Math.random() > 0.5 ? `Treatment notes ${i + 1}` : null,
+      consultationFee: (Math.random() * 5000 + 500).toFixed(2),
+    });
+  }
+
+  console.log('  ✓ Seeded 30 assignments\n');
+}
+
+async function seedNotifications(userIds: string[]) {
+  console.log('🌱 Seeding notifications...');
+  const db = getDb();
+
+  const priorities = ['low', 'medium', 'high', 'urgent'] as const;
+  const channels = ['email', 'push', 'sms'] as const;
+  const recipientTypes = ['user', 'role', 'all'] as const;
+
+  for (let i = 0; i < 30; i++) {
+    await db.insert(notifications).values({
+      recipientType: random([...recipientTypes]),
+      recipientId: random([...userIds]),
+      title: `Notification ${i + 1}`,
+      message: `This is notification message ${i + 1}`,
+      channel: random([...channels]),
+      priority: random([...priorities]),
+      read: Math.random() > 0.5,
+      createdAt: randomDate(30),
+    });
+  }
+
+  console.log('  ✓ Seeded 30 notifications\n');
+}
+
+async function seedAuditLogs(userIds: string[]) {
+  console.log('🌱 Seeding audit logs...');
+  const db = getDb();
+
+  const actions = ['create', 'update', 'delete', 'login', 'logout'] as const;
+  const entityTypes = ['user', 'doctor', 'hospital', 'subscription', 'plan'] as const;
+
+  for (let i = 0; i < 30; i++) {
+    await db.insert(auditLogs).values({
+      userId: random([...userIds]),
+      actorType: 'admin',
+      action: random([...actions]),
+      entityType: random([...entityTypes]),
+      entityId: random([...userIds]),
+      details: { message: `Audit log entry ${i + 1}` },
+      createdAt: randomDate(90),
+    });
+  }
+
+  console.log('  ✓ Seeded 30 audit logs\n');
+}
+
+async function seedAnalyticsEvents(userIds: string[]) {
+  console.log('🌱 Seeding analytics events...');
+  const db = getDb();
+
+  const eventTypes = ['user_action', 'system_event', 'error'] as const;
+  const eventNames = ['page_view', 'button_click', 'form_submit', 'api_call'] as const;
+
+  for (let i = 0; i < 30; i++) {
+    await db.insert(analyticsEvents).values({
+      userId: Math.random() > 0.3 ? random([...userIds]) : null,
+      eventType: random([...eventTypes]),
+      eventName: random([...eventNames]),
+      properties: { page: `page_${i + 1}`, timestamp: new Date().toISOString() },
+      createdAt: randomDate(30),
+    });
+  }
+
+  console.log('  ✓ Seeded 30 analytics events\n');
+}
+
+async function seedSupportTickets(userIds: string[]) {
+  console.log('🌱 Seeding support tickets...');
+  const db = getDb();
+
+  const priorities = ['low', 'medium', 'high'] as const;
+  const statuses = ['open', 'in_progress', 'resolved', 'closed'] as const;
+  const categories = ['technical', 'billing', 'account', 'other'] as const;
+
+  for (let i = 0; i < 30; i++) {
+    await db.insert(supportTickets).values({
+      userId: random([...userIds]),
+      subject: `Support Ticket ${i + 1}`,
+      description: `Description for support ticket ${i + 1}`,
+      category: random([...categories]),
+      priority: random([...priorities]),
+      status: random([...statuses]),
+      assignedTo: Math.random() > 0.5 ? random([...userIds]) : null,
+      createdAt: randomDate(60),
+    });
+  }
+
+  console.log('  ✓ Seeded 30 support tickets\n');
+}
+
+async function seedNotificationPreferences(userIds: string[]) {
+  console.log('🌱 Seeding notification preferences...');
+  const db = getDb();
+
+  for (let i = 0; i < Math.min(30, userIds.length); i++) {
+    await db.insert(notificationPreferences).values({
+      userId: userIds[i],
+      bookingUpdatesPush: Math.random() > 0.2,
+      bookingUpdatesEmail: Math.random() > 0.2,
+      paymentPush: Math.random() > 0.2,
+      remindersPush: Math.random() > 0.2,
+      createdAt: randomDate(30),
+    });
+  }
+
+  console.log(`  ✓ Seeded ${Math.min(30, userIds.length)} notification preferences\n`);
+}
+
+async function seedUserDevices(userIds: string[]) {
+  console.log('🌱 Seeding user devices...');
+  const db = getDb();
+
+  const deviceTypes = ['ios', 'android', 'web'] as const;
+
+  for (let i = 0; i < 30; i++) {
+    await db.insert(userDevices).values({
+      userId: random([...userIds]),
+      deviceType: random([...deviceTypes]),
+      deviceToken: `token_${Math.random().toString(36).substring(7)}`,
+      appVersion: '1.0.0',
+      osVersion: '15.0',
+      deviceName: `${random([...deviceTypes])} Device ${i + 1}`,
+      isActive: Math.random() > 0.2,
+      lastUsedAt: randomDate(7),
+      createdAt: randomDate(90),
+    });
+  }
+
+  console.log('  ✓ Seeded 30 user devices\n');
+}
+
+async function seedPaymentTransactions(userIds: string[], orderIds: string[]) {
+  console.log('🌱 Seeding payment transactions...');
+  const db = getDb();
+
+  const statuses = ['pending', 'success', 'failed', 'refunded'] as const;
+  const paymentMethods = ['card', 'upi', 'netbanking', 'wallet'] as const;
+  const currencies = ['INR', 'USD', 'EUR'] as const;
+  const paymentGateways = ['razorpay', 'stripe', 'paypal', 'payu'] as const;
+
+  for (let i = 0; i < 30; i++) {
+    await db.insert(paymentTransactions).values({
+      orderId: random([...orderIds]),
+      paymentGateway: random([...paymentGateways]),
+      paymentId: `TXN${String(i + 1).padStart(10, '0')}`,
+      paymentMethod: random([...paymentMethods]),
+      amount: Math.floor(Math.random() * 50000) + 1000,
+      currency: random([...currencies]),
+      status: random([...statuses]),
+      gatewayResponse: { status: 'success' },
+      verifiedAt: Math.random() > 0.5 ? randomDate(30) : null,
+      refundedAt: Math.random() > 0.8 ? randomDate(10) : null,
+      createdAt: randomDate(60),
+    });
+  }
+
+  console.log('  ✓ Seeded 30 payment transactions\n');
+}
+
+async function main() {
+  console.log('🚀 Starting database seeding process...\n');
 
   try {
-    // 1. Seed Users (30 records)
-    console.log('📝 Seeding users...');
-    const userIds: string[] = [];
-    const doctorUserIds: string[] = [];
-    const hospitalUserIds: string[] = [];
-    
-    for (let i = 0; i < 30; i++) {
-      const role = i < 10 ? 'doctor' : i < 20 ? 'hospital' : 'admin';
-      const hashedPassword = await bcrypt.hash('Password123!', 10);
-      const timestamp = Date.now();
-      
-      const [user] = await db.insert(schema.users).values({
-        email: `user${timestamp}-${i + 1}@example.com`,
-        passwordHash: hashedPassword,
-        phone: `+1${randomInt(2000000000, 9999999999)}`,
-        role: role,
-        status: randomChoice(['active', 'inactive', 'pending', 'suspended']),
-        emailVerified: Math.random() > 0.3,
-        phoneVerified: Math.random() > 0.5,
-        createdAt: new Date(Date.now() - randomInt(0, 365 * 24 * 60 * 60 * 1000)).toISOString(),
-      }).returning();
-      
-      userIds.push(user.id);
-      if (role === 'doctor') doctorUserIds.push(user.id);
-      if (role === 'hospital') hospitalUserIds.push(user.id);
-    }
-    console.log(`✅ Created ${userIds.length} users\n`);
+    const db = getDb();
 
-    // 2. Seed Subscription Plans (4 plans)
-    console.log('📝 Seeding subscription plans...');
-    const planIds: string[] = [];
-    const doctorPlanIds: string[] = [];
-    const hospitalPlanIds: string[] = [];
-    
-    // Check existing plans first
-    const existingPlans = await db.select().from(schema.subscriptionPlans);
-    const existingPlanMap = new Map(existingPlans.map(p => [`${p.tier}-${p.userRole}`, p]));
-    
-    for (const tier of subscriptionTiers) {
-      for (const role of ['doctor', 'hospital']) {
-        const key = `${tier}-${role}`;
-        let plan;
-        
-        if (existingPlanMap.has(key)) {
-          plan = existingPlanMap.get(key)!;
-        } else {
-          const [newPlan] = await db.insert(schema.subscriptionPlans).values({
-            name: `${tier.charAt(0).toUpperCase() + tier.slice(1)} ${role.charAt(0).toUpperCase() + role.slice(1)} Plan`,
-            tier: tier,
-            userRole: role,
-            price: tier === 'free' ? 0 : tier === 'basic' ? 29 : tier === 'premium' ? 99 : 299,
-            currency: 'USD',
-          }).returning();
-          plan = newPlan;
-        }
-        
-        planIds.push(plan.id);
-        if (role === 'doctor') doctorPlanIds.push(plan.id);
-        if (role === 'hospital') hospitalPlanIds.push(plan.id);
-      }
-    }
-    console.log(`✅ Using ${planIds.length} subscription plans\n`);
+    // Get existing users (we don't clear users table)
+    const existingUsers = await db.select().from(users).limit(100);
+    const userIds = existingUsers.map(u => u.id);
 
-    // 3. Seed Specialties (30 records)
-    console.log('📝 Seeding specialties...');
-    const specialtyIds: string[] = [];
-    
-    // Get existing specialties
-    const existingSpecialties = await db.select().from(schema.specialties);
-    const existingSpecialtyNames = new Set(existingSpecialties.map(s => s.name));
-    specialtyIds.push(...existingSpecialties.map(s => s.id));
-    
-    // Create new specialties if needed
-    let specialtyIndex = 0;
-    while (specialtyIds.length < 30) {
-      const specialtyName = specialties[specialtyIndex] || `Specialty ${specialtyIndex + 1}`;
-      const uniqueName = existingSpecialtyNames.has(specialtyName) 
-        ? `${specialtyName} ${Date.now()}-${specialtyIndex + 1}`
-        : specialtyName;
-      
-      try {
-        const [specialty] = await db.insert(schema.specialties).values({
-          name: uniqueName,
-          description: `Description for ${specialtyName}`,
-        }).returning();
-        
-        specialtyIds.push(specialty.id);
-        existingSpecialtyNames.add(uniqueName);
-      } catch (error: any) {
-        // If still duplicate, skip
-        if (error.code !== '23505') throw error;
-      }
-      specialtyIndex++;
+    if (userIds.length === 0) {
+      console.log('⚠️  No users found. Please create users first.\n');
+      return;
     }
-    console.log(`✅ Using ${specialtyIds.length} specialties\n`);
 
-    // 3.5. Seed Enum Status and Priority (required for assignments)
-    console.log('📝 Seeding enum status and priority...');
-    const allowedStatuses = ['pending', 'confirmed', 'completed', 'cancelled'];
-    const allowedPriorities = ['low', 'medium', 'high'];
-    
-    // Seed enum_status
-    for (const status of allowedStatuses) {
-      try {
-        await db.insert(schema.enumStatus).values({
-          status,
-          description: `Status: ${status}`,
-        });
-      } catch (error: any) {
-        // Ignore duplicates
-        const errorCode = error.cause?.code || error.code;
-        if (errorCode !== '23505') throw error;
-      }
-    }
-    
-    // Seed enum_priority
-    for (const priority of allowedPriorities) {
-      try {
-        await db.insert(schema.enumPriority).values({
-          priority,
-          description: `Priority: ${priority}`,
-        });
-      } catch (error: any) {
-        // Ignore duplicates
-        const errorCode = error.cause?.code || error.code;
-        if (errorCode !== '23505') throw error;
-      }
-    }
-    console.log(`✅ Seeded enum status and priority\n`);
+    console.log(`📊 Found ${userIds.length} existing users\n`);
 
-    // 4. Seed Files (30 records)
-    console.log('📝 Seeding files...');
-    const fileIds: string[] = [];
-    
-    for (let i = 0; i < 30; i++) {
-      const mimeType = randomChoice(['image/jpeg', 'image/png', 'application/pdf']);
-      const [file] = await db.insert(schema.files).values({
-        filename: `file-${i + 1}.jpg`,
-        url: `https://example.com/files/file-${i + 1}.jpg`,
-        mimetype: mimeType,
-        size: randomInt(10000, 5000000), // bigint with mode: "number" accepts number
-      }).returning();
-      
-      fileIds.push(file.id);
-    }
-    console.log(`✅ Created ${fileIds.length} files\n`);
+    // Seed data in dependency order
+    await seedEnumTables();
+    await seedSpecialties();
+    const specialtyResults = await db.select({ id: specialties.id }).from(specialties);
+    const specialtyIds = specialtyResults.map(s => s.id);
 
-    // 5. Seed Doctors (10 records - matching doctor users)
-    console.log('📝 Seeding doctors...');
-    const doctorIds: string[] = [];
-    
-    for (let i = 0; i < 10; i++) {
-      const [doctor] = await db.insert(schema.doctors).values({
-        userId: doctorUserIds[i],
-        firstName: firstNames[i],
-        lastName: lastNames[i],
-        medicalLicenseNumber: `MD-${Date.now()}-${randomInt(100000, 999999)}`,
-        yearsOfExperience: randomInt(1, 30),
-        bio: `Experienced ${specialties[i % specialties.length]} specialist with ${randomInt(5, 30)} years of practice.`,
-        profilePhotoId: randomChoice(fileIds),
-        primaryLocation: randomChoice(cities),
-        latitude: randomFloat(25.0, 49.0).toString(),
-        longitude: randomFloat(-125.0, -66.0).toString(),
-        licenseVerificationStatus: randomChoice(['pending', 'verified', 'rejected']),
-        averageRating: randomFloat(3.5, 5.0).toString(),
-        totalRatings: randomInt(10, 500),
-        completedAssignments: randomInt(0, 200),
-      }).returning();
-      
-      doctorIds.push(doctor.id);
-    }
-    console.log(`✅ Created ${doctorIds.length} doctors\n`);
+    await seedFiles();
+    const fileResults = await db.select({ id: files.id }).from(files);
+    const fileIds = fileResults.map(f => f.id);
 
-    // 6. Seed Hospitals (10 records - matching hospital users)
-    console.log('📝 Seeding hospitals...');
-    const hospitalIds: string[] = [];
-    
-    for (let i = 0; i < 10; i++) {
-      try {
-        const [hospital] = await db.insert(schema.hospitals).values({
-          userId: hospitalUserIds[i],
-          name: `${randomChoice(cities)} ${randomChoice(hospitalTypes)}`,
-          registrationNumber: `REG-${Date.now()}-${randomInt(100000, 999999)}`,
-          hospitalType: randomChoice(hospitalTypes),
-          address: `${randomInt(100, 9999)} ${randomString(10)} Street`,
-          city: randomChoice(cities),
-          contactPhone: `+1${randomInt(2000000000, 9999999999)}`,
-          contactEmail: `hospital${Date.now()}-${i + 1}@example.com`,
-          websiteUrl: `https://hospital${i + 1}.example.com`,
-          numberOfBeds: randomInt(50, 500),
-          latitude: randomFloat(25.0, 49.0).toString(),
-          longitude: randomFloat(-125.0, -66.0).toString(),
-          logoId: randomChoice(fileIds),
-          licenseVerificationStatus: randomChoice(['pending', 'verified', 'rejected']),
-        }).returning();
-        
-        hospitalIds.push(hospital.id);
-      } catch (error: any) {
-        console.error(`Error creating hospital ${i + 1}:`, error.message);
-        throw error;
-      }
-    }
-    console.log(`✅ Created ${hospitalIds.length} hospitals\n`);
+    const planIds = await seedSubscriptionPlans();
+    await seedPlanPricing(planIds);
+    const pricingResults = await db.select({ id: planPricing.id }).from(planPricing);
+    const pricingIds = pricingResults.map(p => p.id);
 
-    // 7. Seed Doctor Specialties (30 records)
-    console.log('📝 Seeding doctor specialties...');
-    const doctorSpecialtyPairs = new Set<string>();
-    let createdCount = 0;
-    let attempts = 0;
-    const maxAttempts = 100;
-    
-    while (createdCount < 30 && attempts < maxAttempts) {
-      attempts++;
-      const doctorId = randomChoice(doctorIds);
-      const specialtyId = randomChoice(specialtyIds);
-      const pairKey = `${doctorId}-${specialtyId}`;
-      
-      if (doctorSpecialtyPairs.has(pairKey)) {
-        continue; // Skip duplicate pairs
-      }
-      
-      try {
-        await db.insert(schema.doctorSpecialties).values({
-          doctorId,
-          specialtyId,
-          isPrimary: createdCount < 10,
-          yearsOfExperience: randomInt(1, 10),
-        });
-        doctorSpecialtyPairs.add(pairKey);
-        createdCount++;
-      } catch (error: any) {
-        // Skip if duplicate
-        if (error.code === '23505') {
-          doctorSpecialtyPairs.add(pairKey);
-          continue;
-        }
-        throw error;
-      }
-    }
-    console.log(`✅ Created ${createdCount} doctor specialties\n`);
+    await seedDoctorPlanFeatures(planIds);
+    await seedHospitalPlanFeatures(planIds);
 
-    // 8. Seed Hospital Departments (30 records)
-    console.log('📝 Seeding hospital departments...');
-    const departmentPairs = new Set<string>();
-    let deptCount = 0;
-    let deptAttempts = 0;
-    const maxDeptAttempts = 100;
-    
-    while (deptCount < 30 && deptAttempts < maxDeptAttempts) {
-      deptAttempts++;
-      const hospitalId = randomChoice(hospitalIds);
-      const specialtyId = randomChoice(specialtyIds);
-      const pairKey = `${hospitalId}-${specialtyId}`;
-      
-      if (departmentPairs.has(pairKey)) {
-        continue;
-      }
-      
-      try {
-        await db.insert(schema.hospitalDepartments).values({
-          hospitalId,
-          specialtyId,
-        });
-        departmentPairs.add(pairKey);
-        deptCount++;
-      } catch (error: any) {
-        if (error.code === '23505') {
-          departmentPairs.add(pairKey);
-          continue;
-        }
-        throw error;
-      }
-    }
-    console.log(`✅ Created ${deptCount} hospital departments\n`);
+    const doctorIds = await seedDoctors(userIds);
+    const hospitalIds = await seedHospitals(userIds);
+    const patientIds = await seedPatients(hospitalIds);
 
-    // 9. Seed Doctor Availability (30 records)
-    console.log('📝 Seeding doctor availability...');
-    const availabilityIds: string[] = [];
-    
-    for (let i = 0; i < 30; i++) {
-      const slotDate = new Date(Date.now() + randomInt(1, 30) * 24 * 60 * 60 * 1000);
-      const [availability] = await db.insert(schema.doctorAvailability).values({
-        doctorId: randomChoice(doctorIds),
-        slotDate: slotDate.toISOString().split('T')[0],
-        startTime: `${randomInt(8, 10).toString().padStart(2, '0')}:00:00`,
-        endTime: `${randomInt(16, 18).toString().padStart(2, '0')}:00:00`,
-      }).returning();
-      
-      availabilityIds.push(availability.id);
-    }
-    console.log(`✅ Created ${availabilityIds.length} doctor availability slots\n`);
+    await seedDoctorSpecialties(doctorIds, specialtyIds);
+    await seedSubscriptions(userIds, planIds);
 
-    // 10. Seed Doctor Leaves (30 records)
-    console.log('📝 Seeding doctor leaves...');
-    for (let i = 0; i < 30; i++) {
-      const startDate = new Date(Date.now() + randomInt(-30, 90) * 24 * 60 * 60 * 1000);
-      const endDate = new Date(startDate.getTime() + randomInt(1, 7) * 24 * 60 * 60 * 1000);
-      
-      await db.insert(schema.doctorLeaves).values({
-        doctorId: randomChoice(doctorIds),
-        leaveType: randomChoice(['vacation', 'sick', 'personal', 'other']),
-        startDate: startDate.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0],
-        reason: `Leave reason ${i + 1}`,
-        createdAt: new Date(Date.now() - randomInt(0, 60 * 24 * 60 * 60 * 1000)).toISOString(),
-      });
-    }
-    console.log(`✅ Created 30 doctor leaves\n`);
+    await seedOrders(userIds, planIds);
+    const orderResults = await db.select({ id: orders.id }).from(orders);
+    const orderIds = orderResults.map(o => o.id);
 
-    // 11. Seed Patients (30 records)
-    console.log('📝 Seeding patients...');
-    const patientIds: string[] = [];
-    
-    for (let i = 0; i < 30; i++) {
-      const firstName = firstNames[i];
-      const lastName = lastNames[i];
-      const emergencyContactName = `${firstNames[(i + 1) % firstNames.length]} ${lastNames[(i + 1) % lastNames.length]}`;
-      const emergencyContactPhone = `+1${randomInt(2000000000, 9999999999)}`;
-      
-      const [patient] = await db.insert(schema.patients).values({
-        hospitalId: randomChoice(hospitalIds),
-        fullName: `${firstName} ${lastName}`,
-        dateOfBirth: new Date(1950 + randomInt(0, 70), randomInt(0, 11), randomInt(1, 28)).toISOString().split('T')[0],
-        gender: randomChoice(['male', 'female', 'other']),
-        phone: `+1${randomInt(2000000000, 9999999999)}`,
-        emergencyContact: `${emergencyContactName} - ${emergencyContactPhone}`,
-        address: `${randomInt(100, 9999)} ${randomString(10)} Street`,
-        medicalCondition: `Medical condition for patient ${i + 1}`,
-        roomType: randomChoice(['general', 'private', 'semi_private', 'icu', 'emergency']),
-        costPerDay: randomInt(100, 1000).toString(),
-        medicalNotes: i % 3 === 0 ? `Allergy ${i + 1}` : `Medical notes for patient ${i + 1}`,
-        createdAt: new Date(Date.now() - randomInt(0, 60 * 24 * 60 * 60 * 1000)).toISOString(),
-      }).returning();
-      
-      patientIds.push(patient.id);
-    }
-    console.log(`✅ Created ${patientIds.length} patients\n`);
+    await seedPaymentTransactions(userIds, orderIds);
+    await seedAssignments(doctorIds, hospitalIds, patientIds);
+    await seedNotifications(userIds);
+    await seedAuditLogs(userIds);
+    await seedAnalyticsEvents(userIds);
+    await seedSupportTickets(userIds);
+    await seedNotificationPreferences(userIds);
+    await seedUserDevices(userIds);
 
-    // 12. Seed Assignments (30 records)
-    console.log('📝 Seeding assignments...');
-    const assignmentIds: string[] = [];
-    
-    for (let i = 0; i < 30; i++) {
-      const [assignment] = await db.insert(schema.assignments).values({
-        hospitalId: randomChoice(hospitalIds),
-        doctorId: randomChoice(doctorIds),
-        patientId: randomChoice(patientIds),
-        availabilitySlotId: randomChoice(availabilityIds),
-        priority: randomChoice(priorities),
-        status: randomChoice(statuses),
-        requestedAt: new Date(Date.now() - randomInt(0, 30) * 24 * 60 * 60 * 1000).toISOString(),
-        expiresAt: new Date(Date.now() + randomInt(1, 7) * 24 * 60 * 60 * 1000).toISOString(),
-        actualStartTime: i % 2 === 0 ? new Date(Date.now() - randomInt(0, 5) * 24 * 60 * 60 * 1000).toISOString() : null,
-        actualEndTime: i % 4 === 0 ? new Date(Date.now() - randomInt(0, 2) * 24 * 60 * 60 * 1000).toISOString() : null,
-        treatmentNotes: i % 3 === 0 ? `Treatment notes for assignment ${i + 1}` : null,
-        consultationFee: randomFloat(50, 500).toString(),
-        cancellationReason: i % 5 === 0 ? `Cancellation reason ${i + 1}` : null,
-        cancelledBy: i % 5 === 0 ? randomChoice(['hospital', 'doctor', 'system']) : null,
-        cancelledAt: i % 5 === 0 ? new Date(Date.now() - randomInt(0, 10) * 24 * 60 * 60 * 1000).toISOString() : null,
-        completedAt: i % 4 === 0 ? new Date(Date.now() - randomInt(0, 5) * 24 * 60 * 60 * 1000).toISOString() : null,
-        paidAt: i % 3 === 0 ? new Date(Date.now() - randomInt(0, 3) * 24 * 60 * 60 * 1000).toISOString() : null,
-      }).returning();
-      
-      assignmentIds.push(assignment.id);
-    }
-    console.log(`✅ Created ${assignmentIds.length} assignments\n`);
-
-    // 13.5. Seed Orders (30 records - required for payment transactions and subscriptions)
-    console.log('📝 Seeding orders...');
-    const orderIds: string[] = [];
-    for (let i = 0; i < 30; i++) {
-      const userId = randomChoice(userIds);
-      const planId = randomChoice(planIds);
-      const createdAt = new Date(Date.now() - randomInt(0, 90) * 24 * 60 * 60 * 1000);
-      const status = randomChoice(['pending', 'paid', 'failed', 'expired', 'refunded']);
-      let paidAt = null;
-      if (status === 'paid') {
-        paidAt = new Date(createdAt.getTime() + randomInt(1, 7) * 24 * 60 * 60 * 1000).toISOString();
-      }
-      try {
-        const [order] = await db.insert(schema.orders).values({
-          userId: userId,
-          orderType: randomChoice(['subscription', 'consultation', 'other']),
-          planId: planId,
-          amount: randomInt(1000, 50000) * 100, // in cents (bigint with mode: "number" accepts number)
-          currency: 'USD',
-          description: `Order for ${randomString(10)}`,
-          status: status,
-          createdAt: createdAt.toISOString(),
-          paidAt: paidAt,
-        }).returning();
-        orderIds.push(order.id);
-      } catch (error: any) {
-        console.error(`Error creating order ${i + 1}:`, error.message);
-        throw error;
-      }
-    }
-    console.log(`✅ Created ${orderIds.length} orders\n`);
-
-    // 13. Seed Subscriptions (30 records)
-    console.log('📝 Seeding subscriptions...');
-    for (let i = 0; i < 30; i++) {
-      const startDate = new Date(Date.now() - randomInt(0, 365) * 24 * 60 * 60 * 1000);
-      const endDate = new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000);
-      
-      await db.insert(schema.subscriptions).values({
-        userId: randomChoice(userIds),
-        planId: randomChoice(planIds),
-        orderId: randomChoice(orderIds),
-        status: randomChoice(subscriptionStatuses),
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        autoRenew: Math.random() > 0.5,
-        createdAt: startDate.toISOString(),
-      });
-    }
-    console.log(`✅ Created 30 subscriptions\n`);
-
-    // 14. Seed Payment Transactions (30 records)
-    console.log('📝 Seeding payment transactions...');
-    const paymentTransactionIds: string[] = [];
-    for (let i = 0; i < 30; i++) {
-      const orderId = randomChoice(orderIds);
-      const createdAt = new Date(Date.now() - randomInt(0, 60) * 24 * 60 * 60 * 1000);
-      const status = randomChoice(['pending', 'success', 'failed', 'refunded']);
-      let verifiedAt = null;
-      if (status === 'success') {
-        verifiedAt = new Date(createdAt.getTime() + randomInt(0, 2) * 24 * 60 * 60 * 1000).toISOString();
-      }
-      try {
-        const timestamp = Date.now();
-        const [paymentTransaction] = await db.insert(schema.paymentTransactions).values({
-          orderId: orderId,
-          paymentGateway: randomChoice(['stripe', 'paypal', 'razorpay']),
-          paymentId: `PAY-${timestamp}-${randomInt(100000, 999999)}`,
-          paymentMethod: randomChoice(['credit_card', 'debit_card', 'net_banking']),
-          amount: randomInt(1000, 50000) * 100, // Convert to cents (bigint with mode: "number" accepts number)
-          currency: 'USD',
-          status: status,
-          createdAt: createdAt.toISOString(),
-          verifiedAt: verifiedAt,
-        }).returning();
-        paymentTransactionIds.push(paymentTransaction.id);
-      } catch (error: any) {
-        if (error.code === '23505') { // Unique constraint violation
-          console.warn(`Skipping payment transaction for order ${orderId}: ${error.detail}`);
-          continue;
-        }
-        console.error(`Error creating payment transaction ${i + 1}:`, error.message);
-        throw error;
-      }
-    }
-    console.log(`✅ Created ${paymentTransactionIds.length} payment transactions\n`);
-
-    // 15. Seed Assignment Payments (30 records)
-    console.log('📝 Seeding assignment payments...');
-    for (let i = 0; i < 30; i++) {
-      await db.insert(schema.assignmentPayments).values({
-        assignmentId: randomChoice(assignmentIds),
-        hospitalId: randomChoice(hospitalIds),
-        doctorId: randomChoice(doctorIds),
-        consultationFee: randomFloat(50, 500).toString(),
-        platformCommission: randomFloat(5, 50).toString(),
-        doctorPayout: randomFloat(45, 450).toString(),
-        paymentStatus: randomChoice(['pending', 'processing', 'completed', 'failed']),
-        paidToDoctorAt: Math.random() > 0.3 ? new Date(Date.now() - randomInt(0, 10) * 24 * 60 * 60 * 1000).toISOString() : null,
-        createdAt: new Date(Date.now() - randomInt(0, 15) * 24 * 60 * 60 * 1000).toISOString(),
-      });
-    }
-    console.log(`✅ Created 30 assignment payments\n`);
-
-    // 16. Seed Assignment Ratings (30 records)
-    console.log('📝 Seeding assignment ratings...');
-    for (let i = 0; i < 30; i++) {
-      await db.insert(schema.assignmentRatings).values({
-        assignmentId: randomChoice(assignmentIds),
-        hospitalId: randomChoice(hospitalIds),
-        doctorId: randomChoice(doctorIds),
-        rating: randomInt(1, 5),
-        reviewText: i % 2 === 0 ? `Rating comment ${i + 1}` : null,
-        positiveTags: i % 3 === 0 ? ['professional', 'punctual', 'helpful'] : [],
-        negativeTags: i % 5 === 0 ? ['delayed'] : [],
-      });
-    }
-    console.log(`✅ Created 30 assignment ratings\n`);
-
-    // 17. Seed Notifications (30 records)
-    console.log('📝 Seeding notifications...');
-    for (let i = 0; i < 30; i++) {
-      await db.insert(schema.notifications).values({
-        recipientId: randomChoice(userIds),
-        recipientType: randomChoice(['user', 'role', 'all']),
-        title: `Notification ${i + 1}`,
-        message: `This is notification message ${i + 1}`,
-        channel: randomChoice(['push', 'email', 'sms', 'in_app']),
-        read: Math.random() > 0.5,
-        priority: randomChoice(priorities),
-        assignmentId: i % 2 === 0 ? randomChoice(assignmentIds) : null,
-        payload: { type: 'assignment', assignmentId: assignmentIds[i % assignmentIds.length] },
-        createdAt: new Date(Date.now() - randomInt(0, 7) * 24 * 60 * 60 * 1000).toISOString(),
-      });
-    }
-    console.log(`✅ Created 30 notifications\n`);
-
-    // 18. Seed Support Tickets (30 records)
-    console.log('📝 Seeding support tickets...');
-    const ticketIds: string[] = [];
-    
-    for (let i = 0; i < 30; i++) {
-      const [ticket] = await db.insert(schema.supportTickets).values({
-        userId: randomChoice(userIds),
-        bookingId: i % 3 === 0 ? randomChoice(assignmentIds) : null,
-        subject: `Support Ticket ${i + 1}`,
-        description: `Description for support ticket ${i + 1}`,
-        category: randomChoice(['technical', 'billing', 'general', 'urgent']),
-        priority: randomChoice(priorities),
-        status: randomChoice(['open', 'in_progress', 'resolved', 'closed']),
-        assignedTo: i % 2 === 0 ? randomChoice(userIds) : null,
-        createdAt: new Date(Date.now() - randomInt(0, 14) * 24 * 60 * 60 * 1000).toISOString(),
-      }).returning();
-      
-      ticketIds.push(ticket.id);
-    }
-    console.log(`✅ Created ${ticketIds.length} support tickets\n`);
-
-    // 19. Seed Analytics Events (30 records)
-    console.log('📝 Seeding analytics events...');
-    for (let i = 0; i < 30; i++) {
-      await db.insert(schema.analyticsEvents).values({
-        userId: randomChoice(userIds),
-        eventType: randomChoice(['page_view', 'click', 'form_submit', 'api_call']),
-        eventName: `Event ${i + 1}`,
-        properties: { key: `value${i + 1}`, timestamp: new Date().toISOString() },
-        createdAt: new Date(Date.now() - randomInt(0, 7) * 24 * 60 * 60 * 1000).toISOString(),
-      });
-    }
-    console.log(`✅ Created 30 analytics events\n`);
-
-    // 20. Seed User Devices (30 records)
-    console.log('📝 Seeding user devices...');
-    for (let i = 0; i < 30; i++) {
-      await db.insert(schema.userDevices).values({
-        userId: randomChoice(userIds),
-        deviceType: randomChoice(['ios', 'android', 'web']),
-        deviceToken: `device-token-${randomString(20)}`,
-        appVersion: `${randomInt(1, 3)}.${randomInt(0, 9)}.${randomInt(0, 9)}`,
-        osVersion: `${randomInt(10, 17)}.${randomInt(0, 9)}`,
-        deviceName: randomChoice(['iPhone', 'Android', 'Chrome', 'Safari', 'Firefox']),
-        isActive: Math.random() > 0.3,
-        lastUsedAt: new Date(Date.now() - randomInt(0, 7) * 24 * 60 * 60 * 1000).toISOString(),
-        createdAt: new Date(Date.now() - randomInt(0, 30) * 24 * 60 * 60 * 1000).toISOString(),
-      });
-    }
-    console.log(`✅ Created 30 user devices\n`);
-
-    // 21. Seed Doctor Hospital Affiliations (30 records)
-    console.log('📝 Seeding doctor hospital affiliations...');
-    const affiliationPairs = new Set<string>();
-    let affiliationCount = 0;
-    let affiliationAttempts = 0;
-    const maxAffiliationAttempts = 100;
-    
-    while (affiliationCount < 30 && affiliationAttempts < maxAffiliationAttempts) {
-      affiliationAttempts++;
-      const doctorId = randomChoice(doctorIds);
-      const hospitalId = randomChoice(hospitalIds);
-      const pairKey = `${doctorId}-${hospitalId}`;
-      
-      if (affiliationPairs.has(pairKey)) {
-        continue;
-      }
-      
-      try {
-        await db.insert(schema.doctorHospitalAffiliations).values({
-          doctorId,
-          hospitalId,
-          status: randomChoice(['active', 'inactive', 'pending', 'suspended']),
-          isPreferred: Math.random() > 0.7,
-          createdAt: new Date(Date.now() - randomInt(0, 180) * 24 * 60 * 60 * 1000).toISOString(),
-        });
-        affiliationPairs.add(pairKey);
-        affiliationCount++;
-      } catch (error: any) {
-        if (error.code === '23505') {
-          affiliationPairs.add(pairKey);
-          continue;
-        }
-        throw error;
-      }
-    }
-    console.log(`✅ Created ${affiliationCount} doctor hospital affiliations\n`);
-
-    // 22. Seed Doctor Credentials (30 records)
-    console.log('📝 Seeding doctor credentials...');
-    for (let i = 0; i < 30; i++) {
-      await db.insert(schema.doctorCredentials).values({
-        doctorId: randomChoice(doctorIds),
-        fileId: randomChoice(fileIds),
-        credentialType: randomChoice(['degree', 'certification', 'license', 'award']),
-        title: randomChoice(['MD', 'PhD', 'Board Certified', 'Fellow']),
-        institution: `Institution ${i + 1}`,
-        verificationStatus: randomChoice(['pending', 'verified', 'rejected']),
-      });
-    }
-    console.log(`✅ Created 30 doctor credentials\n`);
-
-    // 23. Seed Orders (30 records)
-    console.log('📝 Seeding orders...');
-    for (let i = 0; i < 30; i++) {
-      await db.insert(schema.orders).values({
-        userId: randomChoice(userIds),
-        orderType: randomChoice(['subscription', 'consultation', 'other']),
-        planId: randomChoice(planIds),
-        amount: randomInt(29, 299) * 100, // Convert to cents (bigint with mode: "number" accepts number)
-        currency: 'USD',
-        description: `Order ${i + 1} description`,
-        status: randomChoice(['pending', 'paid', 'failed', 'expired', 'refunded']),
-        createdAt: new Date(Date.now() - randomInt(0, 30) * 24 * 60 * 60 * 1000).toISOString(),
-        expiresAt: new Date(Date.now() + randomInt(1, 7) * 24 * 60 * 60 * 1000).toISOString(),
-        paidAt: Math.random() > 0.4 ? new Date(Date.now() - randomInt(0, 20) * 24 * 60 * 60 * 1000).toISOString() : null,
-        failureReason: Math.random() > 0.8 ? `Failure reason ${i + 1}` : null,
-        webhookReceived: Math.random() > 0.5,
-      });
-    }
-    console.log(`✅ Created 30 orders\n`);
-
-    // 24. Seed Hospital Plan Features (8 records - 2 per hospital plan)
-    console.log('📝 Seeding hospital plan features...');
-    for (let i = 0; i < 8; i++) {
-      await db.insert(schema.hospitalPlanFeatures).values({
-        planId: hospitalPlanIds[i % hospitalPlanIds.length],
-        maxPatientsPerMonth: randomInt(100, 10000),
-        includesPremiumDoctors: Math.random() > 0.5,
-        notes: `Plan feature notes ${i + 1}`,
-      });
-    }
-    console.log(`✅ Created 8 hospital plan features\n`);
-
-    // 25. Seed Doctor Plan Features (8 records - 2 per doctor plan)
-    console.log('📝 Seeding doctor plan features...');
-    for (let i = 0; i < 8; i++) {
-      await db.insert(schema.doctorPlanFeatures).values({
-        planId: doctorPlanIds[i % doctorPlanIds.length],
-        visibilityWeight: randomInt(1, 10),
-        maxAffiliations: randomInt(1, 20),
-        notes: `Plan feature notes ${i + 1}`,
-      });
-    }
-    console.log(`✅ Created 8 doctor plan features\n`);
-
-    // 26. Seed Patient Consents (30 records)
-    console.log('📝 Seeding patient consents...');
-    for (let i = 0; i < 30; i++) {
-      await db.insert(schema.patientConsents).values({
-        patientId: randomChoice(patientIds),
-        consentType: randomChoice(['treatment', 'data_sharing', 'research', 'photography', 'other']),
-        granted: Math.random() > 0.3,
-        grantedBy: randomChoice(['patient', 'guardian', 'family_member', 'self']),
-        relationToPatient: Math.random() > 0.5 ? randomChoice(['spouse', 'child', 'parent', 'sibling']) : undefined,
-        digitalSignature: Math.random() > 0.5 ? `signature-${i + 1}` : undefined,
-        grantedAt: new Date(Date.now() - randomInt(0, 30) * 24 * 60 * 60 * 1000).toISOString(),
-      });
-    }
-    console.log(`✅ Created 30 patient consents\n`);
-
-    console.log('\n🎉 Database seeding completed successfully!');
-    console.log(`\n📊 Summary:`);
-    console.log(`   - Users: ${userIds.length}`);
+    console.log('✅ Database seeding completed successfully!\n');
+    console.log('📊 Summary:');
+    console.log(`   - Specialties: ${specialtyIds.length}`);
+    console.log(`   - Files: ${fileIds.length}`);
+    console.log(`   - Subscription Plans: ${planIds.length}`);
+    console.log(`   - Pricing Options: ${pricingIds.length}`);
     console.log(`   - Doctors: ${doctorIds.length}`);
     console.log(`   - Hospitals: ${hospitalIds.length}`);
     console.log(`   - Patients: ${patientIds.length}`);
-    console.log(`   - Assignments: ${assignmentIds.length}`);
-    console.log(`   - Specialties: ${specialtyIds.length}`);
-    console.log(`   - And many more...\n`);
+    console.log(`   - Orders: ${orderIds.length}`);
+    console.log(`   - And 30 records in other tables\n`);
 
   } catch (error) {
-    console.error('❌ Error seeding database:', error);
-    throw error;
+    console.error('❌ Error during seeding:', error);
+    process.exit(1);
   }
 }
 
-// Run the seeding script
-seedDatabase()
+// Run the script
+main()
   .then(() => {
-    console.log('✅ Seeding script completed');
+    console.log('✨ Script completed!');
     process.exit(0);
   })
   .catch((error) => {
-    console.error('❌ Seeding script failed:', error);
+    console.error('💥 Fatal error:', error);
     process.exit(1);
   });
-

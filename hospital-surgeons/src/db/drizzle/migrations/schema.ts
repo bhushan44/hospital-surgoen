@@ -1,4 +1,4 @@
-import { pgTable, index, foreignKey, check, uuid, text, json, timestamp, boolean, unique, bigint, integer, varchar, numeric, time, date, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, index, foreignKey, check, uuid, text, json, timestamp, boolean, integer, unique, varchar, bigint, numeric, time, date, jsonb } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -31,20 +31,6 @@ export const notifications = pgTable("notifications", {
 		}),
 	check("notifications_priority_check", sql`priority = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'urgent'::text])`),
 	check("notifications_recipient_type_check", sql`recipient_type = ANY (ARRAY['user'::text, 'role'::text, 'all'::text])`),
-]);
-
-export const subscriptionPlans = pgTable("subscription_plans", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	name: text().notNull(),
-	tier: text().notNull(),
-	userRole: text("user_role").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	price: bigint({ mode: "number" }).default(0).notNull(),
-	currency: text().default('USD').notNull(),
-}, (table) => [
-	unique("subscription_plans_name_key").on(table.name),
-	check("subscription_plans_tier_check", sql`tier = ANY (ARRAY['free'::text, 'basic'::text, 'premium'::text, 'enterprise'::text])`),
-	check("subscription_plans_user_role_check", sql`user_role = ANY (ARRAY['doctor'::text, 'hospital'::text])`),
 ]);
 
 export const doctorPlanFeatures = pgTable("doctor_plan_features", {
@@ -210,45 +196,6 @@ export const specialties = pgTable("specialties", {
 	description: text(),
 }, (table) => [
 	unique("specialties_name_key").on(table.name),
-]);
-
-export const subscriptions = pgTable("subscriptions", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	userId: uuid("user_id").notNull(),
-	planId: uuid("plan_id").notNull(),
-	orderId: uuid("order_id"),
-	paymentTransactionId: uuid("payment_transaction_id"),
-	status: text().default('active').notNull(),
-	startDate: timestamp("start_date", { mode: 'string' }).notNull(),
-	endDate: timestamp("end_date", { mode: 'string' }).notNull(),
-	autoRenew: boolean("auto_renew").default(true),
-	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-	index("idx_subscriptions_end_date").using("btree", table.endDate.asc().nullsLast().op("timestamp_ops")),
-	index("idx_subscriptions_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
-	index("idx_subscriptions_user_id").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
-	foreignKey({
-			columns: [table.orderId],
-			foreignColumns: [orders.id],
-			name: "subscriptions_order_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.paymentTransactionId],
-			foreignColumns: [paymentTransactions.id],
-			name: "subscriptions_payment_transaction_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.planId],
-			foreignColumns: [subscriptionPlans.id],
-			name: "subscriptions_plan_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.userId],
-			foreignColumns: [users.id],
-			name: "subscriptions_user_id_fkey"
-		}).onDelete("cascade"),
-	check("subscriptions_status_check", sql`status = ANY (ARRAY['active'::text, 'expired'::text, 'cancelled'::text, 'suspended'::text])`),
 ]);
 
 export const hospitals = pgTable("hospitals", {
@@ -824,6 +771,129 @@ export const notificationPreferences = pgTable("notification_preferences", {
 			name: "notification_preferences_user_id_fkey"
 		}).onDelete("cascade"),
 	unique("notification_preferences_user_id_key").on(table.userId),
+]);
+
+export const subscriptionPlans = pgTable("subscription_plans", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	name: text().notNull(),
+	tier: text().notNull(),
+	userRole: text("user_role").notNull(),
+	isActive: boolean("is_active").default(true),
+	description: text(),
+	defaultBillingCycle: text("default_billing_cycle"),
+}, (table) => [
+	unique("subscription_plans_name_key").on(table.name),
+	check("subscription_plans_default_billing_cycle_check", sql`default_billing_cycle = ANY (ARRAY['monthly'::text, 'quarterly'::text, 'yearly'::text, 'custom'::text])`),
+	check("subscription_plans_tier_check", sql`tier = ANY (ARRAY['free'::text, 'basic'::text, 'premium'::text, 'enterprise'::text])`),
+	check("subscription_plans_user_role_check", sql`user_role = ANY (ARRAY['doctor'::text, 'hospital'::text])`),
+]);
+
+export const planPricing = pgTable("plan_pricing", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	planId: uuid("plan_id").notNull(),
+	billingCycle: text("billing_cycle").notNull(),
+	billingPeriodMonths: integer("billing_period_months").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	price: bigint({ mode: "number" }).notNull(),
+	currency: text().default('USD').notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	setupFee: bigint("setup_fee", { mode: "number" }).default(0),
+	discountPercentage: numeric("discount_percentage", { precision: 5, scale:  2 }).default('0.00'),
+	isActive: boolean("is_active").default(true),
+	validFrom: timestamp("valid_from", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	validUntil: timestamp("valid_until", { mode: 'string' }),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	index("idx_plan_pricing_active").using("btree", table.isActive.asc().nullsLast().op("bool_ops")).where(sql`(is_active = true)`),
+	index("idx_plan_pricing_plan_id").using("btree", table.planId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.planId],
+			foreignColumns: [subscriptionPlans.id],
+			name: "plan_pricing_plan_id_fkey"
+		}).onDelete("cascade"),
+	unique("plan_pricing_plan_id_billing_cycle_key").on(table.planId, table.billingCycle),
+	check("plan_pricing_billing_cycle_check", sql`billing_cycle = ANY (ARRAY['monthly'::text, 'quarterly'::text, 'yearly'::text, 'custom'::text])`),
+]);
+
+export const subscriptions = pgTable("subscriptions", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	planId: uuid("plan_id").notNull(),
+	orderId: uuid("order_id"),
+	paymentTransactionId: uuid("payment_transaction_id"),
+	status: text().default('active').notNull(),
+	startDate: timestamp("start_date", { mode: 'string' }).notNull(),
+	endDate: timestamp("end_date", { mode: 'string' }).notNull(),
+	autoRenew: boolean("auto_renew").default(true),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	billingCycle: text("billing_cycle").default('monthly'),
+	billingPeriodMonths: integer("billing_period_months").default(1),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	priceAtPurchase: bigint("price_at_purchase", { mode: "number" }).default(0),
+	currencyAtPurchase: text("currency_at_purchase").default('USD'),
+	pricingId: uuid("pricing_id"),
+	planSnapshot: jsonb("plan_snapshot"),
+	featuresAtPurchase: jsonb("features_at_purchase"),
+	renewalPriceStrategy: text("renewal_price_strategy").default('current'),
+	nextRenewalDate: timestamp("next_renewal_date", { mode: 'string' }),
+	lastRenewalDate: timestamp("last_renewal_date", { mode: 'string' }),
+	renewalCount: integer("renewal_count").default(0),
+	cancelledAt: timestamp("cancelled_at", { mode: 'string' }),
+	cancellationReason: text("cancellation_reason"),
+	cancelledBy: text("cancelled_by"),
+	previousSubscriptionId: uuid("previous_subscription_id"),
+	upgradeFromPlanId: uuid("upgrade_from_plan_id"),
+	upgradeFromPricingId: uuid("upgrade_from_pricing_id"),
+}, (table) => [
+	index("idx_subscriptions_end_date").using("btree", table.endDate.asc().nullsLast().op("timestamp_ops")),
+	index("idx_subscriptions_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	index("idx_subscriptions_user_id").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.orderId],
+			foreignColumns: [orders.id],
+			name: "subscriptions_order_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.paymentTransactionId],
+			foreignColumns: [paymentTransactions.id],
+			name: "subscriptions_payment_transaction_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.planId],
+			foreignColumns: [subscriptionPlans.id],
+			name: "subscriptions_plan_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.previousSubscriptionId],
+			foreignColumns: [table.id],
+			name: "subscriptions_previous_subscription_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.pricingId],
+			foreignColumns: [planPricing.id],
+			name: "subscriptions_pricing_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.upgradeFromPlanId],
+			foreignColumns: [subscriptionPlans.id],
+			name: "subscriptions_upgrade_from_plan_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.upgradeFromPricingId],
+			foreignColumns: [planPricing.id],
+			name: "subscriptions_upgrade_from_pricing_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "subscriptions_user_id_fkey"
+		}).onDelete("cascade"),
+	check("subscriptions_billing_cycle_check", sql`billing_cycle = ANY (ARRAY['monthly'::text, 'quarterly'::text, 'yearly'::text, 'custom'::text])`),
+	check("subscriptions_cancelled_by_check", sql`cancelled_by = ANY (ARRAY['user'::text, 'admin'::text, 'system'::text])`),
+	check("subscriptions_renewal_price_strategy_check", sql`renewal_price_strategy = ANY (ARRAY['locked'::text, 'current'::text, 'user_choice'::text])`),
+	check("subscriptions_status_check", sql`status = ANY (ARRAY['active'::text, 'expired'::text, 'cancelled'::text, 'suspended'::text])`),
 ]);
 
 export const hospitalPlanFeatures = pgTable("hospital_plan_features", {
