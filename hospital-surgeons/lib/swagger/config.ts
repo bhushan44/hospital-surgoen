@@ -19,7 +19,7 @@ const options: swaggerJsdoc.Options = {
         description: 'Development server',
       },
       {
-        url: 'https://bx.artofliving.org',
+        url: 'https://hospital-surgoen.onrender.com',
         description: 'Production server',
       },
     ],
