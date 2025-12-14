@@ -19,11 +19,23 @@ import apiClient from '@/lib/api/httpClient';
 import { toast } from 'sonner';
 import { PageHeader } from '../../hospital/_components/PageHeader';
 
+interface PricingOption {
+  id: string;
+  billingCycle: string;
+  billingPeriodMonths: number;
+  price: number; // in cents
+  currency: string;
+  setupFee: number;
+  discountPercentage: number;
+  isActive: boolean;
+}
+
 interface HospitalFeatures {
   id: string;
   planId: string;
   maxPatientsPerMonth: number | null;
   includesPremiumDoctors: boolean;
+  maxAssignmentsPerMonth: number | null;
   notes: string | null;
 }
 
@@ -31,9 +43,8 @@ interface Plan {
   id: string;
   name: string;
   tier: 'free' | 'basic' | 'premium' | 'enterprise';
-  price: number;
-  currency: string;
   userRole: string;
+  pricingOptions?: PricingOption[];
   hospitalFeatures?: HospitalFeatures[];
 }
 
@@ -42,6 +53,10 @@ interface Subscription {
   status: string;
   startDate: string;
   endDate: string;
+  billingCycle?: string;
+  billingPeriodMonths?: number;
+  priceAtPurchase?: number;
+  currencyAtPurchase?: string;
   plan: Plan;
 }
 
@@ -52,6 +67,7 @@ export function SubscriptionBilling() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [selectedPricing, setSelectedPricing] = useState<Record<string, string>>({}); // planId -> pricingId
 
   useEffect(() => {
     fetchData();
@@ -83,7 +99,21 @@ export function SubscriptionBilling() {
       // Check for active subscription
       const subscriptionResponse = await apiClient.get('/api/subscriptions/current');
       if (subscriptionResponse.data.success && subscriptionResponse.data.data) {
-        setCurrentSubscription(subscriptionResponse.data.data);
+        const subscriptionData = subscriptionResponse.data.data;
+        if (subscriptionData && subscriptionData.subscription && subscriptionData.plan) {
+          const sub = subscriptionData.subscription;
+          setCurrentSubscription({
+            id: sub.id,
+            status: sub.status,
+            startDate: sub.startDate,
+            endDate: sub.endDate,
+            billingCycle: sub.billingCycle || sub.billing_cycle,
+            billingPeriodMonths: sub.billingPeriodMonths || sub.billing_period_months,
+            priceAtPurchase: sub.priceAtPurchase || sub.price_at_purchase,
+            currencyAtPurchase: sub.currencyAtPurchase || sub.currency_at_purchase,
+            plan: subscriptionData.plan,
+          });
+        }
       }
     } catch (error: any) {
       console.error('Error fetching data:', error);
@@ -95,7 +125,7 @@ export function SubscriptionBilling() {
     }
   };
 
-  const handleSelectPlan = async (planId: string) => {
+  const handleSelectPlan = async (planId: string, pricingId?: string) => {
     if (!userId) {
       toast.error('User not found. Please login again.');
       router.push('/login');
@@ -112,43 +142,51 @@ export function SubscriptionBilling() {
       }
 
       const plan = planResponse.data.data;
-      
-      // Calculate dates (1 month subscription)
-      const startDate = new Date();
-      const endDate = new Date();
-      endDate.setMonth(endDate.getMonth() + 1);
 
-      // Create subscription
-      // Note: Schema only allows: 'active' | 'expired' | 'cancelled' | 'suspended'
-      const subscriptionData = {
-        userId: userId,
-        planId: planId,
-        status: 'active', // All plans start as active (free plans are active, paid plans can be activated after payment)
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        autoRenew: plan.tier !== 'free', // Free plans don't auto-renew
-      };
+      // If free plan, activate directly
+      if (plan.tier === 'free') {
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setFullYear(endDate.getFullYear() + 10); // Free plan valid for 10 years
 
-      const createResponse = await apiClient.post('/api/subscriptions', subscriptionData);
-      
-      if (createResponse.data.success) {
-        toast.success(
-          plan.tier === 'free' 
-            ? 'Free plan activated successfully!' 
-            : 'Subscription created! Please complete payment to activate.'
-        );
-        
-        // Refresh data
-        await fetchData();
-        
-        // If free plan, redirect to dashboard
-        if (plan.tier === 'free') {
-          setTimeout(() => {
-            router.push('/hospital/dashboard');
-          }, 1500);
+        const subscriptionData = {
+          planId: planId,
+          status: 'active',
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          autoRenew: false,
+        };
+
+        const createResponse = await apiClient.post('/api/subscriptions', subscriptionData);
+        if (createResponse.data.success) {
+          toast.success('Free plan activated successfully!');
+          await fetchData();
+          router.push('/hospital/dashboard');
+        } else {
+          throw new Error(createResponse.data.message || 'Failed to activate plan');
         }
       } else {
-        throw new Error(createResponse.data.message || 'Failed to create subscription');
+        // Paid plan - need to select pricing option first
+        if (!pricingId) {
+          toast.error('Please select a billing cycle');
+          setSelectingPlan(null);
+          return;
+        }
+
+        // Find the selected pricing option
+        const selectedPricingOption = plan.pricingOptions?.find(p => p.id === pricingId);
+        if (!selectedPricingOption) {
+          throw new Error('Selected pricing option not found');
+        }
+
+        // Calculate end date based on billing period
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + selectedPricingOption.billingPeriodMonths);
+
+        // Redirect to payment page with pricing details
+        const amount = selectedPricingOption.price / 100; // Convert from cents
+        router.push(`/hospital/subscriptions/payment?planId=${planId}&pricingId=${pricingId}&amount=${amount}&currency=${selectedPricingOption.currency}&billingCycle=${selectedPricingOption.billingCycle}`);
       }
     } catch (error: any) {
       console.error('Error selecting plan:', error);
@@ -215,10 +253,51 @@ export function SubscriptionBilling() {
                         )}
                       </CardTitle>
                       <div className="mt-4">
-                        <span className="text-3xl font-bold text-slate-900">
-                          {isFree ? 'Free' : `₹${(plan.price / 100).toLocaleString()}`}
-                        </span>
-                        {!isFree && <span className="text-slate-500">/month</span>}
+                        {isFree ? (
+                          <span className="text-3xl font-bold text-slate-900">Free</span>
+                        ) : plan.pricingOptions && plan.pricingOptions.length > 0 ? (
+                          <div>
+                            {plan.pricingOptions.length > 1 ? (
+                              <div className="mb-3">
+                                <label className="block text-xs font-medium text-slate-700 mb-1">
+                                  Billing Cycle
+                                </label>
+                                <select
+                                  value={selectedPricing[plan.id] || plan.pricingOptions[0].id}
+                                  onChange={(e) => setSelectedPricing({ ...selectedPricing, [plan.id]: e.target.value })}
+                                  className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                >
+                                  {plan.pricingOptions.map((option) => (
+                                    <option key={option.id} value={option.id}>
+                                      {option.billingCycle.charAt(0).toUpperCase() + option.billingCycle.slice(1)}
+                                      {option.billingPeriodMonths > 1 && ` (${option.billingPeriodMonths} months)`}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : null}
+                            {(() => {
+                              const selectedPricingId = selectedPricing[plan.id] || plan.pricingOptions[0].id;
+                              const selectedOption = plan.pricingOptions.find(p => p.id === selectedPricingId) || plan.pricingOptions[0];
+                              return (
+                                <div>
+                                  <span className="text-3xl font-bold text-slate-900">
+                                    {selectedOption.currency === 'INR' ? '₹' : '$'}
+                                    {(selectedOption.price / 100).toLocaleString()}
+                                  </span>
+                                  <span className="text-slate-500">
+                                    {' '}/ {selectedOption.billingCycle === 'monthly' ? 'month' :
+                                            selectedOption.billingCycle === 'quarterly' ? 'quarter' :
+                                            selectedOption.billingCycle === 'yearly' ? 'year' :
+                                            `${selectedOption.billingPeriodMonths} months`}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        ) : (
+                          <span className="text-3xl font-bold text-slate-900">Contact for pricing</span>
+                        )}
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -271,7 +350,10 @@ export function SubscriptionBilling() {
                           </ul>
                         </div>
                         <Button
-                          onClick={() => handleSelectPlan(plan.id)}
+                          onClick={() => {
+                            const selectedPricingId = selectedPricing[plan.id] || (plan.pricingOptions && plan.pricingOptions[0]?.id);
+                            handleSelectPlan(plan.id, selectedPricingId);
+                          }}
                           disabled={selectingPlan === plan.id}
                           className={`w-full ${
                             isPopular
@@ -346,9 +428,26 @@ export function SubscriptionBilling() {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div>
-                <p className="text-slate-500 text-sm mb-1">Monthly Price</p>
+                <p className="text-slate-500 text-sm mb-1">Price</p>
                 <p className="text-2xl font-semibold text-slate-900">
-                  {isFree ? 'Free' : `₹${(plan.price / 100).toLocaleString()}`}
+                  {isFree ? (
+                    'Free'
+                  ) : currentSubscription.priceAtPurchase ? (
+                    <>
+                      {currentSubscription.currencyAtPurchase === 'INR' ? '₹' : '$'}
+                      {(currentSubscription.priceAtPurchase / 100).toLocaleString()}
+                      {currentSubscription.billingCycle && (
+                        <span className="text-sm text-slate-500">
+                          {' '}/ {currentSubscription.billingCycle === 'monthly' ? 'month' :
+                                  currentSubscription.billingCycle === 'quarterly' ? 'quarter' :
+                                  currentSubscription.billingCycle === 'yearly' ? 'year' :
+                                  `${currentSubscription.billingPeriodMonths || 1} months`}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    'N/A'
+                  )}
                 </p>
               </div>
               <div>

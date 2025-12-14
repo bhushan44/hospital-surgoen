@@ -127,9 +127,21 @@ function LoginForm() {
       } else {
         alert(data.message || 'Login failed');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
-      alert('An error occurred during login');
+      
+      // Handle API errors with proper error messages
+      if (error.response) {
+        const errorData = error.response.data;
+        const errorMessage = errorData?.message || 'An error occurred during login';
+        
+        // Show the error message from the API
+        alert(errorMessage);
+      } else if (error.request) {
+        alert('Unable to connect to the server. Please check your internet connection.');
+      } else {
+        alert('An unexpected error occurred during login');
+      }
     } finally {
       setLoading(false);
     }

@@ -44,6 +44,7 @@ export async function GET(
             userRole: planData.userRole,
             visibilityWeight: features[0].visibilityWeight,
             maxAffiliations: features[0].maxAffiliations,
+            maxAssignmentsPerMonth: features[0].maxAssignmentsPerMonth,
             notes: features[0].notes,
           },
         });
@@ -116,7 +117,7 @@ export async function PUT(
 
     // Update or create features based on user role
     if (planData.userRole === 'doctor') {
-      const { visibilityWeight, maxAffiliations, notes } = body;
+      const { visibilityWeight, maxAffiliations, maxAssignmentsPerMonth, notes } = body;
 
       const existing = await db
         .select()
@@ -131,6 +132,7 @@ export async function PUT(
           .set({
             visibilityWeight: visibilityWeight !== undefined ? visibilityWeight : existing[0].visibilityWeight,
             maxAffiliations: maxAffiliations !== undefined ? maxAffiliations : existing[0].maxAffiliations,
+            maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : existing[0].maxAssignmentsPerMonth,
             notes: notes !== undefined ? notes : existing[0].notes,
           })
           .where(eq(doctorPlanFeatures.planId, planId))
@@ -149,6 +151,7 @@ export async function PUT(
             planId: planId,
             visibilityWeight: visibilityWeight || 1,
             maxAffiliations: maxAffiliations || 1,
+            maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : null,
             notes: notes || null,
           })
           .returning();

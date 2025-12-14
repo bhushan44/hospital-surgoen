@@ -12,7 +12,10 @@ function PaymentFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const planId = searchParams.get('planId');
+  const pricingId = searchParams.get('pricingId');
   const amount = searchParams.get('amount');
+  const currency = searchParams.get('currency') || 'INR';
+  const billingCycle = searchParams.get('billingCycle') || 'monthly';
 
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -135,7 +138,10 @@ function PaymentFormContent() {
       // Prepare payment data
       const paymentData: any = {
         planId: planId,
-        amount: parseFloat(amount || '0'),
+        pricingId: pricingId || selectedPricing?.id,
+        amount: priceInDollars,
+        currency: displayCurrency,
+        billingCycle: selectedPricing?.billingCycle || billingCycle,
         paymentMethod: paymentMethod,
       };
 
@@ -185,7 +191,13 @@ function PaymentFormContent() {
     return null;
   }
 
-  const priceInDollars = plan.price / 100;
+  // Get the selected pricing option or default to first one
+  const selectedPricing = pricingId 
+    ? plan.pricingOptions?.find(p => p.id === pricingId)
+    : plan.pricingOptions?.[0];
+  
+  const priceInDollars = selectedPricing ? selectedPricing.price / 100 : parseFloat(amount || '0');
+  const displayCurrency = selectedPricing?.currency || currency;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -212,9 +224,14 @@ function PaymentFormContent() {
             </div>
             <div className="text-right">
               <p className="text-2xl font-bold text-gray-900">
-                ₹{priceInDollars.toLocaleString()}
+                {displayCurrency === 'INR' ? '₹' : '$'}{priceInDollars.toLocaleString()}
               </p>
-              <p className="text-sm text-gray-600">per month</p>
+              <p className="text-sm text-gray-600">
+                per {selectedPricing?.billingCycle === 'monthly' ? 'month' : 
+                     selectedPricing?.billingCycle === 'quarterly' ? 'quarter' :
+                     selectedPricing?.billingCycle === 'yearly' ? 'year' :
+                     `${selectedPricing?.billingPeriodMonths || 1} months`}
+              </p>
             </div>
           </div>
         </div>
@@ -469,7 +486,7 @@ function PaymentFormContent() {
                     Processing Payment...
                   </>
                 ) : (
-                  `Pay ₹${priceInDollars.toLocaleString()}`
+                  `Pay ${displayCurrency === 'INR' ? '₹' : '$'}${priceInDollars.toLocaleString()}`
                 )}
               </button>
               <p className="text-xs text-gray-500 text-center mt-3">
@@ -494,6 +511,8 @@ export default function PaymentPage() {
     </Suspense>
   );
 }
+
+
 
 
 

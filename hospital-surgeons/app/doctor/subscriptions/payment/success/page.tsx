@@ -63,7 +63,11 @@ function PaymentSuccessContent() {
     );
   }
 
-  const priceInDollars = plan ? plan.price / 100 : 0;
+  // Get price from subscription (price_at_purchase) or fallback to plan pricing
+  const priceAtPurchase = subscription?.priceAtPurchase || subscription?.price_at_purchase;
+  const currencyAtPurchase = subscription?.currencyAtPurchase || subscription?.currency_at_purchase || 'INR';
+  const priceInDollars = priceAtPurchase ? priceAtPurchase / 100 : (plan?.pricingOptions?.[0]?.price || 0) / 100;
+  
   const renewalDate = subscription?.endDate
     ? new Date(subscription.endDate).toLocaleDateString('en-US', {
         month: 'long',
@@ -106,7 +110,7 @@ function PaymentSuccessContent() {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Amount Paid</span>
                     <span className="font-semibold text-gray-900">
-                      ₹{priceInDollars.toLocaleString()}
+                      {currencyAtPurchase === 'INR' ? '₹' : '$'}{priceInDollars.toLocaleString()}
                     </span>
                   </div>
                 </>

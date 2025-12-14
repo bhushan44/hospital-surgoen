@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { getDb } from '@/lib/db';
-import { orders, paymentTransactions, subscriptions, subscriptionPlans, users } from '@/src/db/drizzle/migrations/schema';
-import { eq, desc } from 'drizzle-orm';
+import { orders, paymentTransactions, subscriptions, subscriptionPlans, planPricing } from '@/src/db/drizzle/migrations/schema';
+import { eq, desc, and } from 'drizzle-orm';
+import { SubscriptionsService } from '@/lib/services/subscriptions.service';
 
 /**
  * Dummy Payment API Endpoint
  * Simulates payment processing for subscription upgrades
  * Always returns success for testing purposes
+ * 
+ * Now uses SubscriptionsService.create() to ensure features_at_purchase and plan_snapshot are stored
  */
 async function postHandler(req: NextRequest) {
   try {
     const user = (req as any).user;
     const body = await req.json();
-    const { planId, amount, paymentMethod, cardNumber, expiryDate, cvv, cardholderName, upiId, bankName, accountNumber } = body;
+    const { planId, pricingId, amount, currency, billingCycle, paymentMethod, cardNumber, expiryDate, cvv, cardholderName, upiId, bankName, accountNumber } = body;
 
     if (!planId || !amount) {
       return NextResponse.json(
@@ -25,34 +28,92 @@ async function postHandler(req: NextRequest) {
     const db = getDb();
 
     // Get plan details
-    const plan = await db
+    const [planData] = await db
       .select()
       .from(subscriptionPlans)
       .where(eq(subscriptionPlans.id, planId))
       .limit(1);
 
-    if (plan.length === 0) {
+    if (!planData) {
       return NextResponse.json(
         { success: false, message: 'Plan not found' },
         { status: 404 }
       );
     }
 
-    const planData = plan[0];
+    // Get pricing details if pricingId is provided
+    let pricingData = null;
+    let billingPeriodMonths = 1;
+    
+    if (pricingId) {
+      const [pricing] = await db
+        .select()
+        .from(planPricing)
+        .where(
+          and(
+            eq(planPricing.id, pricingId),
+            eq(planPricing.planId, planId)
+          )
+        )
+        .limit(1);
+      
+      if (pricing) {
+        pricingData = pricing;
+        billingPeriodMonths = pricing.billingPeriodMonths;
+      }
+    } else {
+      // If no pricingId, get default pricing for the plan
+      const [defaultPricing] = await db
+        .select()
+        .from(planPricing)
+        .where(
+          and(
+            eq(planPricing.planId, planId),
+            eq(planPricing.isActive, true)
+          )
+        )
+        .orderBy(planPricing.billingPeriodMonths)
+        .limit(1);
+      
+      if (defaultPricing) {
+        pricingData = defaultPricing;
+        billingPeriodMonths = defaultPricing.billingPeriodMonths;
+      }
+    }
 
-    // Validate amount matches plan price
-    const planPriceInCents = Number(planData.price);
-    const requestedAmountInCents = Math.round(amount * 100);
+    // Validate amount matches pricing (if pricing exists)
+    if (pricingData) {
+      const pricingAmountInCents = Number(pricingData.price);
+      const requestedAmountInCents = Math.round(amount * 100);
 
-    if (planPriceInCents !== requestedAmountInCents) {
-      return NextResponse.json(
-        { success: false, message: 'Amount mismatch with plan price' },
-        { status: 400 }
-      );
+      if (pricingAmountInCents !== requestedAmountInCents) {
+        return NextResponse.json(
+          { success: false, message: 'Amount mismatch with plan pricing' },
+          { status: 400 }
+        );
+      }
     }
 
     // Simulate payment processing delay (2-3 seconds)
     await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Calculate dates based on billing period
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setMonth(endDate.getMonth() + billingPeriodMonths);
+
+    // Get existing active subscription (for upgrade tracking)
+    const [existingSubscription] = await db
+      .select()
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.userId, user.userId),
+          eq(subscriptions.status, 'active')
+        )
+      )
+      .orderBy(desc(subscriptions.createdAt))
+      .limit(1);
 
     // Create order
     const [order] = await db
@@ -61,8 +122,8 @@ async function postHandler(req: NextRequest) {
         userId: user.userId,
         orderType: 'subscription',
         planId: planId,
-        amount: Number(planPriceInCents),
-        currency: 'USD',
+        amount: Math.round(amount * 100), // Convert to cents
+        currency: currency || pricingData?.currency || 'USD',
         description: `Subscription payment for ${planData.name}`,
         status: 'paid',
         paidAt: new Date().toISOString(),
@@ -79,8 +140,8 @@ async function postHandler(req: NextRequest) {
         paymentGateway: 'dummy',
         paymentId: transactionId,
         paymentMethod: paymentMethod || 'card',
-        amount: Number(planPriceInCents),
-        currency: 'USD',
+        amount: Math.round(amount * 100), // Convert to cents
+        currency: currency || pricingData?.currency || 'USD',
         status: 'success', // Always success for dummy payment
         gatewayResponse: {
           method: paymentMethod,
@@ -91,46 +152,49 @@ async function postHandler(req: NextRequest) {
       })
       .returning();
 
-    // Get or create subscription
-    const existingSubscription = await db
-      .select()
-      .from(subscriptions)
-      .where(eq(subscriptions.userId, user.userId))
-      .orderBy(desc(subscriptions.createdAt))
-      .limit(1);
-
-    const startDate = new Date();
-    const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + 1); // 1 month subscription
-
-    if (existingSubscription.length > 0) {
-      // Update existing subscription
+    // If upgrading, cancel the old subscription first
+    if (existingSubscription) {
       await db
         .update(subscriptions)
         .set({
-          planId: planId,
-          status: 'active',
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
-          autoRenew: true,
+          status: 'cancelled',
+          cancelledAt: new Date().toISOString(),
+          cancellationReason: 'Upgraded to new plan',
+          cancelledBy: 'user',
+        })
+        .where(eq(subscriptions.id, existingSubscription.id));
+    }
+
+    // Create new subscription using SubscriptionsService (this will store features_at_purchase and plan_snapshot)
+    const subscriptionsService = new SubscriptionsService();
+    const subscriptionResult = await subscriptionsService.create({
+      userId: user.userId,
+      planId: planId,
+      pricingId: pricingId || pricingData?.id,
+      status: 'active',
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      autoRenew: true,
+      // Upgrade tracking fields
+      previousSubscriptionId: existingSubscription?.id,
+      upgradeFromPlanId: existingSubscription?.planId,
+      upgradeFromPricingId: existingSubscription?.pricingId,
+    });
+
+    if (!subscriptionResult.success) {
+      throw new Error(subscriptionResult.message || 'Failed to create subscription');
+    }
+
+    // Update the subscription with order and payment transaction IDs
+    const newSubscription = subscriptionResult.data;
+    if (newSubscription) {
+      await db
+        .update(subscriptions)
+        .set({
           orderId: order.id,
           paymentTransactionId: paymentTransaction.id,
         })
-        .where(eq(subscriptions.id, existingSubscription[0].id));
-    } else {
-      // Create new subscription
-      await db
-        .insert(subscriptions)
-        .values({
-          userId: user.userId,
-          planId: planId,
-          status: 'active',
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
-          autoRenew: true,
-          orderId: order.id,
-          paymentTransactionId: paymentTransaction.id,
-        });
+        .where(eq(subscriptions.id, newSubscription.id));
     }
 
     return NextResponse.json({
@@ -140,7 +204,8 @@ async function postHandler(req: NextRequest) {
         paymentId: paymentTransaction.id,
         transactionId: transactionId,
         orderId: order.id,
-        amount: planPriceInCents / 100,
+        subscriptionId: newSubscription?.id,
+        amount: amount,
         planName: planData.name,
         status: 'success',
       },

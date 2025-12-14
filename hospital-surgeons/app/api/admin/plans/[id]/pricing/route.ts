@@ -115,6 +115,14 @@ export async function POST(
       );
     }
 
+    // Prevent creating pricing for free plans
+    if (plan[0].tier === 'free') {
+      return NextResponse.json(
+        { success: false, message: 'Cannot create pricing for free plans. Free plans do not require pricing options.' },
+        { status: 400 }
+      );
+    }
+
     // Check if pricing for this billing cycle already exists
     const existing = await db
       .select()

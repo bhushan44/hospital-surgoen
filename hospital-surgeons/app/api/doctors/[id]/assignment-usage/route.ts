@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage } from '@/src/db/drizzle/migrations/schema';
 import { eq, and } from 'drizzle-orm';
-import { getMaxAssignments, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
+import { getMaxAssignmentsForDoctor, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
 
 export async function GET(
   req: NextRequest,
@@ -29,7 +29,7 @@ export async function GET(
       );
     }
 
-    // Get active subscription with plan
+    // Get active subscription with plan for display
     const subscription = await db
       .select({
         plan: {
@@ -47,17 +47,11 @@ export async function GET(
       )
       .limit(1);
 
-    // Determine max assignments based on tier
-    let maxAssignments: number;
-    let planName = 'Free Plan';
-    
-    if (subscription.length > 0 && subscription[0].plan) {
-      planName = subscription[0].plan.name;
-      const tier = subscription[0].plan.tier;
-      maxAssignments = getMaxAssignments(tier);
-    } else {
-      maxAssignments = DEFAULT_ASSIGNMENT_LIMIT;
-    }
+    // Get max assignments from database (queries doctorPlanFeatures.maxAssignmentsPerMonth)
+    const maxAssignments = await getMaxAssignmentsForDoctor(doctor[0].userId);
+    const planName = subscription.length > 0 && subscription[0].plan 
+      ? subscription[0].plan.name 
+      : 'Free Plan';
 
     // Get usage record
     const usage = await db

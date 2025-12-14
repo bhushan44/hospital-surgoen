@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { users, hospitals, hospitalDepartments, userDevices } from '@/src/db/drizzle/migrations/schema';
-import { eq } from 'drizzle-orm';
+import { users, hospitals, hospitalDepartments, userDevices, subscriptionPlans } from '@/src/db/drizzle/migrations/schema';
+import { eq, and } from 'drizzle-orm';
 import bcrypt from 'bcrypt';
 import { signToken } from '@/lib/auth/jwt';
+import { SubscriptionsService } from '@/lib/services/subscriptions.service';
 
 /**
  * @swagger
@@ -218,6 +219,50 @@ export async function POST(req: NextRequest) {
         });
       }
     });
+
+    // Step 5: Auto-create free plan subscription
+    try {
+      // Find the free hospital plan
+      const freePlan = await db
+        .select()
+        .from(subscriptionPlans)
+        .where(
+          and(
+            eq(subscriptionPlans.tier, 'free'),
+            eq(subscriptionPlans.userRole, 'hospital'),
+            eq(subscriptionPlans.isActive, true)
+          )
+        )
+        .limit(1);
+
+      if (freePlan.length > 0) {
+        const freePlanId = freePlan[0].id;
+        
+        // Calculate dates for free plan (1 month subscription, but can be extended)
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setFullYear(endDate.getFullYear() + 10); // Free plan valid for 10 years (effectively forever)
+
+        // Create subscription using SubscriptionsService
+        const subscriptionsService = new SubscriptionsService();
+        await subscriptionsService.create({
+          userId: newUser!.id,
+          planId: freePlanId,
+          status: 'active',
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          autoRenew: false, // Free plans don't auto-renew
+        });
+
+        console.log(`✅ Auto-created free plan subscription for hospital ${newUser!.id}`);
+      } else {
+        console.warn('⚠️  No free hospital plan found in database. Hospital registered without subscription.');
+      }
+    } catch (subscriptionError) {
+      // Log error but don't fail registration if subscription creation fails
+      console.error('Error creating free plan subscription:', subscriptionError);
+      // Registration still succeeds even if subscription creation fails
+    }
 
     // Generate JWT token
     const accessToken = signToken(

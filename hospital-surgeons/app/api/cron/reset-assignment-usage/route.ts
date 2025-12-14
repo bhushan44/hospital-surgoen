@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { doctors, hospitals, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, hospitalUsageTracking } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, gte } from 'drizzle-orm';
-import { getMaxAssignments, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
+import { getMaxAssignmentsForDoctor, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
 import { getMaxPatients, getMaxAssignmentsForHospital, DEFAULT_HOSPITAL_PATIENT_LIMIT, DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT } from '@/lib/config/hospital-subscription-limits';
 
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -30,29 +30,8 @@ async function handler(req: NextRequest) {
     let updatedCount = 0;
 
     for (const doctor of allDoctors) {
-      // Get current subscription to determine limit
-      const subscription = await db
-        .select({
-          planId: subscriptionPlans.id,
-          tier: subscriptionPlans.tier,
-        })
-        .from(subscriptions)
-        .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
-        .where(
-          and(
-            eq(subscriptions.userId, doctor.userId),
-            eq(subscriptions.status, 'active'),
-            gte(subscriptions.endDate, now.toISOString())
-          )
-        )
-        .limit(1);
-
-      // Determine limit based on tier
-      let maxAssignments = DEFAULT_ASSIGNMENT_LIMIT;
-      if (subscription.length > 0) {
-        const tier = subscription[0].tier;
-        maxAssignments = getMaxAssignments(tier);
-      }
+      // Get max assignments from database (queries doctorPlanFeatures.maxAssignmentsPerMonth)
+      const maxAssignments = await getMaxAssignmentsForDoctor(doctor.userId);
 
       // Calculate reset date (1st of next month)
       const resetDate = new Date();

@@ -1,56 +1,104 @@
 /**
  * Subscription Plan Limits Configuration
  * 
- * This file centralizes all subscription plan limits to ensure consistency
- * across the application. All assignment limits are defined here.
+ * This file provides functions to get assignment limits from the database.
+ * Limits are now stored in doctorPlanFeatures.maxAssignmentsPerMonth.
  * 
- * To update limits, modify this file only.
+ * To update limits, modify the plan features in the admin panel.
  */
+
+import { getDb } from '@/lib/db';
+import { subscriptionPlans, doctorPlanFeatures, subscriptions } from '@/src/db/drizzle/migrations/schema';
+import { eq, and } from 'drizzle-orm';
 
 export type PlanTier = 'free' | 'basic' | 'premium' | 'enterprise';
 
 /**
- * Assignment limits per plan tier
- * - free: 5 assignments per month
- * - basic: 20 assignments per month
- * - premium/enterprise: -1 (unlimited)
- */
-export const PLAN_ASSIGNMENT_LIMITS: Record<PlanTier, number> = {
-  free: 5,
-  basic: 20,
-  premium: -1, // Unlimited
-  enterprise: -1, // Unlimited
-};
-
-/**
- * Default assignment limit when no subscription is found
+ * Default assignment limit when no subscription is found or plan has no features configured
  */
 export const DEFAULT_ASSIGNMENT_LIMIT = 5;
 
 /**
- * Get the maximum assignments allowed for a given plan tier
+ * Get the maximum assignments allowed for a plan from the database
  * 
- * @param tier - The subscription plan tier
- * @returns The maximum assignments allowed (-1 for unlimited)
+ * @param planId - The subscription plan ID
+ * @returns The maximum assignments allowed (-1 for unlimited, null if not set, defaults to 5)
  */
-export function getMaxAssignments(tier: PlanTier | string | null | undefined): number {
-  if (!tier) {
+export async function getMaxAssignmentsFromPlan(planId: string | null | undefined): Promise<number> {
+  if (!planId) {
     return DEFAULT_ASSIGNMENT_LIMIT;
   }
 
-  const normalizedTier = tier.toLowerCase() as PlanTier;
-  
-  // Return the limit for the tier, or default if tier is invalid
-  return PLAN_ASSIGNMENT_LIMITS[normalizedTier] ?? DEFAULT_ASSIGNMENT_LIMIT;
+  try {
+    const db = getDb();
+    
+    // Get plan features from database
+    const features = await db
+      .select({
+        maxAssignmentsPerMonth: doctorPlanFeatures.maxAssignmentsPerMonth,
+      })
+      .from(doctorPlanFeatures)
+      .where(eq(doctorPlanFeatures.planId, planId))
+      .limit(1);
+
+    if (features.length > 0 && features[0].maxAssignmentsPerMonth !== null && features[0].maxAssignmentsPerMonth !== undefined) {
+      return features[0].maxAssignmentsPerMonth;
+    }
+
+    // If no features found or maxAssignmentsPerMonth is null, return default
+    return DEFAULT_ASSIGNMENT_LIMIT;
+  } catch (error) {
+    console.error('Error fetching max assignments from plan:', error);
+    // Return default on error
+    return DEFAULT_ASSIGNMENT_LIMIT;
+  }
 }
 
 /**
- * Check if a plan tier has unlimited assignments
+ * Get the maximum assignments allowed for a doctor based on their subscription
  * 
- * @param tier - The subscription plan tier
+ * @param userId - The doctor's user ID
+ * @returns The maximum assignments allowed (-1 for unlimited, defaults to 5)
+ */
+export async function getMaxAssignmentsForDoctor(userId: string): Promise<number> {
+  try {
+    const db = getDb();
+    
+    // Get active subscription with plan
+    const subscription = await db
+      .select({
+        planId: subscriptionPlans.id,
+      })
+      .from(subscriptions)
+      .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.status, 'active')
+        )
+      )
+      .limit(1);
+
+    if (subscription.length > 0 && subscription[0].planId) {
+      return await getMaxAssignmentsFromPlan(subscription[0].planId);
+    }
+
+    // No subscription found, return default
+    return DEFAULT_ASSIGNMENT_LIMIT;
+  } catch (error) {
+    console.error('Error fetching max assignments for doctor:', error);
+    return DEFAULT_ASSIGNMENT_LIMIT;
+  }
+}
+
+/**
+ * Check if a plan has unlimited assignments
+ * 
+ * @param planId - The subscription plan ID
  * @returns true if unlimited, false otherwise
  */
-export function isUnlimitedAssignments(tier: PlanTier | string | null | undefined): boolean {
-  return getMaxAssignments(tier) === -1;
+export async function isUnlimitedAssignments(planId: string | null | undefined): Promise<boolean> {
+  const maxAssignments = await getMaxAssignmentsFromPlan(planId);
+  return maxAssignments === -1;
 }
 

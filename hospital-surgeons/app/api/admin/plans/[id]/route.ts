@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { subscriptionPlans, subscriptions, doctorPlanFeatures, hospitalPlanFeatures, planPricing } from '@/src/db/drizzle/migrations/schema';
-import { eq, sql, and, ne, count, asc } from 'drizzle-orm';
+import { eq, sql, and, ne, count, asc, inArray } from 'drizzle-orm';
 import { validateRequest } from '@/lib/utils/validate-request';
 import { UpdatePlanDtoSchema } from '@/lib/validations/plan.dto';
 import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
@@ -235,8 +235,8 @@ export async function PUT(
     // Update or create features if provided
     if (features) {
       if (userRole === 'doctor') {
-        const doctorFeatures = features as { visibilityWeight?: number; maxAffiliations?: number; notes?: string };
-        const { visibilityWeight, maxAffiliations, notes } = doctorFeatures;
+        const doctorFeatures = features as { visibilityWeight?: number; maxAffiliations?: number; maxAssignmentsPerMonth?: number; notes?: string };
+        const { visibilityWeight, maxAffiliations, maxAssignmentsPerMonth, notes } = doctorFeatures;
 
         const existingFeatures = await db
           .select()
@@ -251,6 +251,7 @@ export async function PUT(
             .set({
               visibilityWeight: visibilityWeight !== undefined ? visibilityWeight : existingFeatures[0].visibilityWeight,
               maxAffiliations: maxAffiliations !== undefined ? maxAffiliations : existingFeatures[0].maxAffiliations,
+              maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : existingFeatures[0].maxAssignmentsPerMonth,
               notes: notes !== undefined ? notes : existingFeatures[0].notes,
             })
             .where(eq(doctorPlanFeatures.planId, planId));
@@ -262,6 +263,7 @@ export async function PUT(
               planId: planId,
               visibilityWeight: visibilityWeight !== undefined ? visibilityWeight : 1,
               maxAffiliations: maxAffiliations !== undefined ? maxAffiliations : 1,
+              maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : null,
               notes: notes || null,
             });
         }
@@ -400,47 +402,37 @@ export async function DELETE(
       );
     }
 
-    // Step 2: Check if plan has any active subscriptions before deletion
-    const activeSubscriptions = await db
+    // Step 2: Check if plan has any active or suspended subscriptions before soft deletion
+    const blockingSubscriptions = await db
       .select({ count: count() })
       .from(subscriptions)
       .where(
         and(
           eq(subscriptions.planId, planId),
-          eq(subscriptions.status, 'active')
+          inArray(subscriptions.status, ['active', 'suspended'])
         )
       );
 
-    const activeSubscriptionCount = Number(activeSubscriptions[0]?.count || 0);
+    const blockingSubscriptionCount = Number(blockingSubscriptions[0]?.count || 0);
 
-    // Step 3: Prevent deletion if there are active subscriptions
-    if (activeSubscriptionCount > 0) {
+    // Step 3: Prevent soft deletion if there are active or suspended subscriptions
+    if (blockingSubscriptionCount > 0) {
       return NextResponse.json(
         {
           success: false,
-          message: `Cannot delete plan. It has ${activeSubscriptionCount} active subscription(s).`,
+          message: `Cannot delete plan. It has ${blockingSubscriptionCount} active or suspended subscription(s).`,
           data: {
-            subscriptionCount: activeSubscriptionCount,
+            subscriptionCount: blockingSubscriptionCount,
           },
         },
         { status: 409 }
       );
     }
 
-    // Step 4: Safe to delete - delete plan features first (cascade)
-    if (existing[0].userRole === 'doctor') {
-      await db
-        .delete(doctorPlanFeatures)
-        .where(eq(doctorPlanFeatures.planId, planId));
-    } else {
-      await db
-        .delete(hospitalPlanFeatures)
-        .where(eq(hospitalPlanFeatures.planId, planId));
-    }
-
-    // Step 5: Delete the plan
+    // Step 4: Safe to soft delete - set isActive = false (preserves data for history/reporting)
     await db
-      .delete(subscriptionPlans)
+      .update(subscriptionPlans)
+      .set({ isActive: false })
       .where(eq(subscriptionPlans.id, planId));
 
     // Get request metadata
@@ -462,14 +454,15 @@ export async function DELETE(
       details: {
         tier: existing[0].tier,
         userRole: existing[0].userRole,
-        activeSubscriptionsAtDeletion: activeSubscriptionCount,
-        deletedAt: new Date().toISOString(),
+        activeSubscriptionsAtDeletion: blockingSubscriptionCount,
+        softDeletedAt: new Date().toISOString(),
+        isActive: false,
       },
     });
 
     return NextResponse.json({
       success: true,
-      message: 'Subscription plan deleted successfully',
+      message: 'Subscription plan soft deleted successfully (marked as inactive)',
     });
   } catch (error) {
     console.error('Error deleting subscription plan:', error);

@@ -7,16 +7,27 @@ import { isAuthenticated } from '@/lib/auth/utils';
 import apiClient from '@/lib/api/httpClient';
 import { toast } from 'sonner';
 
+interface PricingOption {
+  id: string;
+  billingCycle: string;
+  billingPeriodMonths: number;
+  price: number; // in cents
+  currency: string;
+  setupFee: number;
+  discountPercentage: number;
+  isActive: boolean;
+}
+
 interface Plan {
   id: string;
   name: string;
   tier: 'free' | 'basic' | 'premium' | 'enterprise';
-  price: number;
-  currency: string;
   userRole: string;
+  pricingOptions?: PricingOption[];
   doctorFeatures?: {
     visibilityWeight: number | null;
     maxAffiliations: number | null;
+    maxAssignmentsPerMonth: number | null;
     notes: string | null;
   } | null;
 }
@@ -26,6 +37,10 @@ interface Subscription {
   status: string;
   startDate: string;
   endDate: string;
+  billingCycle?: string;
+  billingPeriodMonths?: number;
+  priceAtPurchase?: number;
+  currencyAtPurchase?: string;
   plan: Plan;
 }
 
@@ -35,6 +50,7 @@ export default function SubscriptionPlanPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
   const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [selectedPricing, setSelectedPricing] = useState<Record<string, string>>({}); // planId -> pricingId
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -66,8 +82,16 @@ export default function SubscriptionPlanPage() {
       if (subscriptionResponse.data.success && subscriptionResponse.data.data) {
         const subscriptionData = subscriptionResponse.data.data;
         if (subscriptionData && subscriptionData.subscription && subscriptionData.plan) {
+          const sub = subscriptionData.subscription;
           setCurrentSubscription({
-            ...subscriptionData.subscription,
+            id: sub.id,
+            status: sub.status,
+            startDate: sub.startDate,
+            endDate: sub.endDate,
+            billingCycle: sub.billingCycle || sub.billing_cycle,
+            billingPeriodMonths: sub.billingPeriodMonths || sub.billing_period_months,
+            priceAtPurchase: sub.priceAtPurchase || sub.price_at_purchase,
+            currencyAtPurchase: sub.currencyAtPurchase || sub.currency_at_purchase,
             plan: subscriptionData.plan,
           });
         }
@@ -83,7 +107,7 @@ export default function SubscriptionPlanPage() {
     }
   };
 
-  const handleUpgrade = async (planId: string) => {
+  const handleUpgrade = async (planId: string, pricingId?: string) => {
     try {
       setUpgrading(planId);
 
@@ -118,8 +142,27 @@ export default function SubscriptionPlanPage() {
           throw new Error(createResponse.data.message || 'Failed to activate plan');
         }
       } else {
-        // Paid plan - redirect to payment page
-        router.push(`/doctor/subscriptions/payment?planId=${planId}&amount=${plan.price / 100}`);
+        // Paid plan - need to select pricing option first
+        if (!pricingId) {
+          toast.error('Please select a billing cycle');
+          setUpgrading(null);
+          return;
+        }
+
+        // Find the selected pricing option
+        const selectedPricingOption = plan.pricingOptions?.find(p => p.id === pricingId);
+        if (!selectedPricingOption) {
+          throw new Error('Selected pricing option not found');
+        }
+
+        // Calculate end date based on billing period
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + selectedPricingOption.billingPeriodMonths);
+
+        // Redirect to payment page with pricing details
+        const amount = selectedPricingOption.price / 100; // Convert from cents
+        router.push(`/doctor/subscriptions/payment?planId=${planId}&pricingId=${pricingId}&amount=${amount}&currency=${selectedPricingOption.currency}&billingCycle=${selectedPricingOption.billingCycle}`);
       }
     } catch (error: any) {
       console.error('Error upgrading plan:', error);
@@ -155,6 +198,15 @@ export default function SubscriptionPlanPage() {
           features.push('Unlimited hospital affiliations');
         } else {
           features.push(`Up to ${df.maxAffiliations} hospital affiliations`);
+        }
+      }
+      
+      // Max assignments per month
+      if (df.maxAssignmentsPerMonth !== null && df.maxAssignmentsPerMonth !== undefined) {
+        if (df.maxAssignmentsPerMonth === -1) {
+          features.push('Unlimited assignments per month');
+        } else {
+          features.push(`Up to ${df.maxAssignmentsPerMonth} assignments per month`);
         }
       }
       
@@ -235,14 +287,37 @@ export default function SubscriptionPlanPage() {
       {currentSubscription && (
         <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-6">
           <div className="flex items-center justify-between">
-            <div>
+            <div className="flex-1">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">Current Plan</h3>
               <p className="text-2xl font-bold text-blue-600">{currentSubscription.plan.name}</p>
-              <p className="text-sm text-gray-600 mt-1">
-                {currentSubscription.plan.tier === 'free' ? 'Free Forever' : `Renews on ${new Date(currentSubscription.endDate).toLocaleDateString()}`}
-              </p>
+              <div className="mt-2 space-y-1">
+                {currentSubscription.plan.tier === 'free' ? (
+                  <p className="text-sm text-gray-600">Free Forever</p>
+                ) : (
+                  <>
+                    {currentSubscription.priceAtPurchase && (
+                      <p className="text-sm text-gray-700">
+                        <span className="font-semibold">Price: </span>
+                        {currentSubscription.currencyAtPurchase === 'INR' ? '₹' : '$'}
+                        {(currentSubscription.priceAtPurchase / 100).toLocaleString()}
+                        {currentSubscription.billingCycle && (
+                          <span className="text-gray-600">
+                            {' '}/ {currentSubscription.billingCycle === 'monthly' ? 'month' : 
+                                    currentSubscription.billingCycle === 'quarterly' ? 'quarter' :
+                                    currentSubscription.billingCycle === 'yearly' ? 'year' :
+                                    `${currentSubscription.billingPeriodMonths || 1} months`}
+                          </span>
+                        )}
+                      </p>
+                    )}
+                    <p className="text-sm text-gray-600">
+                      {currentSubscription.status === 'active' ? 'Renews on' : 'Expires on'} {new Date(currentSubscription.endDate).toLocaleDateString()}
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="text-right">
+            <div className="text-right ml-4">
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${
                 currentSubscription.status === 'active'
                   ? 'bg-green-100 text-green-700'
@@ -274,7 +349,10 @@ export default function SubscriptionPlanPage() {
           const isCurrentPlan = plan.id === currentPlanId;
           const isPopular = plan.tier === 'basic' || plan.tier === 'premium';
           const features = getPlanFeatures(plan);
-          const priceInDollars = plan.price / 100;
+          const pricingOptions = plan.pricingOptions || [];
+          const defaultPricing = pricingOptions.find(p => p.billingCycle === 'monthly') || pricingOptions[0];
+          const selectedPricingId = selectedPricing[plan.id] || defaultPricing?.id;
+          const selectedPricingOption = pricingOptions.find(p => p.id === selectedPricingId);
 
           return (
             <div
@@ -299,14 +377,50 @@ export default function SubscriptionPlanPage() {
 
               <div className="mb-6">
                 <h3 className="text-xl font-bold text-gray-900 mb-2">{plan.name}</h3>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold text-gray-900">
-                    {plan.tier === 'free' ? 'Free' : `₹${priceInDollars.toLocaleString()}`}
-                  </span>
-                  {plan.tier !== 'free' && (
-                    <span className="text-gray-600">/month</span>
-                  )}
-                </div>
+                {plan.tier === 'free' ? (
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold text-gray-900">Free</span>
+                  </div>
+                ) : pricingOptions.length > 0 ? (
+                  <div>
+                    {pricingOptions.length > 1 ? (
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Billing Cycle
+                        </label>
+                        <select
+                          value={selectedPricingId || ''}
+                          onChange={(e) => setSelectedPricing({ ...selectedPricing, [plan.id]: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          {pricingOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.billingCycle.charAt(0).toUpperCase() + option.billingCycle.slice(1)} 
+                              {option.billingPeriodMonths > 1 && ` (${option.billingPeriodMonths} months)`}
+                              {option.discountPercentage > 0 && ` - Save ${option.discountPercentage}%`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                    {selectedPricingOption && (
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold text-gray-900">
+                          {selectedPricingOption.currency === 'INR' ? '₹' : '$'}
+                          {(selectedPricingOption.price / 100).toLocaleString()}
+                        </span>
+                        <span className="text-gray-600">
+                          /{selectedPricingOption.billingCycle === 'monthly' ? 'month' : 
+                            selectedPricingOption.billingCycle === 'quarterly' ? 'quarter' :
+                            selectedPricingOption.billingCycle === 'yearly' ? 'year' :
+                            `${selectedPricingOption.billingPeriodMonths} months`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-gray-600">No pricing available</div>
+                )}
               </div>
 
               {/* Features List */}
@@ -329,8 +443,8 @@ export default function SubscriptionPlanPage() {
                 </button>
               ) : (
                 <button
-                  onClick={() => handleUpgrade(plan.id)}
-                  disabled={upgrading === plan.id}
+                  onClick={() => handleUpgrade(plan.id, selectedPricingId)}
+                  disabled={upgrading === plan.id || (plan.tier !== 'free' && !selectedPricingId)}
                   className={`w-full py-3 rounded-lg font-semibold text-white transition-colors ${
                     plan.tier === 'free'
                       ? 'bg-gray-600 hover:bg-gray-700'

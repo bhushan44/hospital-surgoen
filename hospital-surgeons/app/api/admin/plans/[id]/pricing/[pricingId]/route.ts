@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { subscriptionPlans, planPricing } from '@/src/db/drizzle/migrations/schema';
-import { eq, and } from 'drizzle-orm';
+import { subscriptionPlans, planPricing, subscriptions } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, inArray, count } from 'drizzle-orm';
 import { validateRequest } from '@/lib/utils/validate-request';
 import { UpdatePlanPricingDtoSchema } from '@/lib/validations/plan.dto';
 import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
@@ -23,6 +23,27 @@ export async function PUT(
     }
 
     const updateData = validation.data;
+
+    // Check if plan exists and is not free
+    const plan = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, planId))
+      .limit(1);
+
+    if (plan.length === 0) {
+      return NextResponse.json(
+        { success: false, message: 'Plan not found' },
+        { status: 404 }
+      );
+    }
+
+    if (plan[0].tier === 'free') {
+      return NextResponse.json(
+        { success: false, message: 'Cannot update pricing for free plans. Free plans do not require pricing options.' },
+        { status: 400 }
+      );
+    }
 
     // Check if pricing exists
     const existing = await db
@@ -61,13 +82,6 @@ export async function PUT(
       .set(updateValues)
       .where(eq(planPricing.id, pricingId))
       .returning();
-
-    // Get plan info
-    const plan = await db
-      .select()
-      .from(subscriptionPlans)
-      .where(eq(subscriptionPlans.id, planId))
-      .limit(1);
 
     // Get request metadata
     const metadata = getRequestMetadata(req);
@@ -137,6 +151,27 @@ export async function DELETE(
     const { id, pricingId } = await params;
     const planId = id;
 
+    // Check if plan exists and is not free
+    const plan = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, planId))
+      .limit(1);
+
+    if (plan.length === 0) {
+      return NextResponse.json(
+        { success: false, message: 'Plan not found' },
+        { status: 404 }
+      );
+    }
+
+    if (plan[0].tier === 'free') {
+      return NextResponse.json(
+        { success: false, message: 'Cannot delete pricing for free plans. Free plans do not require pricing options.' },
+        { status: 400 }
+      );
+    }
+
     // Check if pricing exists
     const existing = await db
       .select()
@@ -156,16 +191,37 @@ export async function DELETE(
       );
     }
 
-    // Get plan info
-    const plan = await db
-      .select()
-      .from(subscriptionPlans)
-      .where(eq(subscriptionPlans.id, planId))
-      .limit(1);
+    // Check if any active or suspended subscriptions are using this pricing
+    const blockingSubscriptions = await db
+      .select({ count: count() })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.pricingId, pricingId),
+          inArray(subscriptions.status, ['active', 'suspended'])
+        )
+      );
 
-    // Delete pricing
+    const blockingSubscriptionCount = Number(blockingSubscriptions[0]?.count || 0);
+
+    // Prevent soft deletion if there are active or suspended subscriptions using this pricing
+    if (blockingSubscriptionCount > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Cannot delete pricing option. It has ${blockingSubscriptionCount} active or suspended subscription(s) using it.`,
+          data: {
+            subscriptionCount: blockingSubscriptionCount,
+          },
+        },
+        { status: 409 }
+      );
+    }
+
+    // Safe to soft delete - set isActive = false (preserves data for history/reporting)
     await db
-      .delete(planPricing)
+      .update(planPricing)
+      .set({ isActive: false })
       .where(eq(planPricing.id, pricingId));
 
     // Get request metadata
@@ -187,12 +243,15 @@ export async function DELETE(
       details: {
         billingCycle: existing[0].billingCycle,
         price: Number(existing[0].price),
+        activeSubscriptionsAtDeletion: blockingSubscriptionCount,
+        softDeletedAt: new Date().toISOString(),
+        isActive: false,
       },
     });
 
     return NextResponse.json({
       success: true,
-      message: 'Pricing option deleted successfully',
+      message: 'Pricing option soft deleted successfully (marked as inactive)',
     });
   } catch (error) {
     console.error('Error deleting plan pricing:', error);

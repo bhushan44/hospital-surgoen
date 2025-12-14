@@ -778,34 +778,44 @@ export function SubscriptionPlans() {
                   <div className="flex items-center justify-between mb-2">
                     <Label>Pricing Options {editingPlan ? `(${pricingData.length})` : ''}</Label>
                     {editingPlan ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setEditingPricing(null);
-                          setPricingForm({
-                            billingCycle: 'monthly',
-                            billingPeriodMonths: 1,
-                            price: '',
-                            currency: 'INR',
-                            setupFee: '',
-                            discountPercentage: '',
-                            isActive: true,
-                          });
-                          setShowPricingModal(true);
-                        }}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Pricing
-                      </Button>
+                      editingPlan.tier === 'free' ? (
+                        <p className="text-sm text-gray-500 italic">Free plans do not require pricing options</p>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingPricing(null);
+                            setPricingForm({
+                              billingCycle: 'monthly',
+                              billingPeriodMonths: 1,
+                              price: '',
+                              currency: 'INR',
+                              setupFee: '',
+                              discountPercentage: '',
+                              isActive: true,
+                            });
+                            setShowPricingModal(true);
+                          }}
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Pricing
+                        </Button>
+                      )
                     ) : (
                       <p className="text-sm text-gray-500">Create plan first, then add pricing options</p>
                     )}
                   </div>
                   {editingPlan ? (
                     <>
-                      {pricingData.length === 0 ? (
+                      {editingPlan.tier === 'free' ? (
+                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-sm text-blue-800">
+                            <strong>Free Plan:</strong> This plan does not require pricing options. Users can subscribe to free plans without payment.
+                          </p>
+                        </div>
+                      ) : pricingData.length === 0 ? (
                         <p className="text-sm text-gray-500">No pricing options added yet</p>
                       ) : (
                         <div className="space-y-2">

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { assignments, doctorAvailability, enumPriority, doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, hospitals, patients, users } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql } from 'drizzle-orm';
-import { getMaxAssignments, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
+import { getMaxAssignmentsForDoctor, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
 import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 /**
@@ -207,31 +207,8 @@ async function checkAssignmentLimit(doctorId: string, db: any) {
     throw new Error('Doctor not found');
   }
 
-  // Get active subscription with plan
-  const subscription = await db
-    .select({
-      planId: subscriptionPlans.id,
-      tier: subscriptionPlans.tier,
-    })
-    .from(subscriptions)
-    .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
-    .where(
-      and(
-        eq(subscriptions.userId, doctor[0].userId),
-        eq(subscriptions.status, 'active')
-      )
-    )
-    .limit(1);
-
-  // Determine max assignments based on tier
-  let maxAssignments: number;
-  if (subscription.length > 0) {
-    const tier = subscription[0].tier;
-    maxAssignments = getMaxAssignments(tier);
-  } else {
-    // No subscription = free plan
-    maxAssignments = DEFAULT_ASSIGNMENT_LIMIT;
-  }
+  // Get max assignments from database (queries doctorPlanFeatures.maxAssignmentsPerMonth)
+  const maxAssignments = await getMaxAssignmentsForDoctor(doctor[0].userId);
 
   // If unlimited, skip check
   if (maxAssignments === -1) {
@@ -305,26 +282,8 @@ async function incrementAssignmentUsage(doctorId: string, db: any) {
 
     if (doctor.length === 0) return;
 
-    // Get subscription to determine limit
-    const subscription = await db
-      .select({
-        tier: subscriptionPlans.tier,
-      })
-      .from(subscriptions)
-      .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
-      .where(
-        and(
-          eq(subscriptions.userId, doctor[0].userId),
-          eq(subscriptions.status, 'active')
-        )
-      )
-      .limit(1);
-
-    let maxAssignments = DEFAULT_ASSIGNMENT_LIMIT;
-    if (subscription.length > 0) {
-      const tier = subscription[0].tier;
-      maxAssignments = getMaxAssignments(tier);
-    }
+    // Get max assignments from database (queries doctorPlanFeatures.maxAssignmentsPerMonth)
+    const maxAssignments = await getMaxAssignmentsForDoctor(doctor[0].userId);
 
     const resetDate = new Date();
     resetDate.setMonth(resetDate.getMonth() + 1);

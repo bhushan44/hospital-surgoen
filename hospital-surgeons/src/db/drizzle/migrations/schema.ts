@@ -38,6 +38,7 @@ export const doctorPlanFeatures = pgTable("doctor_plan_features", {
 	planId: uuid("plan_id").notNull(),
 	visibilityWeight: integer("visibility_weight").default(1),
 	maxAffiliations: integer("max_affiliations"),
+	maxAssignmentsPerMonth: integer("max_assignments_per_month"),
 	notes: text(),
 }, (table) => [
 	foreignKey({
