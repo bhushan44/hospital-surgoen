@@ -41,11 +41,59 @@ async function getHandler(
 
     const status = searchParams.get('status') || undefined;
     const search = searchParams.get('search') || undefined;
+    const dateFilter = searchParams.get('dateFilter') || undefined; // 'today' | 'future' | undefined
+    const selectedDate = searchParams.get('selectedDate') || undefined; // Custom date selection
 
     // Build where conditions
     const conditions = [eq(assignments.hospitalId, hospitalId)];
     if (status && status !== 'all') {
       conditions.push(eq(assignments.status, status));
+    }
+
+    // Date filter based on slot date
+    if (selectedDate) {
+      // Custom date selection - filter by specific date
+      conditions.push(sql`(
+        EXISTS (
+          SELECT 1 FROM doctor_availability da 
+          WHERE da.id = ${assignments.availabilitySlotId} 
+          AND DATE(da.slot_date) = ${selectedDate}::date
+        )
+        OR (
+          ${assignments.availabilitySlotId} IS NULL 
+          AND DATE(${assignments.requestedAt}::timestamp) = ${selectedDate}::date
+        )
+      )`);
+    } else if (dateFilter === 'today' || dateFilter === 'future') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStr = today.toISOString().split('T')[0];
+      
+      if (dateFilter === 'today') {
+        conditions.push(sql`(
+          EXISTS (
+            SELECT 1 FROM doctor_availability da 
+            WHERE da.id = ${assignments.availabilitySlotId} 
+            AND DATE(da.slot_date) = ${todayStr}::date
+          )
+          OR (
+            ${assignments.availabilitySlotId} IS NULL 
+            AND DATE(${assignments.requestedAt}::timestamp) = ${todayStr}::date
+          )
+        )`);
+      } else if (dateFilter === 'future') {
+        conditions.push(sql`(
+          EXISTS (
+            SELECT 1 FROM doctor_availability da 
+            WHERE da.id = ${assignments.availabilitySlotId} 
+            AND DATE(da.slot_date) > ${todayStr}::date
+          )
+          OR (
+            ${assignments.availabilitySlotId} IS NULL 
+            AND DATE(${assignments.requestedAt}::timestamp) > ${todayStr}::date
+          )
+        )`);
+      }
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

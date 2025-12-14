@@ -105,7 +105,7 @@ async function getHandler(
 
     const status = searchParams.get('status') || undefined;
     const search = searchParams.get('search') || undefined;
-    const todayOnly = searchParams.get('todayOnly') === 'true';
+    const selectedDate = searchParams.get('selectedDate') || undefined;
 
     // Build where conditions
     const conditions = [eq(assignments.doctorId, doctorId)];
@@ -113,14 +113,18 @@ async function getHandler(
       conditions.push(eq(assignments.status, status));
     }
 
-    // Filter by today's date if requested
-    if (todayOnly) {
-      const today = new Date().toISOString().split('T')[0];
+    // Filter by selected date if provided
+    if (selectedDate) {
       conditions.push(
-        sql`EXISTS (
-          SELECT 1 FROM doctor_availability 
-          WHERE id = ${assignments.availabilitySlotId} 
-          AND slot_date = ${today}::date
+        sql`(
+          EXISTS (
+            SELECT 1 FROM doctor_availability 
+            WHERE id = ${assignments.availabilitySlotId} 
+            AND slot_date = ${selectedDate}::date
+          ) OR (
+            ${assignments.availabilitySlotId} IS NULL 
+            AND DATE(${assignments.requestedAt}) = ${selectedDate}::date
+          )
         )`
       );
     }

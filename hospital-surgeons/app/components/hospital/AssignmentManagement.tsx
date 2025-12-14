@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Filter, Clock, CheckCircle, XCircle, AlertCircle, MessageSquare, Phone, Calendar, Loader2 } from 'lucide-react';
+import { Search, Filter, Clock, CheckCircle, XCircle, AlertCircle, MessageSquare, Phone, Calendar as CalendarIcon, Loader2, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
+import { Calendar as DateCalendar } from '../../components/ui/calendar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import {
   Table,
   TableBody,
@@ -28,6 +31,7 @@ import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Label } from '../../components/ui/label';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
+import { cn } from '../../components/ui/utils';
 
 export function AssignmentManagement() {
   const router = useRouter();
@@ -36,6 +40,7 @@ export function AssignmentManagement() {
     router.push(`/hospital/${page}`);
   };
   const [searchQuery, setSearchQuery] = useState('');
+  const [tempSearchQuery, setTempSearchQuery] = useState('');
   const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -44,6 +49,9 @@ export function AssignmentManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [tempStatusFilter, setTempStatusFilter] = useState('all');
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [tempSelectedDate, setTempSelectedDate] = useState<string>('');
   const [hospitalId, setHospitalId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,7 +62,7 @@ export function AssignmentManagement() {
     if (hospitalId) {
       fetchAssignments();
     }
-  }, [statusFilter, hospitalId]);
+  }, [hospitalId]);
 
   const fetchHospitalProfile = async () => {
     try {
@@ -80,7 +88,7 @@ export function AssignmentManagement() {
     }
   };
 
-  const fetchAssignments = async () => {
+  const fetchAssignments = async (dateOverride?: Date, statusOverride?: string, searchOverride?: string) => {
     if (!hospitalId) return;
     
     try {
@@ -88,11 +96,17 @@ export function AssignmentManagement() {
       setError(null);
       const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams();
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
+      const statusToUse = statusOverride !== undefined ? statusOverride : statusFilter;
+      if (statusToUse !== 'all') {
+        params.append('status', statusToUse);
       }
-      if (searchQuery) {
-        params.append('search', searchQuery);
+      const dateToUse = dateOverride || selectedDate;
+      if (dateToUse) {
+        params.append('selectedDate', dateToUse.toISOString().split('T')[0]);
+      }
+      const searchToUse = searchOverride !== undefined ? searchOverride : searchQuery;
+      if (searchToUse) {
+        params.append('search', searchToUse);
       }
       
       const response = await fetch(`/api/hospitals/${hospitalId}/assignments?${params.toString()}`, {
@@ -217,15 +231,12 @@ export function AssignmentManagement() {
     }
   };
 
-  // Handle search - debounce and fetch from API
+  // Initial fetch when hospitalId is available
   useEffect(() => {
     if (hospitalId) {
-      const timeoutId = setTimeout(() => {
-        fetchAssignments();
-      }, 500); // Debounce search by 500ms
-      return () => clearTimeout(timeoutId);
+      fetchAssignments();
     }
-  }, [searchQuery]);
+  }, [hospitalId]);
 
   const filterByStatus = (status: string) => {
     // API already filters by status, but we can do client-side filtering for 'all'
@@ -249,141 +260,224 @@ export function AssignmentManagement() {
           {error}
         </div>
       ) : (
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="mb-6">
-          <h3 className="text-slate-900 font-semibold">All Assignments</h3>
-        </div>
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 mb-4">
-            {error}
+      <div className="space-y-6">
+        {/* Header Section */}
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900">Assignment Management</h2>
+              <p className="text-slate-600 text-sm mt-1">Track and manage all doctor assignments</p>
+            </div>
           </div>
-        )}
-        <div>
-          {/* Search */}
-          <div className="flex items-center gap-4 mb-6">
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 mb-6">
+              {error}
+            </div>
+          )}
+
+          {/* Search and Filters - All in One Line */}
+          <div className="flex items-end gap-3 mb-6">
+            {/* Search Bar */}
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
               <Input
-                placeholder="Search by patient, doctor, or condition..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                placeholder="Search by patient name, doctor, or condition..."
+                value={tempSearchQuery || searchQuery}
+                onChange={(e) => setTempSearchQuery(e.target.value)}
+                className="pl-10 h-10 text-base"
               />
             </div>
-            <Button variant="outline" className="gap-2">
-              <Filter className="w-4 h-4" />
-              Filter
+
+            {/* Date Filter */}
+            <div className="w-[200px]">
+              <div className="relative">
+                <input 
+                  type="date"
+                  value={tempSelectedDate || (selectedDate ? selectedDate.toISOString().split('T')[0] : '')}
+                  onChange={(e) => {
+                    setTempSelectedDate(e.target.value);
+                  }}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 pr-10 h-10"
+                />
+                <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div className="w-[180px]">
+              <Select value={tempStatusFilter} onValueChange={setTempStatusFilter}>
+                <SelectTrigger className="w-full h-10">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="accepted">Accepted</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="declined">Needs Action</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Clear Button */}
+            {(tempSearchQuery || tempSelectedDate || tempStatusFilter !== 'all' || searchQuery || selectedDate || statusFilter !== 'all') && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setTempSearchQuery('');
+                  setTempSelectedDate('');
+                  setTempStatusFilter('all');
+                  setSearchQuery('');
+                  setSelectedDate(undefined);
+                  setStatusFilter('all');
+                  fetchAssignments(undefined, 'all', '');
+                }}
+                className="h-10 px-4 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              >
+                Clear
+              </Button>
+            )}
+
+            {/* Apply Button */}
+            <Button
+              onClick={() => {
+                const dateToApply = tempSelectedDate ? new Date(tempSelectedDate) : undefined;
+                const statusToApply = tempStatusFilter;
+                const searchToApply = tempSearchQuery.trim();
+                setSelectedDate(dateToApply);
+                setStatusFilter(statusToApply);
+                setSearchQuery(searchToApply);
+                setTempSelectedDate('');
+                setTempStatusFilter(statusToApply);
+                setTempSearchQuery('');
+                fetchAssignments(dateToApply, statusToApply, searchToApply);
+              }}
+              className="h-10 px-6 bg-teal-600 hover:bg-teal-700 text-white"
+            >
+              Apply
             </Button>
           </div>
+        </div>
 
-          {/* Tabs */}
-          <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-            <TabsList>
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="pending">Pending</TabsTrigger>
-              <TabsTrigger value="accepted">Accepted</TabsTrigger>
-              <TabsTrigger value="completed">Completed</TabsTrigger>
-              <TabsTrigger value="declined">Needs Action</TabsTrigger>
-            </TabsList>
-
-            {['all', 'pending', 'accepted', 'completed', 'declined'].map((tab) => (
-              <TabsContent key={tab} value={tab}>
-                <div className="border rounded-lg">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Patient</TableHead>
-                        <TableHead>Condition</TableHead>
-                        <TableHead>Doctor</TableHead>
-                        <TableHead>Date & Time</TableHead>
-                        <TableHead>Priority</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {loading ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8">
-                            <div className="flex items-center justify-center gap-2">
-                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-teal-600"></div>
-                              <span className="text-gray-500">Loading assignments...</span>
-                            </div>
-                          </TableCell>
+        {/* Assignments Table */}
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mt-6 relative z-0">
+          <div className="p-0">
+                {loading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="flex flex-col items-center gap-3">
+                      <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+                      <span className="text-slate-600">Loading assignments...</span>
+                    </div>
+                  </div>
+                ) : filterByStatus(statusFilter).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 px-4">
+                    <CalendarIcon className="w-12 h-12 text-slate-400 mb-3" />
+                    <p className="text-slate-600 font-medium">No assignments found</p>
+                    <p className="text-slate-500 text-sm mt-1">Try adjusting your filters or search query</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50 hover:bg-slate-50">
+                          <TableHead className="font-semibold text-slate-900">Patient</TableHead>
+                          <TableHead className="font-semibold text-slate-900">Condition</TableHead>
+                          <TableHead className="font-semibold text-slate-900">Doctor</TableHead>
+                          <TableHead className="font-semibold text-slate-900">Date & Time</TableHead>
+                          <TableHead className="font-semibold text-slate-900">Priority</TableHead>
+                          <TableHead className="font-semibold text-slate-900">Status</TableHead>
+                          <TableHead className="font-semibold text-slate-900 text-right">Actions</TableHead>
                         </TableRow>
-                      ) : filterByStatus(tab === 'all' ? 'all' : tab).length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-gray-500">
-                            No assignments found
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        filterByStatus(tab === 'all' ? 'all' : tab).map((assignment) => (
-                        <TableRow key={assignment.id}>
-                          <TableCell>
-                            <div>
-                              <p>{assignment.patient}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>{assignment.condition}</TableCell>
-                          <TableCell>
-                            <div>
-                              <p>{assignment.doctor}</p>
-                              <p className="text-sm text-gray-500">{assignment.specialty}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <p>{assignment.date ? new Date(assignment.date).toLocaleDateString() : 'TBD'}</p>
-                              <p className="text-sm text-gray-500">{assignment.time}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>{getPriorityBadge(assignment.priority)}</TableCell>
-                          <TableCell>
-                            {getStatusBadge(assignment.status)}
-                            {assignment.status === 'pending' && assignment.expiresIn && (
-                              <p className="text-xs text-yellow-600 mt-1">Expires in {assignment.expiresIn}</p>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleViewDetails(assignment)}
-                              >
-                                View
-                              </Button>
-                              {assignment.status === 'declined' && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => onNavigate('find-doctors')}
-                                >
-                                  Find Doctor
-                                </Button>
-                              )}
-                              {(assignment.status === 'pending' || assignment.status === 'accepted') && (
+                      </TableHeader>
+                      <TableBody>
+                        {filterByStatus(statusFilter).map((assignment) => (
+                          <TableRow 
+                            key={assignment.id}
+                            className="hover:bg-slate-50/50 transition-colors"
+                          >
+                            <TableCell className="py-4">
+                              <div>
+                                <p className="font-medium text-slate-900">{assignment.patient}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <span className="text-slate-700">{assignment.condition}</span>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div>
+                                <p className="font-medium text-slate-900">{assignment.doctor}</p>
+                                <p className="text-sm text-slate-500 mt-0.5">{assignment.specialty}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div className="flex items-center gap-2">
+                                <CalendarIcon className="w-4 h-4 text-slate-400" />
+                                <div>
+                                  <p className="text-slate-900 font-medium">
+                                    {assignment.date ? new Date(assignment.date).toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric'
+                                    }) : 'TBD'}
+                                  </p>
+                                  <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5">
+                                    <Clock className="w-3 h-3" />
+                                    {assignment.time}
+                                  </p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              {getPriorityBadge(assignment.priority)}
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div className="space-y-1">
+                                {getStatusBadge(assignment.status)}
+                                {assignment.status === 'pending' && assignment.expiresIn && (
+                                  <p className="text-xs text-yellow-600 font-medium">Expires in {assignment.expiresIn}</p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div className="flex items-center justify-end gap-2">
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleCancelAssignment(assignment)}
-                                  className="text-red-600 hover:text-red-700"
+                                  onClick={() => handleViewDetails(assignment)}
+                                  className="text-teal-600 hover:text-teal-700 hover:bg-teal-50"
                                 >
-                                  Cancel
+                                  View
                                 </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </TabsContent>
-            ))}
-          </Tabs>
+                                {assignment.status === 'declined' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => onNavigate('find-doctors')}
+                                    className="border-teal-300 text-teal-700 hover:bg-teal-50"
+                                  >
+                                    Find Doctor
+                                  </Button>
+                                )}
+                                {(assignment.status === 'pending' || assignment.status === 'accepted') && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleCancelAssignment(assignment)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    Cancel
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       )}

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { patients, assignments, doctors, doctorSpecialties, specialties, hospitals, users } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, or, like, sql, desc, asc } from 'drizzle-orm';
+import { patients, assignments, doctors, doctorSpecialties, specialties, hospitals, users, patientConsents } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, or, like, sql, desc, asc, max } from 'drizzle-orm';
 import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 /**
@@ -31,8 +31,8 @@ export async function GET(
     const search = searchParams.get('search') || undefined;
     const status = searchParams.get('status') || undefined; // 'assigned', 'unassigned', 'declined'
 
-    // Build query
-    let query = db
+    // First, get all patients
+    const patientsList = await db
       .select({
         id: patients.id,
         fullName: patients.fullName,
@@ -46,24 +46,79 @@ export async function GET(
         costPerDay: patients.costPerDay,
         medicalNotes: patients.medicalNotes,
         createdAt: patients.createdAt,
-        // Get assigned doctor info
-        assignmentId: sql<string | null>`(SELECT id FROM assignments WHERE patient_id = ${patients.id} AND status = 'accepted' LIMIT 1)`,
-        doctorId: sql<string | null>`(SELECT doctor_id FROM assignments WHERE patient_id = ${patients.id} AND status = 'accepted' LIMIT 1)`,
-        doctorFirstName: sql<string | null>`(SELECT first_name FROM doctors WHERE id = (SELECT doctor_id FROM assignments WHERE patient_id = ${patients.id} AND status = 'accepted' LIMIT 1))`,
-        doctorLastName: sql<string | null>`(SELECT last_name FROM doctors WHERE id = (SELECT doctor_id FROM assignments WHERE patient_id = ${patients.id} AND status = 'accepted' LIMIT 1))`,
-        // Get specialty
-        specialtyName: sql<string | null>`(SELECT name FROM specialties WHERE id = (SELECT specialty_id FROM doctor_specialties WHERE doctor_id = (SELECT doctor_id FROM assignments WHERE patient_id = ${patients.id} AND status = 'accepted' LIMIT 1) LIMIT 1))`,
-        // Get assignment status
-        assignmentStatus: sql<string | null>`(SELECT status FROM assignments WHERE patient_id = ${patients.id} ORDER BY requested_at DESC LIMIT 1)`,
       })
       .from(patients)
       .where(eq(patients.hospitalId, hospitalId))
       .orderBy(desc(patients.createdAt));
 
-    const patientsList = await query;
+    // Then, for each patient, get the latest assignment with doctor info
+    const patientsWithAssignments = await Promise.all(
+      patientsList.map(async (patient) => {
+        // Get latest assignment for this patient
+        const latestAssignment = await db
+          .select({
+            id: assignments.id,
+            status: assignments.status,
+            doctorId: assignments.doctorId,
+            requestedAt: assignments.requestedAt,
+          })
+          .from(assignments)
+          .where(eq(assignments.patientId, patient.id))
+          .orderBy(desc(assignments.requestedAt))
+          .limit(1);
+
+        if (latestAssignment.length === 0) {
+          return {
+            ...patient,
+            assignmentStatus: null,
+            doctorId: null,
+            doctorFirstName: null,
+            doctorLastName: null,
+            specialtyName: null,
+          };
+        }
+
+        const assignment = latestAssignment[0];
+
+        // Get doctor info
+        const doctorInfo = await db
+          .select({
+            id: doctors.id,
+            firstName: doctors.firstName,
+            lastName: doctors.lastName,
+          })
+          .from(doctors)
+          .where(eq(doctors.id, assignment.doctorId))
+          .limit(1);
+
+        // Get specialty
+        let specialtyName = null;
+        if (doctorInfo.length > 0) {
+          const specialty = await db
+            .select({
+              name: specialties.name,
+            })
+            .from(specialties)
+            .innerJoin(doctorSpecialties, eq(specialties.id, doctorSpecialties.specialtyId))
+            .where(eq(doctorSpecialties.doctorId, assignment.doctorId))
+            .limit(1);
+
+          specialtyName = specialty[0]?.name || null;
+        }
+
+        return {
+          ...patient,
+          assignmentStatus: assignment.status,
+          doctorId: assignment.doctorId,
+          doctorFirstName: doctorInfo[0]?.firstName || null,
+          doctorLastName: doctorInfo[0]?.lastName || null,
+          specialtyName: specialtyName,
+        };
+      })
+    );
 
     // Format and filter results
-    let formattedPatients = patientsList.map((patient) => {
+    let formattedPatients = patientsWithAssignments.map((patient) => {
       const age = patient.dateOfBirth
         ? Math.floor((new Date().getTime() - new Date(patient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
         : null;
@@ -72,15 +127,24 @@ export async function GET(
         ? `Dr. ${patient.doctorFirstName || ''} ${patient.doctorLastName || ''}`.trim()
         : null;
 
-      // Determine status
+      // Determine status based on latest assignment
       let patientStatus = 'unassigned';
-      if (patient.assignmentStatus === 'accepted') {
-        patientStatus = 'assigned';
-      } else if (patient.assignmentStatus === 'declined') {
-        patientStatus = 'declined';
-      } else if (patient.assignmentStatus === 'pending') {
-        patientStatus = 'pending';
+      if (patient.assignmentStatus) {
+        // If there's a latest assignment, use its status
+        if (patient.assignmentStatus === 'accepted') {
+          patientStatus = 'assigned';
+        } else if (patient.assignmentStatus === 'declined') {
+          patientStatus = 'declined';
+        } else if (patient.assignmentStatus === 'pending') {
+          patientStatus = 'pending';
+        } else if (patient.assignmentStatus === 'completed') {
+          patientStatus = 'completed';
+        } else {
+          // For any other status, show it as-is
+          patientStatus = patient.assignmentStatus;
+        }
       }
+      // If assignmentStatus is null, patientStatus remains 'unassigned'
 
       return {
         id: patient.id,
@@ -237,6 +301,64 @@ export async function POST(
         medicalNotes: body.medicalNotes,
       })
       .returning();
+
+    // Save consent records if provided
+    if (body.consentGiverName && body.relationship) {
+      const consentRecords = [];
+      
+      // Data Privacy Consent
+      if (body.dataPrivacy) {
+        consentRecords.push({
+          patientId: newPatient[0].id,
+          consentType: 'data_sharing',
+          granted: true,
+          grantedBy: body.consentGiverName,
+          relationToPatient: body.relationship,
+        });
+      }
+      
+      // Doctor Assignment Consent
+      if (body.doctorAssignment) {
+        consentRecords.push({
+          patientId: newPatient[0].id,
+          consentType: 'treatment',
+          granted: true,
+          grantedBy: body.consentGiverName,
+          relationToPatient: body.relationship,
+        });
+      }
+      
+      // Treatment Consent
+      if (body.treatmentConsent) {
+        consentRecords.push({
+          patientId: newPatient[0].id,
+          consentType: 'treatment',
+          granted: true,
+          grantedBy: body.consentGiverName,
+          relationToPatient: body.relationship,
+        });
+      }
+      
+      // Insert all consent records
+      if (consentRecords.length > 0) {
+        try {
+          // Insert consent records one by one to avoid any array issues
+          for (const consent of consentRecords) {
+            await db.insert(patientConsents).values({
+              patientId: consent.patientId,
+              consentType: consent.consentType,
+              granted: consent.granted,
+              grantedBy: consent.grantedBy,
+              relationToPatient: consent.relationToPatient || null,
+            });
+          }
+        } catch (consentError) {
+          console.error('Error saving consent records:', consentError);
+          // Don't fail the patient creation if consent saving fails
+          // But log it for debugging
+        }
+      }
+    }
 
     // Increment patient usage after successful creation
     try {

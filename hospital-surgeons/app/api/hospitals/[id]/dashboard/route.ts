@@ -43,6 +43,10 @@ export async function GET(
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    // Calculate previous month range
+    const startOfPreviousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfPreviousMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
     // Total Patients
     const totalPatientsResult = await db
@@ -50,6 +54,31 @@ export async function GET(
       .from(patients)
       .where(eq(patients.hospitalId, hospitalId));
     const totalPatients = Number(totalPatientsResult[0]?.count || 0);
+    
+    // Total Patients - Previous Month (for percentage calculation)
+    const totalPatientsPreviousMonthResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(patients)
+      .where(
+        and(
+          eq(patients.hospitalId, hospitalId),
+          gte(patients.createdAt, startOfPreviousMonth.toISOString()),
+          sql`${patients.createdAt} < ${startOfMonth.toISOString()}`
+        )
+      );
+    const totalPatientsPreviousMonth = Number(totalPatientsPreviousMonthResult[0]?.count || 0);
+    
+    // Calculate Total Patients percentage change
+    let totalPatientsChange = '0%';
+    let totalPatientsTrend: 'up' | 'down' | 'neutral' = 'neutral';
+    if (totalPatientsPreviousMonth > 0) {
+      const change = ((totalPatients - totalPatientsPreviousMonth) / totalPatientsPreviousMonth) * 100;
+      totalPatientsChange = `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
+      totalPatientsTrend = change > 0 ? 'up' : change < 0 ? 'down' : 'neutral';
+    } else if (totalPatients > 0 && totalPatientsPreviousMonth === 0) {
+      totalPatientsChange = 'New';
+      totalPatientsTrend = 'up';
+    }
 
     // Active Assignments (pending or accepted)
     const activeAssignmentsResult = await db
@@ -86,6 +115,31 @@ export async function GET(
         )
       );
     const monthlyAssignments = Number(monthlyAssignmentsResult[0]?.count || 0);
+    
+    // Monthly Assignments - Previous Month (for percentage calculation)
+    const monthlyAssignmentsPreviousMonthResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(assignments)
+      .where(
+        and(
+          eq(assignments.hospitalId, hospitalId),
+          gte(assignments.requestedAt, startOfPreviousMonth.toISOString()),
+          sql`${assignments.requestedAt} < ${startOfMonth.toISOString()}`
+        )
+      );
+    const monthlyAssignmentsPreviousMonth = Number(monthlyAssignmentsPreviousMonthResult[0]?.count || 0);
+    
+    // Calculate Monthly Assignments percentage change
+    let monthlyAssignmentsChange = '0%';
+    let monthlyAssignmentsTrend: 'up' | 'down' | 'neutral' = 'neutral';
+    if (monthlyAssignmentsPreviousMonth > 0) {
+      const change = ((monthlyAssignments - monthlyAssignmentsPreviousMonth) / monthlyAssignmentsPreviousMonth) * 100;
+      monthlyAssignmentsChange = `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
+      monthlyAssignmentsTrend = change > 0 ? 'up' : change < 0 ? 'down' : 'neutral';
+    } else if (monthlyAssignments > 0 && monthlyAssignmentsPreviousMonth === 0) {
+      monthlyAssignmentsChange = 'New';
+      monthlyAssignmentsTrend = 'up';
+    }
 
     // Get subscription info
     const hospital = await db
@@ -138,13 +192,17 @@ export async function GET(
       }
     }
 
-    // Get today's schedule (assignments for today)
+    // Get today's schedule (assignments scheduled for today, not requested today)
+    // Filter by slot_date from doctor_availability if available, otherwise by requestedAt
+    // Use PostgreSQL's CURRENT_DATE to avoid timezone issues
     const todayScheduleResult = await db
       .select({
         id: assignments.id,
         doctorId: assignments.doctorId,
         patientId: assignments.patientId,
         status: assignments.status,
+        priority: assignments.priority,
+        consultationFee: assignments.consultationFee,
         requestedAt: assignments.requestedAt,
         expiresAt: assignments.expiresAt,
         actualStartTime: assignments.actualStartTime,
@@ -154,7 +212,17 @@ export async function GET(
       .where(
         and(
           eq(assignments.hospitalId, hospitalId),
-          sql`DATE(${assignments.requestedAt}::timestamp) = CURRENT_DATE`
+          sql`(
+            EXISTS (
+              SELECT 1 FROM doctor_availability da 
+              WHERE da.id = ${assignments.availabilitySlotId} 
+              AND DATE(da.slot_date) = CURRENT_DATE
+            )
+            OR (
+              ${assignments.availabilitySlotId} IS NULL 
+              AND DATE(${assignments.requestedAt}::timestamp) = CURRENT_DATE
+            )
+          )`
         )
       )
       .orderBy(desc(assignments.requestedAt))
@@ -211,20 +279,26 @@ export async function GET(
           patientCondition: patientResult?.medicalCondition || '',
           specialtyName: specialtyResult?.specialtyName || 'General',
           slotTime: slotTime ? formatTime(slotTime) : 'TBD',
+          priority: item.priority || 'routine',
+          consultationFee: item.consultationFee ? Number(item.consultationFee) : null,
         };
       })
     );
 
     // Get pending actions
-    // Unassigned patients (patients without assignments)
+    // Unassigned patients (patients without accepted or pending assignments)
+    // This includes: patients with no assignments, or patients with only declined/cancelled assignments
     const unassignedPatientsResult = await db
       .select({ count: sql<number>`count(DISTINCT ${patients.id})` })
       .from(patients)
-      .leftJoin(assignments, eq(patients.id, assignments.patientId))
       .where(
         and(
           eq(patients.hospitalId, hospitalId),
-          sql`${assignments.id} IS NULL`
+          sql`NOT EXISTS (
+            SELECT 1 FROM assignments a
+            WHERE a.patient_id = ${patients.id}
+            AND a.status IN ('accepted', 'pending')
+          )`
         )
       );
     const unassignedCount = Number(unassignedPatientsResult[0]?.count || 0);
@@ -303,8 +377,8 @@ export async function GET(
         metrics: {
           totalPatients: {
             value: totalPatients.toString(),
-            change: '+12.5%', // TODO: Calculate actual change
-            trend: 'up',
+            change: totalPatientsChange,
+            trend: totalPatientsTrend,
           },
           activeAssignments: {
             value: activeAssignments.toString(),
@@ -313,8 +387,8 @@ export async function GET(
           },
           monthlyAssignments: {
             value: monthlyAssignments.toString(),
-            change: '+18.2%', // TODO: Calculate actual change
-            trend: 'up',
+            change: monthlyAssignmentsChange,
+            trend: monthlyAssignmentsTrend,
           },
           subscriptionUsage: {
             value: subscriptionUsage?.toString() || '0',
@@ -330,6 +404,8 @@ export async function GET(
           patient: item.patientName || 'Unknown',
           condition: item.patientCondition || 'N/A',
           status: item.status,
+          priority: item.priority || 'routine',
+          consultationFee: item.consultationFee || null,
           acceptedAt: item.status === 'accepted' && item.actualStartTime ? 'Accepted' : null,
           expiresIn: item.status === 'pending' && item.expiresAt ? calculateTimeUntil(item.expiresAt) : null,
         })),

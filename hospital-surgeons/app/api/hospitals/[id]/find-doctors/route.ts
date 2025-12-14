@@ -106,11 +106,14 @@ export async function GET(
     // Only show verified doctors
     whereConditions.push(sql`d.license_verification_status = 'verified'`);
 
-    // Search text condition
+    // Search text condition - improved to search first name, last name, full name, and specialty
     if (searchText) {
       const searchPattern = `%${searchText.toLowerCase()}%`;
       whereConditions.push(sql`(
+        LOWER(d.first_name) LIKE ${searchPattern} OR
+        LOWER(d.last_name) LIKE ${searchPattern} OR
         LOWER(d.first_name || ' ' || d.last_name) LIKE ${searchPattern} OR
+        LOWER(d.last_name || ' ' || d.first_name) LIKE ${searchPattern} OR
         EXISTS (
           SELECT 1 FROM doctor_specialties ds
           INNER JOIN specialties s ON ds.specialty_id = s.id

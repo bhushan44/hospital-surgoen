@@ -172,6 +172,12 @@ export function AddPatientWizard({ onClose, onComplete }: AddPatientWizardProps)
         roomType: formData.roomType,
         costPerDay: costPerDayMap[formData.roomType] || 1500,
         medicalNotes: formData.medicalNotes || null,
+        // Consent data
+        dataPrivacy: formData.dataPrivacy,
+        doctorAssignment: formData.doctorAssignment,
+        treatmentConsent: formData.treatmentConsent,
+        consentGiverName: formData.consentGiverName,
+        relationship: formData.relationship,
       };
 
       const response = await fetch(`/api/hospitals/${hospitalId}/patients`, {

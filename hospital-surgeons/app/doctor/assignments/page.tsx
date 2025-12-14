@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Clock, CheckCircle, XCircle, AlertCircle, Calendar, Building2, User, Loader2 } from 'lucide-react';
+import { Search, Clock, CheckCircle, XCircle, AlertCircle, Calendar as CalendarIcon, Building2, User, Loader2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import {
   Table,
   TableBody,
@@ -52,11 +53,15 @@ interface Assignment {
 
 export default function AssignmentsPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'today' | 'all'>('today');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [tempSearchQuery, setTempSearchQuery] = useState('');
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [tempSelectedDate, setTempSelectedDate] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [tempStatusFilter, setTempStatusFilter] = useState('all');
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showDeclineModal, setShowDeclineModal] = useState(false);
@@ -65,7 +70,6 @@ export default function AssignmentsPage() {
   const [treatmentNotes, setTreatmentNotes] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [doctorId, setDoctorId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState('all');
   const [usage, setUsage] = useState<any>(null);
 
   useEffect(() => {
@@ -81,7 +85,7 @@ export default function AssignmentsPage() {
       fetchAssignments();
       fetchUsage();
     }
-  }, [activeTab, doctorId, statusFilter]);
+  }, [doctorId]);
 
   const fetchUsage = async () => {
     if (!doctorId) return;
@@ -99,16 +103,6 @@ export default function AssignmentsPage() {
       console.error('Error fetching usage:', error);
     }
   };
-
-  // Debounce search
-  useEffect(() => {
-    if (doctorId) {
-      const timeoutId = setTimeout(() => {
-        fetchAssignments();
-      }, 500);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [searchQuery]);
 
   const fetchDoctorProfile = async () => {
     try {
@@ -137,7 +131,7 @@ export default function AssignmentsPage() {
     }
   };
 
-  const fetchAssignments = async () => {
+  const fetchAssignments = async (dateOverride?: string, statusOverride?: string, searchOverride?: string) => {
     if (!doctorId) return;
     
     try {
@@ -146,16 +140,19 @@ export default function AssignmentsPage() {
       const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams();
       
-      if (activeTab === 'today') {
-        params.append('todayOnly', 'true');
+      const statusToUse = statusOverride !== undefined ? statusOverride : statusFilter;
+      if (statusToUse !== 'all') {
+        params.append('status', statusToUse);
       }
       
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
+      const dateToUse = dateOverride !== undefined ? dateOverride : selectedDate;
+      if (dateToUse) {
+        params.append('selectedDate', dateToUse);
       }
       
-      if (searchQuery) {
-        params.append('search', searchQuery);
+      const searchToUse = searchOverride !== undefined ? searchOverride : searchQuery;
+      if (searchToUse) {
+        params.append('search', searchToUse);
       }
       
       const response = await fetch(`/api/doctors/${doctorId}/assignments?${params.toString()}`, {
@@ -176,6 +173,23 @@ export default function AssignmentsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleApplyFilters = () => {
+    setSearchQuery(tempSearchQuery);
+    setStatusFilter(tempStatusFilter);
+    setSelectedDate(tempSelectedDate);
+    fetchAssignments(tempSelectedDate, tempStatusFilter, tempSearchQuery);
+  };
+
+  const handleClearFilters = () => {
+    setTempSearchQuery('');
+    setTempSelectedDate('');
+    setTempStatusFilter('all');
+    setSearchQuery('');
+    setSelectedDate('');
+    setStatusFilter('all');
+    fetchAssignments('', 'all', '');
   };
 
   const getStatusBadge = (status: string) => {
@@ -468,56 +482,70 @@ export default function AssignmentsPage() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="flex space-x-8">
-          <button
-            onClick={() => setActiveTab('today')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'today'
-                ? 'border-[#2563EB] text-[#2563EB]'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Today's Assignments
-          </button>
-          <button
-            onClick={() => setActiveTab('all')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'all'
-                ? 'border-[#2563EB] text-[#2563EB]'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            All Assignments
-          </button>
-        </nav>
-      </div>
-
-      {/* Search and Filters */}
+      {/* Search and Filters - All in One Line */}
       <div className="bg-white border border-gray-200 rounded-lg p-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-end gap-3">
+          {/* Search Bar */}
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <Input
               placeholder="Search by patient, hospital, or condition..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              value={tempSearchQuery || searchQuery}
+              onChange={(e) => setTempSearchQuery(e.target.value)}
+              className="pl-10 h-10 text-base"
             />
           </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+
+          {/* Date Filter */}
+          <div className="w-[200px]">
+            <div className="relative">
+              <input 
+                type="date"
+                value={tempSelectedDate || selectedDate}
+                onChange={(e) => {
+                  setTempSelectedDate(e.target.value);
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-[#2563EB] pr-10 h-10"
+              />
+              <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Status Filter */}
+          <div className="w-[180px]">
+            <Select value={tempStatusFilter} onValueChange={setTempStatusFilter}>
+              <SelectTrigger className="w-full h-10">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="accepted">Accepted</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="declined">Declined</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Clear Button */}
+          {(tempSearchQuery || tempSelectedDate || tempStatusFilter !== 'all' || searchQuery || selectedDate || statusFilter !== 'all') ? (
+            <Button
+              variant="outline"
+              onClick={handleClearFilters}
+              className="h-10 px-4 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+            >
+              Clear
+            </Button>
+          ) : null}
+
+          {/* Apply Button */}
+          <Button
+            onClick={handleApplyFilters}
+            className="h-10 px-6 bg-[#2563EB] hover:bg-[#1d4ed8] text-white"
           >
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="accepted">Accepted</option>
-            <option value="completed">Completed</option>
-            <option value="declined">Declined</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+            Apply
+          </Button>
         </div>
       </div>
 
@@ -552,14 +580,14 @@ export default function AssignmentsPage() {
                   </div>
                 </TableCell>
               </TableRow>
-            ) : filteredAssignments.length === 0 ? (
+            ) : assignments.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12 text-gray-500">
-                  {activeTab === 'today' ? "No assignments for today" : "No assignments found"}
+                  No assignments found
                 </TableCell>
               </TableRow>
             ) : (
-              filteredAssignments.map((assignment) => (
+              assignments.map((assignment) => (
                 <TableRow key={assignment.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -577,7 +605,7 @@ export default function AssignmentsPage() {
                   <TableCell>
                     <div>
                       <p className="flex items-center gap-1">
-                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <CalendarIcon className="w-4 h-4 text-gray-400" />
                         {assignment.date ? new Date(assignment.date).toLocaleDateString() : 'TBD'}
                       </p>
                       <p className="text-sm text-gray-500 flex items-center gap-1">
@@ -677,7 +705,7 @@ export default function AssignmentsPage() {
 
               <div className="p-4 bg-slate-50 rounded-lg">
                 <h3 className="text-gray-900 mb-2 flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
+                  <CalendarIcon className="w-4 h-4" />
                   Schedule
                 </h3>
                 <div className="space-y-1 text-sm">

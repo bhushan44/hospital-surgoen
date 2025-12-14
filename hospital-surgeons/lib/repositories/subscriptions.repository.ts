@@ -106,8 +106,19 @@ export class SubscriptionsRepository {
           plansMap.set(planId, {
             ...row.plan,
             doctorFeatures: row.doctorFeatures?.id ? row.doctorFeatures : null,
-            hospitalFeatures: row.hospitalFeatures?.id ? row.hospitalFeatures : null,
+            hospitalFeatures: [],
+            pricingOptions: [],
           });
+        }
+        // Add hospital features to array (in case there are multiple, though typically one per plan)
+        const hospitalFeature = row.hospitalFeatures;
+        if (hospitalFeature && hospitalFeature.id) {
+          const plan = plansMap.get(planId);
+          if (plan) {
+            if (!plan.hospitalFeatures.some((f: any) => f.id === hospitalFeature.id)) {
+              plan.hospitalFeatures.push(hospitalFeature);
+            }
+          }
         }
       });
 

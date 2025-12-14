@@ -1,64 +1,49 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { AlertCircle, TrendingUp, Calendar, Loader2 } from 'lucide-react';
+import { AlertCircle, TrendingUp, Calendar, Loader2, Users, ClipboardList } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api/httpClient';
 
-interface UsageData {
-  used: number;
-  limit: number;
-  percentage: number;
-  status: 'ok' | 'warning' | 'critical' | 'reached';
-  resetDate: string;
-  remaining: number;
-  plan: string;
+interface SubscriptionUsage {
+  assignments: {
+    used: number;
+    limit: number | null;
+    percentage: number;
+    remaining: number;
+  };
+  affiliations: {
+    used: number;
+    limit: number | null;
+    percentage: number;
+    remaining: number;
+  };
 }
 
 export function AssignmentUsageWidget() {
   const router = useRouter();
-  const [usage, setUsage] = useState<UsageData | null>(null);
+  const [subscriptionUsage, setSubscriptionUsage] = useState<SubscriptionUsage | null>(null);
   const [loading, setLoading] = useState(true);
-  const [doctorId, setDoctorId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchDoctorId();
+    fetchSubscriptionUsage();
   }, []);
 
-  useEffect(() => {
-    if (doctorId) {
-      fetchUsage();
-    }
-  }, [doctorId]);
-
-  const fetchDoctorId = async () => {
-    try {
-      const response = await apiClient.get('/api/doctors/profile');
-      if (response.data.success && response.data.data) {
-        setDoctorId(response.data.data.id);
-      }
-    } catch (error) {
-      console.error('Error fetching doctor profile:', error);
-    }
-  };
-
-  const fetchUsage = async () => {
-    if (!doctorId) return;
-    
+  const fetchSubscriptionUsage = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get(`/api/doctors/${doctorId}/assignment-usage`);
-      if (response.data.success) {
-        setUsage(response.data.data);
+      const response = await apiClient.get('/api/doctors/dashboard');
+      if (response.data.success && response.data.data?.subscriptionUsage) {
+        setSubscriptionUsage(response.data.data.subscriptionUsage);
       }
     } catch (error) {
-      console.error('Error fetching usage:', error);
+      console.error('Error fetching subscription usage:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading || !usage) {
+  if (loading || !subscriptionUsage) {
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <div className="animate-pulse">
@@ -69,78 +54,114 @@ export function AssignmentUsageWidget() {
     );
   }
 
-  const getStatusColor = () => {
-    switch (usage.status) {
-      case 'reached': return 'bg-red-500';
-      case 'critical': return 'bg-orange-500';
-      case 'warning': return 'bg-yellow-500';
-      default: return 'bg-green-500';
-    }
+  const getStatusColor = (percentage: number, limit: number | null) => {
+    if (limit === -1 || limit === null) return 'bg-green-500';
+    if (percentage >= 100) return 'bg-red-500';
+    if (percentage >= 80) return 'bg-orange-500';
+    if (percentage >= 60) return 'bg-yellow-500';
+    return 'bg-green-500';
   };
 
-  const getStatusText = () => {
-    switch (usage.status) {
-      case 'reached': return 'Limit Reached';
-      case 'critical': return 'Almost Full';
-      case 'warning': return 'Getting Close';
-      default: return 'On Track';
-    }
+  const getStatusText = (percentage: number, limit: number | null) => {
+    if (limit === -1 || limit === null) return 'Unlimited';
+    if (percentage >= 100) return 'Limit Reached';
+    if (percentage >= 80) return 'Almost Full';
+    if (percentage >= 60) return 'Getting Close';
+    return 'On Track';
   };
 
-  const resetDate = new Date(usage.resetDate).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  const renderUsageItem = (
+    title: string,
+    icon: React.ReactNode,
+    used: number,
+    limit: number | null,
+    percentage: number,
+    remaining: number
+  ) => {
+    const isUnlimited = limit === -1 || limit === null;
+    const statusColor = getStatusColor(percentage, limit);
+    const statusText = getStatusText(percentage, limit);
 
-  const isUnlimited = usage.limit === -1;
-
-  return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-900">
-          Assignment Usage
-        </h3>
-        <span className={`text-xs px-2 py-1 rounded ${
-          usage.status === 'reached' ? 'bg-red-100 text-red-700' :
-          usage.status === 'critical' ? 'bg-orange-100 text-orange-700' :
-          usage.status === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-          'bg-green-100 text-green-700'
-        }`}>
-          {getStatusText()}
-        </span>
-      </div>
-
-      {/* Progress Bar */}
-      <div className="mb-3">
-        <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-          <span>
-            {usage.used} / {isUnlimited ? '∞' : usage.limit} used
+    return (
+      <div className="mb-4 last:mb-0">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            {icon}
+            <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
+          </div>
+          <span className={`text-xs px-2 py-1 rounded ${
+            percentage >= 100 ? 'bg-red-100 text-red-700' :
+            percentage >= 80 ? 'bg-orange-100 text-orange-700' :
+            percentage >= 60 ? 'bg-yellow-100 text-yellow-700' :
+            'bg-green-100 text-green-700'
+          }`}>
+            {statusText}
           </span>
-          {!isUnlimited && <span>{usage.percentage}%</span>}
         </div>
-        {!isUnlimited && (
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full transition-all ${getStatusColor()}`}
-              style={{ width: `${Math.min(usage.percentage, 100)}%` }}
-            />
+
+        <div className="mb-2">
+          <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+            <span>
+              {used} / {isUnlimited ? '∞' : limit} used
+            </span>
+            {!isUnlimited && <span>{percentage}%</span>}
+          </div>
+          {!isUnlimited && (
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all ${statusColor}`}
+                style={{ width: `${Math.min(percentage, 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+
+        {!isUnlimited && remaining <= 5 && remaining > 0 && (
+          <div className={`text-xs p-2 rounded ${
+            percentage >= 100 
+              ? 'bg-red-50 text-red-700 border border-red-200' 
+              : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+          }`}>
+            {remaining} {title.toLowerCase()} remaining
           </div>
         )}
       </div>
+    );
+  };
 
-      {/* Plan Info */}
-      <div className="text-xs text-gray-600 mb-3">
-        <div className="flex items-center gap-1 mb-1">
-          <Calendar className="w-3 h-3" />
-          <span>Resets on {resetDate}</span>
-        </div>
-        <div>Plan: {usage.plan}</div>
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-gray-900">
+          Subscription Usage
+        </h3>
       </div>
 
-      {/* Warning/Upgrade Prompt */}
-      {usage.status === 'reached' && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+      {/* Assignment Usage */}
+      {renderUsageItem(
+        'Assignments',
+        <ClipboardList className="w-4 h-4 text-blue-600" />,
+        subscriptionUsage.assignments.used,
+        subscriptionUsage.assignments.limit,
+        subscriptionUsage.assignments.percentage,
+        subscriptionUsage.assignments.remaining
+      )}
+
+      {/* Affiliation Usage */}
+      {renderUsageItem(
+        'Hospital Affiliations',
+        <Users className="w-4 h-4 text-purple-600" />,
+        subscriptionUsage.affiliations.used,
+        subscriptionUsage.affiliations.limit,
+        subscriptionUsage.affiliations.percentage,
+        subscriptionUsage.affiliations.remaining
+      )}
+
+      {/* Upgrade Prompt if any limit reached */}
+      {(subscriptionUsage.assignments.percentage >= 100 || 
+        (subscriptionUsage.affiliations.limit !== null && 
+         subscriptionUsage.affiliations.percentage >= 100)) && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-4">
           <div className="flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-red-600 mt-0.5" />
             <div className="flex-1">
@@ -148,7 +169,10 @@ export function AssignmentUsageWidget() {
                 Limit Reached
               </p>
               <p className="text-xs text-red-700 mb-2">
-                You've used all {usage.limit} assignments this month. New assignments will be available on {resetDate}.
+                {subscriptionUsage.assignments.percentage >= 100 && 'Assignment limit reached. '}
+                {subscriptionUsage.affiliations.limit !== null && 
+                 subscriptionUsage.affiliations.percentage >= 100 && 'Affiliation limit reached. '}
+                Consider upgrading your plan for higher limits.
               </p>
               <button
                 onClick={() => router.push('/doctor/subscriptions')}
@@ -161,44 +185,21 @@ export function AssignmentUsageWidget() {
         </div>
       )}
 
-      {(usage.status === 'critical' || usage.status === 'warning') && (
-        <div className={`border rounded-lg p-3 mb-3 ${
-          usage.status === 'critical' 
-            ? 'bg-orange-50 border-orange-200' 
-            : 'bg-yellow-50 border-yellow-200'
-        }`}>
-          <div className="flex items-start gap-2">
-            <TrendingUp className={`w-4 h-4 mt-0.5 ${
-              usage.status === 'critical' ? 'text-orange-600' : 'text-yellow-600'
-            }`} />
-            <div className="flex-1">
-              <p className={`text-xs font-medium mb-1 ${
-                usage.status === 'critical' ? 'text-orange-900' : 'text-yellow-900'
-              }`}>
-                {usage.remaining} assignment{usage.remaining !== 1 ? 's' : ''} remaining
-              </p>
-              <button
-                onClick={() => router.push('/doctor/subscriptions')}
-                className={`text-xs px-3 py-1.5 rounded transition-colors font-medium ${
-                  usage.status === 'critical'
-                    ? 'bg-orange-600 hover:bg-orange-700 text-white'
-                    : 'bg-yellow-600 hover:bg-yellow-700 text-white'
-                }`}
-              >
-                View Plans
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* View Details Link */}
-      <button
-        onClick={() => router.push('/doctor/assignments')}
-        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-      >
-        View All Assignments →
-      </button>
+      {/* View Details Links */}
+      <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-200">
+        <button
+          onClick={() => router.push('/doctor/assignments')}
+          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+        >
+          View Assignments →
+        </button>
+        <button
+          onClick={() => router.push('/doctor/affiliations')}
+          className="text-xs text-purple-600 hover:text-purple-700 font-medium"
+        >
+          View Affiliations →
+        </button>
+      </div>
     </div>
   );
 }

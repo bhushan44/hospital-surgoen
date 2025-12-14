@@ -3,8 +3,9 @@ import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
 import { getDb } from '@/lib/db';
-import { assignments, doctorHospitalAffiliations } from '@/src/db/drizzle/migrations/schema';
+import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql, count } from 'drizzle-orm';
+import { getMaxAssignmentsForDoctor } from '@/lib/config/subscription-limits';
 
 /**
  * @swagger
@@ -154,9 +155,78 @@ async function getHandler(req: NextRequest) {
       );
     const activeAffiliations = Number(activeAffiliationsResult[0]?.count || 0);
     
-    // Get max affiliations limit from subscription (if available)
-    // This would require fetching the doctor's subscription and plan features
-    // For now, we'll just return the count and let the frontend handle the limit display
+    // Get subscription usage (assignment and affiliation limits)
+    let subscriptionUsage = null;
+    const subscriptionResult = await db
+      .select({
+        planId: subscriptions.planId,
+        status: subscriptions.status,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.userId, user.userId),
+          eq(subscriptions.status, 'active')
+        )
+      )
+      .limit(1);
+
+    if (subscriptionResult.length > 0 && subscriptionResult[0].planId) {
+      // Get plan features
+      const planFeaturesResult = await db
+        .select({
+          maxAssignments: doctorPlanFeatures.maxAssignmentsPerMonth,
+          maxAffiliations: doctorPlanFeatures.maxAffiliations,
+        })
+        .from(doctorPlanFeatures)
+        .where(eq(doctorPlanFeatures.planId, subscriptionResult[0].planId))
+        .limit(1);
+
+      const maxAssignments = planFeaturesResult[0]?.maxAssignments ?? null;
+      const maxAffiliations = planFeaturesResult[0]?.maxAffiliations ?? null;
+
+      // Get current month assignment usage
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const assignmentUsageResult = await db
+        .select()
+        .from(doctorAssignmentUsage)
+        .where(
+          and(
+            eq(doctorAssignmentUsage.doctorId, doctorId),
+            eq(doctorAssignmentUsage.month, currentMonth)
+          )
+        )
+        .limit(1);
+
+      const assignmentUsed = assignmentUsageResult.length > 0 
+        ? Number(assignmentUsageResult[0].count || 0)
+        : 0;
+
+      // Calculate assignment percentage
+      const assignmentPercentage = maxAssignments === -1 || maxAssignments === null
+        ? 0
+        : Math.round((assignmentUsed / maxAssignments) * 100);
+
+      // Calculate affiliation percentage
+      const affiliationPercentage = maxAffiliations === -1 || maxAffiliations === null
+        ? 0
+        : Math.round((activeAffiliations / maxAffiliations) * 100);
+
+      subscriptionUsage = {
+        assignments: {
+          used: assignmentUsed,
+          limit: maxAssignments,
+          percentage: assignmentPercentage,
+          remaining: maxAssignments === -1 || maxAssignments === null ? -1 : Math.max(0, maxAssignments - assignmentUsed),
+        },
+        affiliations: {
+          used: activeAffiliations,
+          limit: maxAffiliations,
+          percentage: affiliationPercentage,
+          remaining: maxAffiliations === -1 || maxAffiliations === null ? -1 : Math.max(0, maxAffiliations - activeAffiliations),
+        },
+      };
+    }
 
     // Calculate profile completion
     let profileScore = 0;
@@ -187,6 +257,7 @@ async function getHandler(req: NextRequest) {
         activeAffiliations,
         todayAssignments,
         licenseVerificationStatus: doctor.licenseVerificationStatus,
+        subscriptionUsage,
       },
     });
   } catch (error) {

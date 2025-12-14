@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Edit, Eye, UserPlus, CheckCircle, AlertCircle, XCircle, Loader2 } from 'lucide-react';
+import { Plus, Search, Filter, Edit, Eye, UserPlus, CheckCircle, AlertCircle, XCircle, Loader2, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -108,6 +108,13 @@ export function PatientManagement() {
             Assigned
           </Badge>
         );
+      case 'pending':
+        return (
+          <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+            <Clock className="w-3 h-3 mr-1" />
+            Pending
+          </Badge>
+        );
       case 'unassigned':
         return (
           <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
@@ -122,8 +129,19 @@ export function PatientManagement() {
             Declined
           </Badge>
         );
+      case 'completed':
+        return (
+          <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Completed
+          </Badge>
+        );
       default:
-        return null;
+        return (
+          <Badge variant="outline" className="bg-slate-100 text-slate-800">
+            {status}
+          </Badge>
+        );
     }
   };
 

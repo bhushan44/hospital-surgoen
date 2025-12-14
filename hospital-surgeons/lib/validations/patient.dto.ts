@@ -17,6 +17,12 @@ export const CreatePatientDtoSchema = z.object({
   }),
   costPerDay: z.number().min(0, 'Cost per day must be non-negative').optional(),
   medicalNotes: z.string().optional(),
+  // Consent fields
+  dataPrivacy: z.boolean().optional(),
+  doctorAssignment: z.boolean().optional(),
+  treatmentConsent: z.boolean().optional(),
+  consentGiverName: z.string().optional(),
+  relationship: z.string().optional(),
 }).transform((data) => {
   // Normalize room type: convert 'semi-private' to 'semi_private'
   if (data.roomType === 'semi-private') {
