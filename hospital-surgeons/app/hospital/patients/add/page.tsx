@@ -107,12 +107,9 @@ export default function AddPatientPage() {
         router.push('/hospital/patients');
       } else {
         // Show specific error message for limit reached
+        // API now provides detailed messages with usage and reset dates
         const errorMessage = data.message || 'Failed to create patient. Please try again.';
-        if (data.error === 'PATIENT_LIMIT_REACHED') {
-          setError(`${errorMessage}\n\nUpgrade your plan to add more patients.`);
-        } else {
-          setError(errorMessage);
-        }
+        setError(errorMessage);
       }
     } catch (err) {
       console.error('Error creating patient:', err);

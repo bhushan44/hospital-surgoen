@@ -178,7 +178,7 @@ async function postHandler(req: NextRequest) {
       // Upgrade tracking fields
       previousSubscriptionId: existingSubscription?.id,
       upgradeFromPlanId: existingSubscription?.planId,
-      upgradeFromPricingId: existingSubscription?.pricingId,
+      upgradeFromPricingId: existingSubscription?.pricingId || undefined,
     });
 
     if (!subscriptionResult.success) {

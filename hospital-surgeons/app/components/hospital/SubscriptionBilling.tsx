@@ -174,7 +174,7 @@ export function SubscriptionBilling() {
         }
 
         // Find the selected pricing option
-        const selectedPricingOption = plan.pricingOptions?.find(p => p.id === pricingId);
+        const selectedPricingOption = plan.pricingOptions?.find((p: PricingOption) => p.id === pricingId);
         if (!selectedPricingOption) {
           throw new Error('Selected pricing option not found');
         }
@@ -514,9 +514,15 @@ export function SubscriptionBilling() {
                     </CardTitle>
                     <div className="mt-4">
                       <span className="text-3xl font-bold text-slate-900">
-                        {p.tier === 'free' ? 'Free' : `₹${(p.price / 100).toLocaleString()}`}
+                        {p.tier === 'free' ? 'Free' : (
+                          p.pricingOptions && p.pricingOptions.length > 0
+                            ? `₹${(p.pricingOptions[0].price / 100).toLocaleString()}`
+                            : 'Contact Us'
+                        )}
                       </span>
-                      {p.tier !== 'free' && <span className="text-slate-500">/month</span>}
+                      {p.tier !== 'free' && p.pricingOptions && p.pricingOptions.length > 0 && (
+                        <span className="text-slate-500">/{p.pricingOptions[0].billingCycle}</span>
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent>

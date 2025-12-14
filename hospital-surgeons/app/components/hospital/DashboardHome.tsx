@@ -68,6 +68,7 @@ export function DashboardHome() {
     { type: 'declined', count: 0, message: 'Declined assignments need reassignment', action: 'Find Doctor' },
     { type: 'expiring', count: 0, message: 'Assignments expiring soon', action: 'Send Reminder' },
   ]);
+  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [hospitalId, setHospitalId] = useState<string | null>(null);
@@ -157,6 +158,9 @@ export function DashboardHome() {
 
         // Update pending actions
         setPendingActions(data.pendingActions || []);
+
+        // Update available slots
+        setAvailableSlots(data.availableSlots || []);
       }
     } catch (error: any) {
       console.error('Error fetching dashboard data:', error);
@@ -368,6 +372,63 @@ export function DashboardHome() {
             </div>
           </div>
         </div>
+
+        {/* Available Time Slots */}
+        {availableSlots.length > 0 && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-slate-900 font-semibold">Available Time Slots</h3>
+                <p className="text-slate-600 text-sm mt-1">Upcoming available slots from verified doctors</p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => onNavigate('find-doctors')}
+              >
+                View All
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {availableSlots.slice(0, 9).map((slot: any, index: number) => (
+                <div 
+                  key={index} 
+                  className="p-4 rounded-lg border border-slate-200 hover:border-teal-300 transition-colors cursor-pointer"
+                  onClick={() => onNavigate('find-doctors')}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="text-slate-900 font-medium text-sm">{slot.doctorName}</p>
+                      <p className="text-slate-600 text-xs mt-1">
+                        {new Date(slot.date).toLocaleDateString('en-US', { 
+                          weekday: 'short', 
+                          month: 'short', 
+                          day: 'numeric' 
+                        })}
+                      </p>
+                    </div>
+                    <Clock className="w-4 h-4 text-teal-600" />
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge variant="outline" className="text-xs">
+                      {slot.time} - {slot.endTime}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {availableSlots.length > 9 && (
+              <div className="mt-4 text-center">
+                <Button 
+                  variant="outline" 
+                  onClick={() => onNavigate('find-doctors')}
+                >
+                  View {availableSlots.length - 9} more slots
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

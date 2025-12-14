@@ -14,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import { RadioGroup, RadioGroupItem } from '../../components/ui/radio-group';
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
 import {
   Dialog,
@@ -28,24 +27,22 @@ import { Alert, AlertDescription } from '../../components/ui/alert';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
 import apiClient from '@/lib/api/httpClient';
+import { PatientSelectionModal } from './PatientSelectionModal';
 
 export function FindDoctors() {
   const router = useRouter();
   const [searchParams, setSearchParams] = useState({
     searchText: '',
-    patient: '',
     specialty: '',
     selectedSpecialties: [] as string[],
     date: '',
-    priority: 'routine',
   });
   const [showResults, setShowResults] = useState(false);
-  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showPatientModal, setShowPatientModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
-  const [selectedSlot, setSelectedSlot] = useState<{ id: string; time: string } | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ id: string; time: string; startTime?: string; endTime?: string; slotDate?: string } | null>(null);
   const [doctors, setDoctors] = useState<any[]>([]);
-  const [patients, setPatients] = useState<any[]>([]);
   const [specialties, setSpecialties] = useState([
     'Cardiology',
     'Orthopedics',
@@ -58,7 +55,6 @@ export function FindDoctors() {
   ]);
   const [hospitalSubscription, setHospitalSubscription] = useState<'free' | 'gold' | 'premium'>('free');
   const [loading, setLoading] = useState(false);
-  const [creatingAssignment, setCreatingAssignment] = useState(false);
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pagination, setPagination] = useState({
@@ -74,12 +70,6 @@ export function FindDoctors() {
     fetchHospitalProfile();
     fetchSpecialties();
   }, []);
-
-  useEffect(() => {
-    if (hospitalId) {
-      fetchPatients();
-    }
-  }, [hospitalId]);
 
   const fetchHospitalProfile = async () => {
     try {
@@ -101,26 +91,6 @@ export function FindDoctors() {
     }
   };
 
-  const fetchPatients = async () => {
-    if (!hospitalId) return;
-    try {
-      const response = await apiClient.get(`/api/hospitals/${hospitalId}/patients`);
-      const result = response.data;
-      if (result.success && result.data) {
-        setPatients(result.data.map((p: any) => ({
-          id: p.id,
-          name: p.fullName || p.name,
-          condition: p.medicalCondition || p.condition,
-        })));
-      } else {
-        setPatients([]);
-      }
-    } catch (error) {
-      console.error('Error fetching patients:', error);
-      setError('Failed to load patients');
-      setPatients([]);
-    }
-  };
 
   const fetchSpecialties = async () => {
     try {
@@ -264,9 +234,6 @@ export function FindDoctors() {
       if (searchParams.date) {
         params.date = searchParams.date;
       }
-      
-      // Add priority
-      params.priority = searchParams.priority;
 
       // Build query string with multiple specialtyId params
       const queryParams = new URLSearchParams();
@@ -310,64 +277,22 @@ export function FindDoctors() {
       return;
     }
     setSelectedDoctor(doctor);
-    console.log(doctor);
-    setSelectedSlot(slot);
-    setShowConfirmation(true);
+    // Format slot with date if available
+    const formattedSlot = {
+      id: slot.id,
+      time: slot.time || slot.startTime || 'TBD',
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      slotDate: slot.slotDate || searchParams.date,
+    };
+    setSelectedSlot(formattedSlot);
+    setShowPatientModal(true);
   };
 
-  const handleConfirmAssignment = async () => {
-    if (!selectedDoctor || !selectedSlot || !searchParams.patient) {
-      alert('Please select a doctor and time slot');
-      return;
-    }
-
-    if (creatingAssignment) {
-      return; // Prevent double-click
-    }
-
-    try {
-      setCreatingAssignment(true);
-      
-      const response = await apiClient.post(`/api/hospitals/${hospitalId}/assignments/create`, {
-        patientId: searchParams.patient,
-        doctorId: selectedDoctor.id,
-        availabilitySlotId: selectedSlot.id,
-        priority: searchParams.priority,
-        consultationFee: selectedDoctor.fee,
-      });
-
-      const result = response.data;
-
-      if (result.success) {
-        setShowConfirmation(false);
-        alert('Assignment created successfully! Doctor has been notified.');
-        // Optionally navigate to assignments page
-        router.push('/hospital/assignments');
-      } else {
-        // Show specific error messages for limit reached
-        const errorMessage = result.message || 'Failed to create assignment';
-        if (result.code === 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED') {
-          alert(`${errorMessage}\n\nUpgrade your plan to create more assignments.`);
-        } else if (result.code === 'ASSIGNMENT_LIMIT_REACHED') {
-          alert(`${errorMessage}\n\nThis doctor has reached their limit. Please try another doctor.`);
-        } else {
-          alert(errorMessage);
-        }
-      }
-    } catch (error: any) {
-      console.error('Error creating assignment:', error);
-      const errorMessage = error.response?.data?.message || 'An error occurred while creating the assignment';
-      const errorCode = error.response?.data?.code;
-      
-      if (errorCode === 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED') {
-        alert(`${errorMessage}\n\nUpgrade your plan to create more assignments.`);
-      } else if (errorCode === 'ASSIGNMENT_LIMIT_REACHED') {
-        alert(`${errorMessage}\n\nThis doctor has reached their limit. Please try another doctor.`);
-      } else {
-        alert(errorMessage);
-      }
-    } finally {
-      setCreatingAssignment(false);
+  const handleAssignmentSuccess = () => {
+    // Refresh doctor list or show success message
+    if (searchParams.date) {
+      handleSearch(1); // Refresh search results
     }
   };
 
@@ -382,54 +307,9 @@ export function FindDoctors() {
         description="Search for available doctors and create assignments"
       />
       <div className="p-8" style={{ overflow: 'visible' }}>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Patient Selection Card */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 sticky top-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Select Patient</h3>
-              <div className="space-y-2">
-                <Label htmlFor="patient" className="text-slate-700">
-                  Patient
-                </Label>
-                <Select 
-                  value={searchParams.patient} 
-                  onValueChange={(value) => setSearchParams({ ...searchParams, patient: value })}
-                  disabled={patients.length === 0}
-                >
-                  <SelectTrigger className="h-11">
-                    <SelectValue placeholder={patients.length === 0 ? "No patients available" : "Choose patient"} />
-                  </SelectTrigger>
-                  {patients.length > 0 && (
-                    <SelectContent>
-                      {patients.map((patient) => (
-                        <SelectItem key={patient.id} value={patient.id.toString()}>
-                          {patient.name} - {patient.condition}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  )}
-                </Select>
-                {patients.length === 0 && (
-                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                    <p className="text-sm text-amber-800">
-                      No patients found. Please add a patient first.
-                    </p>
-                  </div>
-                )}
-                {searchParams.patient && patients.length > 0 && (
-                  <div className="mt-3 p-3 bg-teal-50 border border-teal-200 rounded-lg">
-                    <p className="text-xs text-teal-700 font-medium">Patient Selected</p>
-                    <p className="text-sm text-teal-900 mt-1">
-                      {patients.find(p => p.id.toString() === searchParams.patient)?.name}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
+        <div className="mb-8">
           {/* Search and Filters Card */}
-          <div className="lg:col-span-2">
+          <div>
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 mb-6">
               {/* Quick Search Section */}
               <div className="p-6 border-b border-slate-200">
@@ -489,9 +369,9 @@ export function FindDoctors() {
                 </div>
               </div>
 
-              {/* Assignment Details Section */}
+              {/* Date Selection Section */}
               <div className="p-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Assignment Details</h3>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Search Filters</h3>
                 <div className="space-y-5">
                   <div className="space-y-2">
                     <Label htmlFor="date" className="text-slate-700">
@@ -505,44 +385,7 @@ export function FindDoctors() {
                       className="h-11"
                     />
                   </div>
-
-                  <div className="space-y-3">
-                    <Label className="text-slate-700">
-                      Priority Level
-                    </Label>
-                    <RadioGroup value={searchParams.priority} onValueChange={(value) => setSearchParams({ ...searchParams, priority: value })}>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="flex items-center space-x-3 p-4 rounded-lg border-2 border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
-                          <RadioGroupItem value="routine" id="routine" />
-                          <div className="flex-1">
-                            <Label htmlFor="routine" className="cursor-pointer font-medium text-slate-900">
-                              Routine
-                            </Label>
-                            <p className="text-sm text-slate-500">24-hour response</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-3 p-4 rounded-lg border-2 border-yellow-200 bg-yellow-50/50 hover:border-yellow-300 transition-colors cursor-pointer">
-                          <RadioGroupItem value="urgent" id="urgent" />
-                          <div className="flex-1">
-                            <Label htmlFor="urgent" className="cursor-pointer font-medium text-slate-900">
-                              Urgent
-                            </Label>
-                            <p className="text-sm text-slate-500">6-hour response</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-3 p-4 rounded-lg border-2 border-red-200 bg-red-50/50 hover:border-red-300 transition-colors cursor-pointer">
-                          <RadioGroupItem value="emergency" id="emergency" />
-                          <div className="flex-1">
-                            <Label htmlFor="emergency" className="cursor-pointer font-medium text-slate-900">
-                              Emergency
-                            </Label>
-                            <p className="text-sm text-slate-500">1-hour response</p>
-                          </div>
-                        </div>
-                      </div>
-                    </RadioGroup>
-                  </div>
-
+                  
                   <Button
                     onClick={(e) => {
                       e.preventDefault();
@@ -754,75 +597,19 @@ export function FindDoctors() {
         </div>
       )}
 
-      {/* Confirmation Modal */}
-      <Dialog open={showConfirmation} onOpenChange={setShowConfirmation}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Confirm Assignment</DialogTitle>
-            <DialogDescription>
-              Review the assignment details before confirming
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedDoctor && (
-            <div className="space-y-4">
-              <div className="p-4 bg-slate-50 rounded-lg">
-                <h3 className="text-gray-900 mb-2">Doctor Details</h3>
-                <div className="space-y-1 text-sm">
-                  <p><span className="text-gray-500">Name:</span> {selectedDoctor.name}</p>
-                  <p><span className="text-gray-500">Specialty:</span> {selectedDoctor.specialty}</p>
-                  <p><span className="text-gray-500">Experience:</span> {selectedDoctor.experience} years</p>
-                  <p><span className="text-gray-500">Rating:</span> {selectedDoctor.rating} ⭐</p>
-                </div>
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-lg">
-                <h3 className="text-gray-900 mb-2">Schedule Details</h3>
-                <div className="space-y-1 text-sm">
-                  <p><span className="text-gray-500">Date:</span> {searchParams.date}</p>
-                  <p><span className="text-gray-500">Time:</span> {selectedSlot?.time || (typeof selectedSlot === 'string' ? selectedSlot : '')}</p>
-                  <p><span className="text-gray-500">Priority:</span> <span className="capitalize">{searchParams.priority}</span></p>
-                  <p><span className="text-gray-500">Response Deadline:</span> {getPriorityTimeout(searchParams.priority)}</p>
-                </div>
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-lg">
-                <h3 className="text-gray-900 mb-2">Estimated Cost</h3>
-                <p className="text-2xl">₹{selectedDoctor.fee}</p>
-              </div>
-
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <h3 className="text-blue-900 mb-2 flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5" />
-                  Pre-Assignment Checklist
-                </h3>
-                <ul className="space-y-1 text-sm text-blue-800">
-                  <li>✓ Doctor affiliation verified</li>
-                  <li>✓ Patient consent confirmed</li>
-                  <li>✓ Subscription limit checked</li>
-                  <li>✓ Time slot availability confirmed</li>
-                </ul>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowConfirmation(false)} disabled={creatingAssignment}>
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmAssignment} disabled={creatingAssignment}>
-              {creatingAssignment ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  Creating...
-                </>
-              ) : (
-                'Confirm Assignment'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Patient Selection Modal */}
+      <PatientSelectionModal
+        open={showPatientModal}
+        onClose={() => {
+          setShowPatientModal(false);
+          setSelectedDoctor(null);
+          setSelectedSlot(null);
+        }}
+        selectedDoctor={selectedDoctor}
+        selectedSlot={selectedSlot}
+        hospitalId={hospitalId}
+        onSuccess={handleAssignmentSuccess}
+      />
 
       {/* Upgrade Modal */}
       <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
@@ -938,6 +725,20 @@ export function FindDoctors() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Patient Selection Modal */}
+      <PatientSelectionModal
+        open={showPatientModal}
+        onClose={() => {
+          setShowPatientModal(false);
+          setSelectedDoctor(null);
+          setSelectedSlot(null);
+        }}
+        selectedDoctor={selectedDoctor}
+        selectedSlot={selectedSlot}
+        hospitalId={hospitalId}
+        onSuccess={handleAssignmentSuccess}
+      />
       </div>
     </div>
   );

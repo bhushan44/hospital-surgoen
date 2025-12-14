@@ -150,7 +150,7 @@ export default function SubscriptionPlanPage() {
         }
 
         // Find the selected pricing option
-        const selectedPricingOption = plan.pricingOptions?.find(p => p.id === pricingId);
+        const selectedPricingOption = plan.pricingOptions?.find((p: any) => p.id === pricingId);
         if (!selectedPricingOption) {
           throw new Error('Selected pricing option not found');
         }

@@ -195,8 +195,8 @@ async function seedDatabase() {
             name: `${tier.charAt(0).toUpperCase() + tier.slice(1)} ${role.charAt(0).toUpperCase() + role.slice(1)} Plan`,
             tier: tier,
             userRole: role,
-            price: (tier === 'free' ? 0 : tier === 'basic' ? 29 : tier === 'premium' ? 99 : 299) * 100, // Convert to cents (bigint with mode: "number" accepts number)
-            currency: 'USD',
+            isActive: true,
+            defaultBillingCycle: 'monthly',
           }).returning();
           planIds.push(plan.id);
           if (role === 'doctor') doctorPlanIds.push(plan.id);

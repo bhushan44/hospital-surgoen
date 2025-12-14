@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
+import { getDb } from '@/lib/db';
+import { assignments, doctorHospitalAffiliations } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, sql, count } from 'drizzle-orm';
 
 /**
  * @swagger
@@ -97,13 +100,31 @@ async function getHandler(req: NextRequest) {
       ? (Array.isArray(pendingBookings.data) ? pendingBookings.data.length : 0)
       : 0;
 
+    // Get today's assignments count
+    const db = getDb();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    
+    const todayAssignmentsResult = await db
+      .select({ count: count() })
+      .from(assignments)
+      .where(
+        and(
+          eq(assignments.doctorId, doctorId),
+          sql`DATE(${assignments.requestedAt}) = CURRENT_DATE`
+        )
+      );
+    const todayAssignments = Number(todayAssignmentsResult[0]?.count || 0);
+
     // Get upcoming availability
     const availabilityResult = await doctorsService.getDoctorAvailability(doctorId);
     const availability = availabilityResult.success ? availabilityResult.data : [];
-    const today = new Date().toISOString().split('T')[0];
+    const todayStr = new Date().toISOString().split('T')[0];
     const upcomingSlots = Array.isArray(availability) 
       ? availability.filter((slot: any) => 
-          slot.slotDate >= today && slot.status === 'available'
+          slot.slotDate >= todayStr && slot.status === 'available'
         ).length
       : 0;
 
@@ -121,9 +142,21 @@ async function getHandler(req: NextRequest) {
       rejected: Array.isArray(credentials) ? credentials.filter((c: any) => c.verificationStatus === 'rejected').length : 0,
     };
 
-    // Get affiliations - default to 0 if method doesn't exist
-    let activeAffiliations = 0;
-    console.log('doctor', doctor);
+    // Get active affiliations count
+    const activeAffiliationsResult = await db
+      .select({ count: count() })
+      .from(doctorHospitalAffiliations)
+      .where(
+        and(
+          eq(doctorHospitalAffiliations.doctorId, doctorId),
+          eq(doctorHospitalAffiliations.status, 'active')
+        )
+      );
+    const activeAffiliations = Number(activeAffiliationsResult[0]?.count || 0);
+    
+    // Get max affiliations limit from subscription (if available)
+    // This would require fetching the doctor's subscription and plan features
+    // For now, we'll just return the count and let the frontend handle the limit display
 
     // Calculate profile completion
     let profileScore = 0;
@@ -131,7 +164,8 @@ async function getHandler(req: NextRequest) {
     if (doctor.medicalLicenseNumber) profileScore += 15;
     if (doctor.yearsOfExperience) profileScore += 10;
     if (doctor.bio) profileScore += 15;
-    if (doctor.primaryLocation) profileScore += 10;
+    // Check for location - either primaryLocation OR address components (fullAddress/city/state)
+    if (doctor.primaryLocation || (doctor.fullAddress && doctor.city && doctor.state)) profileScore += 10;
     if (doctor.profilePhotoId) profileScore += 10;
     if (doctor.licenseVerificationStatus === 'verified') profileScore += 20;
     const profileCompletion = Math.min(profileScore, 100);
@@ -151,6 +185,7 @@ async function getHandler(req: NextRequest) {
         profileCompletion,
         credentials: credentialsStats,
         activeAffiliations,
+        todayAssignments,
         licenseVerificationStatus: doctor.licenseVerificationStatus,
       },
     });

@@ -193,7 +193,7 @@ function PaymentFormContent() {
 
   // Get the selected pricing option or default to first one
   const selectedPricing = pricingId 
-    ? plan.pricingOptions?.find(p => p.id === pricingId)
+    ? plan.pricingOptions?.find((p: any) => p.id === pricingId)
     : plan.pricingOptions?.[0];
   
   const priceInDollars = selectedPricing ? selectedPricing.price / 100 : parseFloat(amount || '0');

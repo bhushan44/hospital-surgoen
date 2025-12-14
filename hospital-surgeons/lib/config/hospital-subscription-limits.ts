@@ -1,11 +1,15 @@
 /**
  * Hospital Subscription Plan Limits Configuration
  * 
- * This file centralizes all hospital subscription plan limits to ensure consistency
- * across the application. All hospital limits (patients & assignments) are defined here.
+ * This file provides functions to get hospital limits from the database.
+ * Limits are now stored in hospitalPlanFeatures.maxPatientsPerMonth and maxAssignmentsPerMonth.
  * 
- * To update limits, modify this file only.
+ * To update limits, modify the plan features in the admin panel.
  */
+
+import { getDb } from '@/lib/db';
+import { subscriptionPlans, hospitalPlanFeatures, subscriptions } from '@/src/db/drizzle/migrations/schema';
+import { eq, and } from 'drizzle-orm';
 
 export type HospitalPlanTier = 'free' | 'basic' | 'premium' | 'enterprise';
 
@@ -97,5 +101,151 @@ export function isUnlimitedPatients(tier: HospitalPlanTier | string | null | und
  */
 export function isUnlimitedAssignmentsForHospital(tier: HospitalPlanTier | string | null | undefined): boolean {
   return getMaxAssignmentsForHospital(tier) === -1;
+}
+
+/**
+ * Get the maximum patients allowed for a plan from the database
+ * 
+ * @param planId - The subscription plan ID
+ * @returns The maximum patients allowed (-1 for unlimited, null if not set, defaults to 10)
+ */
+export async function getMaxPatientsFromPlan(planId: string | null | undefined): Promise<number> {
+  if (!planId) {
+    return DEFAULT_HOSPITAL_PATIENT_LIMIT;
+  }
+
+  try {
+    const db = getDb();
+    
+    // Get plan features from database
+    const features = await db
+      .select({
+        maxPatientsPerMonth: hospitalPlanFeatures.maxPatientsPerMonth,
+      })
+      .from(hospitalPlanFeatures)
+      .where(eq(hospitalPlanFeatures.planId, planId))
+      .limit(1);
+
+    if (features.length > 0 && features[0].maxPatientsPerMonth !== null && features[0].maxPatientsPerMonth !== undefined) {
+      return features[0].maxPatientsPerMonth;
+    }
+
+    // If no features found or maxPatientsPerMonth is null, return default
+    return DEFAULT_HOSPITAL_PATIENT_LIMIT;
+  } catch (error) {
+    console.error('Error fetching max patients from plan:', error);
+    // Return default on error
+    return DEFAULT_HOSPITAL_PATIENT_LIMIT;
+  }
+}
+
+/**
+ * Get the maximum assignments allowed for a hospital plan from the database
+ * 
+ * @param planId - The subscription plan ID
+ * @returns The maximum assignments allowed (-1 for unlimited, null if not set, defaults to 20)
+ */
+export async function getMaxAssignmentsForHospitalFromPlan(planId: string | null | undefined): Promise<number> {
+  if (!planId) {
+    return DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
+  }
+
+  try {
+    const db = getDb();
+    
+    // Get plan features from database
+    const features = await db
+      .select({
+        maxAssignmentsPerMonth: hospitalPlanFeatures.maxAssignmentsPerMonth,
+      })
+      .from(hospitalPlanFeatures)
+      .where(eq(hospitalPlanFeatures.planId, planId))
+      .limit(1);
+
+    if (features.length > 0 && features[0].maxAssignmentsPerMonth !== null && features[0].maxAssignmentsPerMonth !== undefined) {
+      return features[0].maxAssignmentsPerMonth;
+    }
+
+    // If no features found or maxAssignmentsPerMonth is null, return default
+    return DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
+  } catch (error) {
+    console.error('Error fetching max assignments from plan:', error);
+    // Return default on error
+    return DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
+  }
+}
+
+/**
+ * Get the maximum patients allowed for a hospital based on their subscription
+ * 
+ * @param userId - The hospital's user ID
+ * @returns The maximum patients allowed (-1 for unlimited, defaults to 10)
+ */
+export async function getMaxPatientsForHospital(userId: string): Promise<number> {
+  try {
+    const db = getDb();
+    
+    // Get active subscription with plan
+    const subscription = await db
+      .select({
+        planId: subscriptionPlans.id,
+      })
+      .from(subscriptions)
+      .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.status, 'active')
+        )
+      )
+      .limit(1);
+
+    if (subscription.length > 0 && subscription[0].planId) {
+      return await getMaxPatientsFromPlan(subscription[0].planId);
+    }
+
+    // No subscription found, return default
+    return DEFAULT_HOSPITAL_PATIENT_LIMIT;
+  } catch (error) {
+    console.error('Error fetching max patients for hospital:', error);
+    return DEFAULT_HOSPITAL_PATIENT_LIMIT;
+  }
+}
+
+/**
+ * Get the maximum assignments allowed for a hospital based on their subscription
+ * 
+ * @param userId - The hospital's user ID
+ * @returns The maximum assignments allowed (-1 for unlimited, defaults to 20)
+ */
+export async function getMaxAssignmentsForHospitalFromUser(userId: string): Promise<number> {
+  try {
+    const db = getDb();
+    
+    // Get active subscription with plan
+    const subscription = await db
+      .select({
+        planId: subscriptionPlans.id,
+      })
+      .from(subscriptions)
+      .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.status, 'active')
+        )
+      )
+      .limit(1);
+
+    if (subscription.length > 0 && subscription[0].planId) {
+      return await getMaxAssignmentsForHospitalFromPlan(subscription[0].planId);
+    }
+
+    // No subscription found, return default
+    return DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
+  } catch (error) {
+    console.error('Error fetching max assignments for hospital:', error);
+    return DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
+  }
 }
 

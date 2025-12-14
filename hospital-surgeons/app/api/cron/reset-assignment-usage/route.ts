@@ -3,7 +3,7 @@ import { getDb } from '@/lib/db';
 import { doctors, hospitals, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, hospitalUsageTracking } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, gte } from 'drizzle-orm';
 import { getMaxAssignmentsForDoctor, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
-import { getMaxPatients, getMaxAssignmentsForHospital, DEFAULT_HOSPITAL_PATIENT_LIMIT, DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT } from '@/lib/config/hospital-subscription-limits';
+import { getMaxPatientsForHospital, getMaxAssignmentsForHospitalFromUser } from '@/lib/config/hospital-subscription-limits';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -88,31 +88,9 @@ async function handler(req: NextRequest) {
     let hospitalUpdatedCount = 0;
 
     for (const hospital of allHospitals) {
-      // Get current subscription to determine limits
-      const subscription = await db
-        .select({
-          planId: subscriptionPlans.id,
-          tier: subscriptionPlans.tier,
-        })
-        .from(subscriptions)
-        .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
-        .where(
-          and(
-            eq(subscriptions.userId, hospital.userId),
-            eq(subscriptions.status, 'active'),
-            gte(subscriptions.endDate, now.toISOString())
-          )
-        )
-        .limit(1);
-
-      // Determine limits based on tier
-      let maxPatients = DEFAULT_HOSPITAL_PATIENT_LIMIT;
-      let maxAssignments = DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
-      if (subscription.length > 0) {
-        const tier = subscription[0].tier;
-        maxPatients = getMaxPatients(tier);
-        maxAssignments = getMaxAssignmentsForHospital(tier);
-      }
+      // Get max patients and assignments from database (queries hospitalPlanFeatures)
+      const maxPatients = await getMaxPatientsForHospital(hospital.userId);
+      const maxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital.userId);
 
       // Calculate reset date (1st of next month)
       const resetDate = new Date();

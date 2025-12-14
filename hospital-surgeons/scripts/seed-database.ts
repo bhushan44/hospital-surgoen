@@ -260,7 +260,7 @@ async function seedDoctors(userIds: string[]) {
       averageRating: parseFloat((Math.random() * 2 + 3).toFixed(2)), // 3.0 to 5.0
       totalRatings: Math.floor(Math.random() * 100),
       completedAssignments: Math.floor(Math.random() * 50),
-    }).returning({ id: doctors.id });
+    } as any).returning({ id: doctors.id });
     doctorIds.push(inserted.id);
   }
 
@@ -300,7 +300,7 @@ async function seedHospitals(userIds: string[]) {
       fullAddress: `${Math.floor(Math.random() * 100)} Main Street, ${city}`,
       state: 'Maharashtra',
       pincode: String(Math.floor(Math.random() * 900000) + 100000),
-    }).returning({ id: hospitals.id });
+    } as any).returning({ id: hospitals.id });
     hospitalIds.push(inserted.id);
   }
 

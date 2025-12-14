@@ -103,6 +103,9 @@ export async function GET(
     // Build WHERE conditions dynamically using Drizzle's sql template
     const whereConditions: any[] = [];
 
+    // Only show verified doctors
+    whereConditions.push(sql`d.license_verification_status = 'verified'`);
+
     // Search text condition
     if (searchText) {
       const searchPattern = `%${searchText.toLowerCase()}%`;

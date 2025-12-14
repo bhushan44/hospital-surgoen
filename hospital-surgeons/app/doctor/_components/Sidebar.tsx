@@ -53,6 +53,45 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
   const [doctorName, setDoctorName] = useState("Doctor");
   const [doctorEmail, setDoctorEmail] = useState("");
   const [profileCompletion, setProfileCompletion] = useState<number | null>(null);
+  const [credentialsCount, setCredentialsCount] = useState<number | null>(null);
+  const [todayAssignments, setTodayAssignments] = useState<number | null>(null);
+  const [activeAffiliations, setActiveAffiliations] = useState<number | null>(null);
+
+  // Fetch dashboard data (profile completion, credentials, assignments, affiliations)
+  const fetchDashboardData = async () => {
+    if (isAuthenticated()) {
+      try {
+        const token = localStorage.getItem("accessToken");
+        const dashboardResponse = await fetch('/api/doctors/dashboard', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const dashboardData = await dashboardResponse.json();
+        if (dashboardData.success && dashboardData.data) {
+          const data = dashboardData.data;
+          if (data.profileCompletion !== undefined) {
+            setProfileCompletion(data.profileCompletion);
+          }
+          // Set credentials count (total of verified + pending + rejected)
+          if (data.credentials) {
+            const total = (data.credentials.verified || 0) + (data.credentials.pending || 0) + (data.credentials.rejected || 0);
+            setCredentialsCount(total);
+          }
+          // Set today's assignments count
+          if (data.todayAssignments !== undefined) {
+            setTodayAssignments(data.todayAssignments);
+          }
+          // Set active affiliations count
+          if (data.activeAffiliations !== undefined) {
+            setActiveAffiliations(data.activeAffiliations);
+          }
+        }
+      } catch (err) {
+        console.error('Could not fetch dashboard data:', err);
+      }
+    }
+  };
 
   useEffect(() => {
     const fetchDoctorInfo = async () => {
@@ -81,20 +120,8 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
             }
           }
           
-          // Fetch profile completion from dashboard API
-          try {
-            const dashboardResponse = await fetch('/api/doctors/dashboard', {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            });
-            const dashboardData = await dashboardResponse.json();
-            if (dashboardData.success && dashboardData.data?.profileCompletion !== undefined) {
-              setProfileCompletion(dashboardData.data.profileCompletion);
-            }
-          } catch (err) {
-            console.error('Could not fetch profile completion:', err);
-          }
+          // Fetch dashboard data
+          await fetchDashboardData();
         } catch (error) {
           console.error('Error fetching doctor info:', error);
         }
@@ -102,6 +129,20 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
     };
     fetchDoctorInfo();
   }, []);
+
+  // Refresh dashboard data when navigating (especially after profile updates)
+  useEffect(() => {
+    // Refresh when navigating to dashboard, profile, credentials, assignments, or hospitals pages
+    if (
+      pathname === '/doctor/dashboard' || 
+      pathname.startsWith('/doctor/profile') ||
+      pathname.startsWith('/doctor/credentials') ||
+      pathname.startsWith('/doctor/assignments') ||
+      pathname.startsWith('/doctor/hospitals')
+    ) {
+      fetchDashboardData();
+    }
+  }, [pathname]);
 
   const menuGroups: MenuGroup[] = [
     {
@@ -114,7 +155,13 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
           href: '/doctor/profile', 
           badge: profileCompletion !== null ? `${profileCompletion}%` : undefined 
         },
-        { id: 'credentials', label: 'Credentials & Documents', icon: FileText, href: '/doctor/credentials', badge: '3' },
+        { 
+          id: 'credentials', 
+          label: 'Credentials & Documents', 
+          icon: FileText, 
+          href: '/doctor/credentials', 
+          badge: credentialsCount !== null && credentialsCount > 0 ? `${credentialsCount}` : undefined 
+        },
         { id: 'profile-photos', label: 'Profile Photos', icon: Image, href: '/doctor/profile/photos' },
       ]
     },
@@ -123,14 +170,26 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
       items: [
         { id: 'dashboard', label: 'Dashboard Home', icon: LayoutDashboard, href: '/doctor/dashboard' },
         { id: 'schedule', label: 'My Availability', icon: Calendar, href: '/doctor/schedule' },
-        { id: 'assignments', label: "Today's Assignments", icon: Clipboard, href: '/doctor/assignments', badge: '3' },
+        { 
+          id: 'assignments', 
+          label: "Today's Assignments", 
+          icon: Clipboard, 
+          href: '/doctor/assignments', 
+          badge: todayAssignments !== null && todayAssignments > 0 ? `${todayAssignments}` : undefined 
+        },
         { id: 'all-assignments', label: 'All Assignments', icon: List, href: '/doctor/assignments' },
       ]
     },
     {
       title: 'Professional Network',
       items: [
-        { id: 'hospitals', label: 'Affiliated Hospitals', icon: Building2, href: '/doctor/hospitals', badge: '8/10' },
+        { 
+          id: 'hospitals', 
+          label: 'Affiliated Hospitals', 
+          icon: Building2, 
+          href: '/doctor/hospitals', 
+          badge: activeAffiliations !== null && activeAffiliations > 0 ? `${activeAffiliations}` : undefined 
+        },
         { id: 'specializations', label: 'Specializations', icon: Stethoscope, href: '/doctor/specializations' },
       ]
     },

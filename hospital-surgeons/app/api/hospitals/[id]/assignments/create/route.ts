@@ -50,14 +50,35 @@ export async function POST(
       await hospitalUsageService.checkAssignmentLimit(hospitalId);
     } catch (error: any) {
       if (error.message === 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED') {
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'Your hospital has reached its monthly assignment limit. Upgrade your plan to create more assignments.',
-            code: 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED',
-          },
-          { status: 403 }
-        );
+        // Get current usage for better error message
+        try {
+          const usage = await hospitalUsageService.getUsage(hospitalId);
+          return NextResponse.json(
+            {
+              success: false,
+              message: `Your hospital has reached its monthly assignment limit (${usage.assignments.used}/${usage.assignments.limit === -1 ? 'unlimited' : usage.assignments.limit} assignments used). Your limit will reset on ${new Date(usage.resetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}. Upgrade your plan to create more assignments now.`,
+              code: 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED',
+              error: 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED',
+              usage: {
+                used: usage.assignments.used,
+                limit: usage.assignments.limit,
+                resetDate: usage.resetDate,
+              },
+            },
+            { status: 403 }
+          );
+        } catch {
+          // Fallback if usage fetch fails
+          return NextResponse.json(
+            {
+              success: false,
+              message: 'Your hospital has reached its monthly assignment limit. Upgrade your plan to create more assignments.',
+              code: 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED',
+              error: 'HOSPITAL_ASSIGNMENT_LIMIT_REACHED',
+            },
+            { status: 403 }
+          );
+        }
       }
       throw error;
     }
@@ -67,14 +88,65 @@ export async function POST(
       await checkAssignmentLimit(doctorId, db);
     } catch (error: any) {
       if (error.message === 'ASSIGNMENT_LIMIT_REACHED') {
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'This doctor has reached their monthly assignment limit. Please try another doctor.',
-            code: 'ASSIGNMENT_LIMIT_REACHED',
-          },
-          { status: 403 }
-        );
+        // Get doctor info for better error message
+        try {
+          const doctor = await db
+            .select({
+              firstName: doctors.firstName,
+              lastName: doctors.lastName,
+            })
+            .from(doctors)
+            .where(eq(doctors.id, doctorId))
+            .limit(1);
+
+          const doctorName = doctor.length > 0 
+            ? `Dr. ${doctor[0].firstName} ${doctor[0].lastName}`
+            : 'This doctor';
+
+          // Get usage info
+          const currentMonth = new Date().toISOString().slice(0, 7);
+          const usage = await db
+            .select()
+            .from(doctorAssignmentUsage)
+            .where(
+              and(
+                eq(doctorAssignmentUsage.doctorId, doctorId),
+                eq(doctorAssignmentUsage.month, currentMonth)
+              )
+            )
+            .limit(1);
+
+          const usageData = usage.length > 0 ? usage[0] : null;
+          const resetDate = usageData?.resetDate 
+            ? new Date(usageData.resetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            : 'the 1st of next month';
+
+          return NextResponse.json(
+            {
+              success: false,
+              message: `${doctorName} has reached their monthly assignment limit (${usageData?.count || 0}/${usageData?.limitCount || 'N/A'} assignments used). The limit will reset on ${resetDate}. Please try another doctor.`,
+              code: 'ASSIGNMENT_LIMIT_REACHED',
+              error: 'ASSIGNMENT_LIMIT_REACHED',
+              usage: usageData ? {
+                used: usageData.count,
+                limit: usageData.limitCount,
+                resetDate: usageData.resetDate,
+              } : null,
+            },
+            { status: 403 }
+          );
+        } catch {
+          // Fallback if info fetch fails
+          return NextResponse.json(
+            {
+              success: false,
+              message: 'This doctor has reached their monthly assignment limit. Please try another doctor.',
+              code: 'ASSIGNMENT_LIMIT_REACHED',
+              error: 'ASSIGNMENT_LIMIT_REACHED',
+            },
+            { status: 403 }
+          );
+        }
       }
       throw error;
     }

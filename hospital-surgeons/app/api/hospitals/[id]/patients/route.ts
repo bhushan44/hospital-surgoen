@@ -173,14 +173,35 @@ export async function POST(
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage === 'PATIENT_LIMIT_REACHED') {
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'You have reached your monthly patient limit. Upgrade your plan to add more patients.',
-            error: 'PATIENT_LIMIT_REACHED',
-          },
-          { status: 403 }
-        );
+        // Get current usage for better error message
+        try {
+          const usage = await hospitalUsageService.getUsage(hospitalId);
+          return NextResponse.json(
+            {
+              success: false,
+              message: `You have reached your monthly patient limit (${usage.patients.used}/${usage.patients.limit === -1 ? 'unlimited' : usage.patients.limit} patients used). Your limit will reset on ${new Date(usage.resetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}. Upgrade your plan to add more patients now.`,
+              error: 'PATIENT_LIMIT_REACHED',
+              code: 'PATIENT_LIMIT_REACHED',
+              usage: {
+                used: usage.patients.used,
+                limit: usage.patients.limit,
+                resetDate: usage.resetDate,
+              },
+            },
+            { status: 403 }
+          );
+        } catch {
+          // Fallback if usage fetch fails
+          return NextResponse.json(
+            {
+              success: false,
+              message: 'You have reached your monthly patient limit. Upgrade your plan to add more patients.',
+              error: 'PATIENT_LIMIT_REACHED',
+              code: 'PATIENT_LIMIT_REACHED',
+            },
+            { status: 403 }
+          );
+        }
       }
       throw error;
     }

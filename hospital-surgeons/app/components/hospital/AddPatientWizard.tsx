@@ -195,8 +195,9 @@ export function AddPatientWizard({ onClose, onComplete }: AddPatientWizardProps)
       } else {
         // Show specific error message for limit reached
         const errorMessage = data.message || 'Failed to create patient. Please try again.';
-        if (data.error === 'PATIENT_LIMIT_REACHED') {
-          setError(`${errorMessage}\n\nUpgrade your plan to add more patients.`);
+        if (data.error === 'PATIENT_LIMIT_REACHED' || data.code === 'PATIENT_LIMIT_REACHED') {
+          // Use the detailed message from API which includes usage and reset date
+          setError(errorMessage);
         } else {
           setError(errorMessage);
         }

@@ -15,8 +15,8 @@ import {
 } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { 
-  getMaxPatients, 
-  getMaxAssignmentsForHospital,
+  getMaxPatientsForHospital,
+  getMaxAssignmentsForHospitalFromUser,
   DEFAULT_HOSPITAL_PATIENT_LIMIT,
   DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT 
 } from '@/lib/config/hospital-subscription-limits';
@@ -40,31 +40,8 @@ export class HospitalUsageService {
       throw new Error('Hospital not found');
     }
 
-    // Get active subscription with plan
-    const subscription = await this.db
-      .select({
-        planId: subscriptionPlans.id,
-        tier: subscriptionPlans.tier,
-      })
-      .from(subscriptions)
-      .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
-      .where(
-        and(
-          eq(subscriptions.userId, hospital[0].userId),
-          eq(subscriptions.status, 'active')
-        )
-      )
-      .limit(1);
-
-    // Determine max patients based on tier
-    let maxPatients: number;
-    if (subscription.length > 0) {
-      const tier = subscription[0].tier;
-      maxPatients = getMaxPatients(tier);
-    } else {
-      // No subscription = free plan
-      maxPatients = DEFAULT_HOSPITAL_PATIENT_LIMIT;
-    }
+    // Get max patients from database (queries hospitalPlanFeatures.maxPatientsPerMonth)
+    const maxPatients = await getMaxPatientsForHospital(hospital[0].userId);
 
     // If unlimited, skip check
     if (maxPatients === -1) {
@@ -92,12 +69,8 @@ export class HospitalUsageService {
       resetDate.setDate(1);
       resetDate.setHours(0, 0, 0, 0);
 
-      // Get assignment limit too
-      let maxAssignments = DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
-      if (subscription.length > 0) {
-        const tier = subscription[0].tier;
-        maxAssignments = getMaxAssignmentsForHospital(tier);
-      }
+      // Get assignment limit from database too
+      const maxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital[0].userId);
 
       const usageResult = await this.db
         .insert(hospitalUsageTracking)
@@ -115,18 +88,16 @@ export class HospitalUsageService {
     } else {
       // Update limits if plan changed
       const usageData = usage[0];
-      if (usageData.patientsLimit !== maxPatients) {
-        let maxAssignments = DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
-        if (subscription.length > 0) {
-          const tier = subscription[0].tier;
-          maxAssignments = getMaxAssignmentsForHospital(tier);
-        }
-
+      // Get current limits from database to check if they changed
+      const currentMaxPatients = await getMaxPatientsForHospital(hospital[0].userId);
+      const currentMaxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital[0].userId);
+      
+      if (usageData.patientsLimit !== currentMaxPatients || usageData.assignmentsLimit !== currentMaxAssignments) {
         await this.db
           .update(hospitalUsageTracking)
           .set({
-            patientsLimit: maxPatients,
-            assignmentsLimit: maxAssignments,
+            patientsLimit: currentMaxPatients,
+            assignmentsLimit: currentMaxAssignments,
             updatedAt: new Date().toISOString(),
           })
           .where(
@@ -162,31 +133,8 @@ export class HospitalUsageService {
       throw new Error('Hospital not found');
     }
 
-    // Get active subscription with plan
-    const subscription = await this.db
-      .select({
-        planId: subscriptionPlans.id,
-        tier: subscriptionPlans.tier,
-      })
-      .from(subscriptions)
-      .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
-      .where(
-        and(
-          eq(subscriptions.userId, hospital[0].userId),
-          eq(subscriptions.status, 'active')
-        )
-      )
-      .limit(1);
-
-    // Determine max assignments based on tier
-    let maxAssignments: number;
-    if (subscription.length > 0) {
-      const tier = subscription[0].tier;
-      maxAssignments = getMaxAssignmentsForHospital(tier);
-    } else {
-      // No subscription = free plan
-      maxAssignments = DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
-    }
+    // Get max assignments from database (queries hospitalPlanFeatures.maxAssignmentsPerMonth)
+    const maxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital[0].userId);
 
     // If unlimited, skip check
     if (maxAssignments === -1) {
@@ -214,12 +162,8 @@ export class HospitalUsageService {
       resetDate.setDate(1);
       resetDate.setHours(0, 0, 0, 0);
 
-      // Get patient limit too
-      let maxPatients = DEFAULT_HOSPITAL_PATIENT_LIMIT;
-      if (subscription.length > 0) {
-        const tier = subscription[0].tier;
-        maxPatients = getMaxPatients(tier);
-      }
+      // Get patient limit from database too
+      const maxPatients = await getMaxPatientsForHospital(hospital[0].userId);
 
       const usageResult = await this.db
         .insert(hospitalUsageTracking)
@@ -237,18 +181,16 @@ export class HospitalUsageService {
     } else {
       // Update limits if plan changed
       const usageData = usage[0];
-      if (usageData.assignmentsLimit !== maxAssignments) {
-        let maxPatients = DEFAULT_HOSPITAL_PATIENT_LIMIT;
-        if (subscription.length > 0) {
-          const tier = subscription[0].tier;
-          maxPatients = getMaxPatients(tier);
-        }
-
+      // Get current limits from database to check if they changed
+      const currentMaxPatients = await getMaxPatientsForHospital(hospital[0].userId);
+      const currentMaxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital[0].userId);
+      
+      if (usageData.assignmentsLimit !== currentMaxAssignments || usageData.patientsLimit !== currentMaxPatients) {
         await this.db
           .update(hospitalUsageTracking)
           .set({
-            patientsLimit: maxPatients,
-            assignmentsLimit: maxAssignments,
+            patientsLimit: currentMaxPatients,
+            assignmentsLimit: currentMaxAssignments,
             updatedAt: new Date().toISOString(),
           })
           .where(
@@ -296,28 +238,9 @@ export class HospitalUsageService {
 
       if (hospital.length === 0) return;
 
-      // Get subscription to determine limits
-      const subscription = await this.db
-        .select({
-          tier: subscriptionPlans.tier,
-        })
-        .from(subscriptions)
-        .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
-        .where(
-          and(
-            eq(subscriptions.userId, hospital[0].userId),
-            eq(subscriptions.status, 'active')
-          )
-        )
-        .limit(1);
-
-      let maxPatients = DEFAULT_HOSPITAL_PATIENT_LIMIT;
-      let maxAssignments = DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
-      if (subscription.length > 0) {
-        const tier = subscription[0].tier;
-        maxPatients = getMaxPatients(tier);
-        maxAssignments = getMaxAssignmentsForHospital(tier);
-      }
+      // Get limits from database (queries hospitalPlanFeatures)
+      const maxPatients = await getMaxPatientsForHospital(hospital[0].userId);
+      const maxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital[0].userId);
 
       const resetDate = new Date();
       resetDate.setMonth(resetDate.getMonth() + 1);
@@ -378,28 +301,9 @@ export class HospitalUsageService {
 
       if (hospital.length === 0) return;
 
-      // Get subscription to determine limits
-      const subscription = await this.db
-        .select({
-          tier: subscriptionPlans.tier,
-        })
-        .from(subscriptions)
-        .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
-        .where(
-          and(
-            eq(subscriptions.userId, hospital[0].userId),
-            eq(subscriptions.status, 'active')
-          )
-        )
-        .limit(1);
-
-      let maxPatients = DEFAULT_HOSPITAL_PATIENT_LIMIT;
-      let maxAssignments = DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
-      if (subscription.length > 0) {
-        const tier = subscription[0].tier;
-        maxPatients = getMaxPatients(tier);
-        maxAssignments = getMaxAssignmentsForHospital(tier);
-      }
+      // Get limits from database (queries hospitalPlanFeatures)
+      const maxPatients = await getMaxPatientsForHospital(hospital[0].userId);
+      const maxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital[0].userId);
 
       const resetDate = new Date();
       resetDate.setMonth(resetDate.getMonth() + 1);
@@ -449,11 +353,10 @@ export class HospitalUsageService {
       throw new Error('Hospital not found');
     }
 
-    // Get active subscription with plan
+    // Get active subscription with plan for plan name
     const subscription = await this.db
       .select({
         plan: {
-          tier: subscriptionPlans.tier,
           name: subscriptionPlans.name,
         },
       })
@@ -467,20 +370,12 @@ export class HospitalUsageService {
       )
       .limit(1);
 
-    // Determine limits based on tier
-    let maxPatients: number;
-    let maxAssignments: number;
-    let planName = 'Free Plan';
-    
-    if (subscription.length > 0 && subscription[0].plan) {
-      planName = subscription[0].plan.name;
-      const tier = subscription[0].plan.tier;
-      maxPatients = getMaxPatients(tier);
-      maxAssignments = getMaxAssignmentsForHospital(tier);
-    } else {
-      maxPatients = DEFAULT_HOSPITAL_PATIENT_LIMIT;
-      maxAssignments = DEFAULT_HOSPITAL_ASSIGNMENT_LIMIT;
-    }
+    // Get limits from database (queries hospitalPlanFeatures)
+    const maxPatients = await getMaxPatientsForHospital(hospital[0].userId);
+    const maxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital[0].userId);
+    const planName = subscription.length > 0 && subscription[0].plan 
+      ? subscription[0].plan.name 
+      : 'Free Plan';
 
     // Get usage record
     const usage = await this.db
