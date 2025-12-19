@@ -43,7 +43,7 @@ export class PaymentsRepository {
       // Use paymentTransactions for subscription payments
       // Note: paymentTransactions requires orderId, not subscriptionId directly
       // This might need adjustment based on orders table structure
-      const [row] = await this.db
+      const result = await this.db
         .insert(paymentTransactions)
         .values({
           orderId: dto.subscriptionId, // This should be orderId, may need mapping
@@ -55,6 +55,11 @@ export class PaymentsRepository {
           verifiedAt: dto.paidAt,
         })
         .returning();
+      
+      const row = Array.isArray(result) ? result[0] : result;
+      if (!row) {
+        throw new Error('Failed to create payment transaction');
+      }
       return row;
     } else if (dto.paymentType === 'assignment' && dto.assignmentId) {
       // Use assignmentPayments for assignment payments
@@ -65,7 +70,7 @@ export class PaymentsRepository {
       const platformCommission = dto.platformCommission || 0;
       const doctorPayout = dto.doctorPayout || (consultationFee - platformCommission);
       
-      const [row] = await this.db
+      const result = await this.db
         .insert(assignmentPayments)
         .values({
           assignmentId: dto.assignmentId,
@@ -78,6 +83,11 @@ export class PaymentsRepository {
           paidToDoctorAt: dto.paidAt,
         })
         .returning();
+      
+      const row = Array.isArray(result) ? result[0] : result;
+      if (!row) {
+        throw new Error('Failed to create assignment payment');
+      }
       return row;
     } else {
       // No fallback table - throw error for unsupported payment types
@@ -123,8 +133,8 @@ export class PaymentsRepository {
     // Combine and sort (simplified - in production, use UNION or separate queries)
     const data = [...subscriptionPayments, ...assignmentPaymentsList]
       .sort((a, b) => {
-        const aDate = a.payment.createdAt || '';
-        const bDate = b.payment.createdAt || '';
+        const aDate = (a.payment.createdAt || '') as string;
+        const bDate = (b.payment.createdAt || '') as string;
         return bDate.localeCompare(aDate);
       })
       .slice(0, limit);

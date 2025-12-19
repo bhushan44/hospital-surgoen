@@ -160,9 +160,25 @@ export default function SubscriptionPlanPage() {
         const endDate = new Date();
         endDate.setMonth(endDate.getMonth() + selectedPricingOption.billingPeriodMonths);
 
-        // Redirect to payment page with pricing details
-        const amount = selectedPricingOption.price / 100; // Convert from cents
-        router.push(`/doctor/subscriptions/payment?planId=${planId}&pricingId=${pricingId}&amount=${amount}&currency=${selectedPricingOption.currency}&billingCycle=${selectedPricingOption.billingCycle}`);
+        // Create checkout session and redirect to payment gateway
+        try {
+          const checkoutResponse = await apiClient.post('/api/checkout', {
+            planId: planId,
+            gateway: 'razorpay',
+          });
+
+          if (checkoutResponse.data.success && checkoutResponse.data.data?.session?.url) {
+            console.log(checkoutResponse);
+            // Redirect to payment gateway checkout
+            window.location.href = checkoutResponse.data.data.session.url;
+          } else {
+            throw new Error('Failed to create checkout session');
+          }
+        } catch (checkoutError: any) {
+          console.error('Checkout error:', checkoutError);
+          toast.error(checkoutError.response?.data?.message || checkoutError.message || 'Failed to initiate checkout');
+          setUpgrading(null);
+        }
       }
     } catch (error: any) {
       console.error('Error upgrading plan:', error);

@@ -10,6 +10,8 @@ function PaymentSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const transactionId = searchParams.get('txn');
+  const paymentId = searchParams.get('payment_id');
+  const orderId = searchParams.get('order_id');
   const planId = searchParams.get('planId');
 
   const [loading, setLoading] = useState(true);
@@ -17,33 +19,56 @@ function PaymentSuccessContent() {
   const [subscription, setSubscription] = useState<any>(null);
 
   useEffect(() => {
-    if (!transactionId || !planId) {
+    if (!transactionId && !paymentId) {
       router.push('/doctor/subscriptions');
       return;
     }
 
+    // planId is optional - we can still show success page without it
     fetchDetails();
-  }, [transactionId, planId]);
+  }, [transactionId, paymentId, orderId, planId]);
 
   const fetchDetails = async () => {
     try {
       setLoading(true);
 
       // Fetch plan details
-      if (planId) {
-        const planResponse = await apiClient.get(`/api/subscriptions/plans/${planId}`);
-        if (planResponse.data.success) {
-          setPlan(planResponse.data.data);
+      if (planId && planId !== 'null' && planId !== 'undefined') {
+        console.log('Fetching plan with ID:', planId);
+        try {
+          const planResponse = await apiClient.get(`/api/subscriptions/plans/${planId}`);
+          console.log('Plan response:', planResponse.data);
+          if (planResponse.data.success) {
+            setPlan(planResponse.data.data);
+          } else {
+            console.error('Plan fetch failed:', planResponse.data.message);
+          }
+        } catch (planError: any) {
+          console.error('Error fetching plan:', {
+            message: planError.message,
+            response: planError.response?.data,
+            status: planError.response?.status,
+            url: planError.config?.url
+          });
+          // Continue even if plan fetch fails - we can still show payment success
         }
+      } else {
+        console.warn('PlanId is missing or invalid:', planId);
+        // Try to get plan from subscription if available
       }
 
       // Fetch updated subscription
-      const subscriptionResponse = await apiClient.get('/api/subscriptions/current');
-      if (subscriptionResponse.data.success && subscriptionResponse.data.data) {
-        const subscriptionData = subscriptionResponse.data.data;
-        if (subscriptionData && subscriptionData.subscription) {
-          setSubscription(subscriptionData.subscription);
+      try {
+        const subscriptionResponse = await apiClient.get('/api/subscriptions/current');
+        if (subscriptionResponse.data.success && subscriptionResponse.data.data) {
+          const subscriptionData = subscriptionResponse.data.data;
+          if (subscriptionData && subscriptionData.subscription) {
+            setSubscription(subscriptionData.subscription);
+          }
         }
+      } catch (subError: any) {
+        console.error('Error fetching subscription:', subError);
+        // Continue even if subscription fetch fails
       }
     } catch (error) {
       console.error('Error fetching details:', error);
@@ -97,10 +122,24 @@ function PaymentSuccessContent() {
           <div className="bg-gray-50 rounded-lg p-6 mb-6 text-left">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Transaction Details</h2>
             <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Transaction ID</span>
-                <span className="font-mono text-sm text-gray-900">{transactionId}</span>
-              </div>
+              {transactionId && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Transaction ID</span>
+                  <span className="font-mono text-sm text-gray-900">{transactionId}</span>
+                </div>
+              )}
+              {paymentId && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Payment ID</span>
+                  <span className="font-mono text-sm text-gray-900">{paymentId}</span>
+                </div>
+              )}
+              {orderId && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Order ID</span>
+                  <span className="font-mono text-sm text-gray-900">{orderId}</span>
+                </div>
+              )}
               {plan && (
                 <>
                   <div className="flex justify-between">

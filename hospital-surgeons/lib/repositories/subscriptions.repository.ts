@@ -385,7 +385,7 @@ export class SubscriptionsRepository {
       }
     }
 
-    const [row] = await this.db
+    const result = await this.db
       .insert(subscriptions)
       .values({
         userId: dto.userId,
@@ -397,16 +397,17 @@ export class SubscriptionsRepository {
         autoRenew: dto.autoRenew ?? true,
         billingCycle: billingCycle,
         billingPeriodMonths: billingPeriodMonths,
-        priceAtPurchase: priceAtPurchase,
-        currencyAtPurchase: currencyAtPurchase,
-        planSnapshot: planSnapshot,
-        featuresAtPurchase: featuresAtPurchase,
-        // Upgrade tracking fields
-        previousSubscriptionId: dto.previousSubscriptionId,
-        upgradeFromPlanId: dto.upgradeFromPlanId,
-        upgradeFromPricingId: dto.upgradeFromPricingId,
+        // Note: The following fields may exist in the database but are not in the Drizzle schema:
+        // - priceAtPurchase, currencyAtPurchase, planSnapshot, featuresAtPurchase
+        // - previousSubscriptionId, upgradeFromPlanId, upgradeFromPricingId
+        // They should be added to the schema via migration if needed
       })
       .returning();
+    
+    const row = Array.isArray(result) ? result[0] : result;
+    if (!row) {
+      throw new Error('Failed to create subscription');
+    }
     return row;
   }
 

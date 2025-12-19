@@ -389,8 +389,8 @@ async function seedSubscriptions(userIds: string[], planIds: string[]) {
       endDate: endDate.toISOString(),
       billingCycle: random(['monthly', 'quarterly', 'yearly'] as const),
       billingPeriodMonths: random([1, 3, 12]),
-      priceAtPurchase: Math.floor(Math.random() * 50000) + 1000,
-      currencyAtPurchase: random([...currencies]),
+      // Note: priceAtPurchase and currencyAtPurchase are not in the Drizzle schema
+      // They should be added via migration if needed
       autoRenew: Math.random() > 0.3,
       createdAt: startDate,
       updatedAt: startDate,

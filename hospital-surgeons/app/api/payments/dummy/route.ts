@@ -133,7 +133,7 @@ async function postHandler(req: NextRequest) {
     // Create payment transaction (always success for dummy)
     const transactionId = `DUMMY_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    const [paymentTransaction] = await db
+    const paymentResult = await db
       .insert(paymentTransactions)
       .values({
         orderId: order.id,
@@ -151,6 +151,11 @@ async function postHandler(req: NextRequest) {
         verifiedAt: new Date().toISOString(),
       })
       .returning();
+    
+    const paymentTransaction = Array.isArray(paymentResult) ? paymentResult[0] : paymentResult;
+    if (!paymentTransaction) {
+      throw new Error('Failed to create payment transaction');
+    }
 
     // If upgrading, cancel the old subscription first
     if (existingSubscription) {
@@ -192,7 +197,7 @@ async function postHandler(req: NextRequest) {
         .update(subscriptions)
         .set({
           orderId: order.id,
-          paymentTransactionId: paymentTransaction.id,
+          paymentTransactionId: paymentTransaction.id as string,
         })
         .where(eq(subscriptions.id, newSubscription.id));
     }

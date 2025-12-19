@@ -563,7 +563,7 @@ async function seedDatabase() {
       
       try {
         const timestamp = Date.now() + i;
-        const [paymentTransaction] = await db.insert(schema.paymentTransactions).values({
+        const paymentResult = await db.insert(schema.paymentTransactions).values({
           orderId: orderId,
           paymentGateway: randomChoice(['stripe', 'paypal', 'razorpay']),
           paymentId: `PAY-${timestamp}-${randomInt(100000, 999999)}`,
@@ -575,7 +575,11 @@ async function seedDatabase() {
           verifiedAt: verifiedAt,
           createdAt: createdAt.toISOString(),
         }).returning();
-        paymentTransactionIds.push(paymentTransaction.id);
+        
+        const paymentTransaction = Array.isArray(paymentResult) ? paymentResult[0] : paymentResult;
+        if (paymentTransaction && paymentTransaction.id) {
+          paymentTransactionIds.push(paymentTransaction.id as string);
+        }
       } catch (error: any) {
         if (error.code === '23505') continue;
         throw error;
