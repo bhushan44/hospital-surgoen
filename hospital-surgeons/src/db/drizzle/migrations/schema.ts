@@ -130,7 +130,7 @@ export const specialties = pgTable("specialties", {
 	unique("specialties_name_key").on(table.name),
 ]);
 
-export const paymentTransactions = pgTable("payment_transactions", {
+export const paymentTransactions: any = pgTable("payment_transactions", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	orderId: uuid("order_id").notNull(),
 	paymentGateway: text("payment_gateway").notNull(),
