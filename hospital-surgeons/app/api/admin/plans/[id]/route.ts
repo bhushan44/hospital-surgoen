@@ -126,7 +126,7 @@ export async function GET(
         price: primaryPricing ? Number(primaryPricing.price) : 0,
         currency: primaryPricing ? primaryPricing.currency : 'USD',
         priceFormatted: primaryPricing 
-          ? `${primaryPricing.currency} ${(Number(primaryPricing.price) / 100).toFixed(2)}`
+          ? `${primaryPricing.currency} ${Number(primaryPricing.price).toFixed(2)}`
           : 'No pricing',
         subscribers: Number(subscriberCount),
         features,

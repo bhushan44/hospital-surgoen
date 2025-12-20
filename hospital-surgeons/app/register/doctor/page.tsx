@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Header from '../../components/Header';
+// import Header from '../../components/Header';
 
 export default function DoctorRegistrationPage() {
   const router = useRouter();
@@ -261,7 +261,7 @@ export default function DoctorRegistrationPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
+      {/* <Header /> */}
 
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-2xl mx-auto">

@@ -60,40 +60,6 @@ export const users = pgTable("users", {
 	check("users_subscription_status_check", sql`subscription_status = ANY (ARRAY['active'::text, 'expired'::text, 'cancelled'::text, 'trial'::text])`),
 ]);
 
-export const orders = pgTable("orders", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	userId: uuid("user_id").notNull(),
-	orderType: text("order_type").notNull(),
-	planId: uuid("plan_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	amount: bigint({ mode: "number" }).notNull(),
-	currency: text().default('USD').notNull(),
-	description: text(),
-	status: text().default('pending').notNull(),
-	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-	expiresAt: timestamp("expires_at", { mode: 'string' }),
-	paidAt: timestamp("paid_at", { mode: 'string' }),
-	failureReason: text("failure_reason"),
-	webhookReceived: boolean("webhook_received").default(false),
-}, (table) => [
-	index("idx_orders_created_at").using("btree", table.createdAt.desc().nullsFirst().op("timestamp_ops")),
-	index("idx_orders_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
-	index("idx_orders_user_id").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
-	index("idx_orders_user_plan").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.planId.asc().nullsLast().op("uuid_ops")).where(sql`(order_type = 'subscription'::text)`),
-	foreignKey({
-			columns: [table.planId],
-			foreignColumns: [subscriptionPlans.id],
-			name: "orders_plan_id_fkey"
-		}),
-	foreignKey({
-			columns: [table.userId],
-			foreignColumns: [users.id],
-			name: "orders_user_id_fkey"
-		}).onDelete("cascade"),
-	check("orders_order_type_check", sql`order_type = ANY (ARRAY['subscription'::text, 'consultation'::text, 'other'::text])`),
-	check("orders_status_check", sql`status = ANY (ARRAY['pending'::text, 'paid'::text, 'failed'::text, 'expired'::text, 'refunded'::text])`),
-]);
-
 export const files = pgTable("files", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	filename: text().notNull(),
@@ -217,11 +183,6 @@ export const paymentTransactions = pgTable("payment_transactions", {
 	index("idx_payment_transactions_type_status").using("btree", table.paymentType.asc().nullsLast().op("text_ops"), table.paymentStatus.asc().nullsLast().op("text_ops")),
 	index("idx_payment_transactions_webhook_event").using("btree", table.webhookEventId.asc().nullsLast().op("text_ops")).where(sql`(webhook_event_id IS NOT NULL)`),
 	foreignKey({
-			columns: [table.orderId],
-			foreignColumns: [orders.id],
-			name: "payment_transactions_order_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
 			columns: [table.planId],
 			foreignColumns: [subscriptionPlans.id],
 			name: "payment_transactions_plan_id_fkey"
@@ -233,7 +194,7 @@ export const paymentTransactions = pgTable("payment_transactions", {
 		}),
 	foreignKey({
 			columns: [table.subscriptionId],
-			foreignColumns: [subscriptions.id] as any,
+			foreignColumns: [subscriptions.id],
 			name: "payment_transactions_subscription_id_fkey"
 		}),
 	foreignKey({
@@ -636,6 +597,47 @@ export const webhookLogs = pgTable("webhook_logs", {
 	check("webhook_logs_status_check", sql`status = ANY (ARRAY['pending'::text, 'processed'::text, 'failed'::text, 'ignored'::text])`),
 ]);
 
+export const orders = pgTable("orders", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	orderType: text("order_type").notNull(),
+	planId: uuid("plan_id"),
+	pricingId: uuid("pricing_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	amount: bigint({ mode: "number" }).notNull(),
+	currency: text().default('USD').notNull(),
+	description: text(),
+	status: text().default('pending').notNull(),
+	gatewayName: text("gateway_name"),
+	gatewayOrderId: text("gateway_order_id"),
+	userRole: text("user_role"),
+	attemptNumber: integer("attempt_number").default(1).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	expiresAt: timestamp("expires_at", { mode: 'string' }),
+	paidAt: timestamp("paid_at", { mode: 'string' }),
+	failureReason: text("failure_reason"),
+	webhookReceived: boolean("webhook_received").default(false).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.planId],
+			foreignColumns: [subscriptionPlans.id],
+			name: "orders_plan_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.pricingId],
+			foreignColumns: [planPricing.id],
+			name: "orders_pricing_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "orders_user_id_fkey"
+		}).onDelete("cascade"),
+	check("orders_order_type_check", sql`order_type = ANY (ARRAY['subscription'::text, 'consultation'::text, 'other'::text])`),
+	check("orders_status_check", sql`status = ANY (ARRAY['pending'::text, 'paid'::text, 'failed'::text, 'expired'::text, 'refunded'::text])`),
+	check("orders_user_role_check", sql`(user_role IS NULL) OR (user_role = ANY (ARRAY['doctor'::text, 'hospital'::text]))`),
+]);
+
 export const assignmentRatings = pgTable("assignment_ratings", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	assignmentId: uuid("assignment_id").notNull(),
@@ -901,11 +903,6 @@ export const subscriptions = pgTable("subscriptions", {
 	index("idx_subscriptions_end_date").using("btree", table.endDate.asc().nullsLast().op("timestamp_ops")),
 	index("idx_subscriptions_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
 	index("idx_subscriptions_user_id").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
-	foreignKey({
-			columns: [table.orderId],
-			foreignColumns: [orders.id],
-			name: "subscriptions_order_id_fkey"
-		}),
 	foreignKey({
 			columns: [table.paymentTransactionId],
 			foreignColumns: [paymentTransactions.id],

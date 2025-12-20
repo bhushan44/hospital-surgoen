@@ -179,14 +179,48 @@ export function SubscriptionBilling() {
           throw new Error('Selected pricing option not found');
         }
 
-        // Calculate end date based on billing period
-        const startDate = new Date();
-        const endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + selectedPricingOption.billingPeriodMonths);
+        // Create checkout session and redirect to payment gateway
+        try {
+          const checkoutResponse = await apiClient.post('/api/payments/create-order', {
+            planId: planId,
+            pricingId: pricingId,
+            gateway: 'razorpay',
+          });
 
-        // Redirect to payment page with pricing details
-        const amount = selectedPricingOption.price / 100; // Convert from cents
-        router.push(`/hospital/subscriptions/payment?planId=${planId}&pricingId=${pricingId}&amount=${amount}&currency=${selectedPricingOption.currency}&billingCycle=${selectedPricingOption.billingCycle}`);
+          if (checkoutResponse.data.success && checkoutResponse.data.data?.session?.checkoutData) {
+            const orderStatus = checkoutResponse.data.data?.status || 'pending';
+            const checkoutData = checkoutResponse.data.data.session.checkoutData;
+            
+            // Show status message based on order status
+            if (orderStatus === 'pending') {
+              toast.info('Order created. Redirecting to payment...');
+            } else if (orderStatus === 'paid') {
+              toast.success('Payment already processed!');
+            } else if (orderStatus === 'failed') {
+              toast.error('Previous payment failed. Please try again.');
+            } else {
+              toast.info(`Order status: ${orderStatus}`);
+            }
+            
+            // Construct checkout URL from checkoutData
+            const urlParams = new URLSearchParams({
+              order_id: checkoutData.orderId,
+            });
+            if (checkoutData.planId) urlParams.set('planId', checkoutData.planId);
+            if (checkoutData.userRole) urlParams.set('userRole', checkoutData.userRole);
+            if (checkoutData.email) urlParams.set('email', checkoutData.email);
+            const checkoutUrl = `/checkout/razorpay?${urlParams.toString()}`;
+            
+            // Redirect to payment gateway checkout
+            window.location.href = checkoutUrl;
+          } else {
+            throw new Error('Failed to create checkout session');
+          }
+        } catch (checkoutError: any) {
+          console.error('Checkout error:', checkoutError);
+          toast.error(checkoutError.response?.data?.message || checkoutError.message || 'Failed to initiate checkout');
+          setSelectingPlan(null);
+        }
       }
     } catch (error: any) {
       console.error('Error selecting plan:', error);
@@ -283,7 +317,7 @@ export function SubscriptionBilling() {
                                 <div>
                                   <span className="text-3xl font-bold text-slate-900">
                                     {selectedOption.currency === 'INR' ? '₹' : '$'}
-                                    {(selectedOption.price / 100).toLocaleString()}
+                                    {Number(selectedOption.price || 0).toLocaleString()}
                                   </span>
                                   <span className="text-slate-500">
                                     {' '}/ {selectedOption.billingCycle === 'monthly' ? 'month' :
@@ -435,7 +469,7 @@ export function SubscriptionBilling() {
                   ) : currentSubscription.priceAtPurchase ? (
                     <>
                       {currentSubscription.currencyAtPurchase === 'INR' ? '₹' : '$'}
-                      {(currentSubscription.priceAtPurchase / 100).toLocaleString()}
+                      {Number(currentSubscription.priceAtPurchase || 0).toLocaleString()}
                       {currentSubscription.billingCycle && (
                         <span className="text-sm text-slate-500">
                           {' '}/ {currentSubscription.billingCycle === 'monthly' ? 'month' :
@@ -516,7 +550,7 @@ export function SubscriptionBilling() {
                       <span className="text-3xl font-bold text-slate-900">
                         {p.tier === 'free' ? 'Free' : (
                           p.pricingOptions && p.pricingOptions.length > 0
-                            ? `₹${(p.pricingOptions[0].price / 100).toLocaleString()}`
+                            ? `₹${Number(p.pricingOptions[0].price || 0).toLocaleString()}`
                             : 'Contact Us'
                         )}
                       </span>

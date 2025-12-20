@@ -18,6 +18,9 @@ export async function GET(req: NextRequest) {
     // Build where conditions
     const conditions = [];
     
+    // Always filter by active plans only
+    conditions.push(eq(subscriptionPlans.isActive, true));
+    
     if (userRole && userRole !== 'all') {
       conditions.push(eq(subscriptionPlans.userRole, userRole));
     }
@@ -26,7 +29,7 @@ export async function GET(req: NextRequest) {
       conditions.push(eq(subscriptionPlans.tier, tier));
     }
 
-    // Get all plans
+    // Get only active plans
     const plansList = await db
       .select({
         id: subscriptionPlans.id,
@@ -38,7 +41,7 @@ export async function GET(req: NextRequest) {
         defaultBillingCycle: subscriptionPlans.defaultBillingCycle,
       })
       .from(subscriptionPlans)
-      .where(conditions.length > 0 ? conditions[0] : undefined)
+      .where(conditions.length > 0 ? and(...conditions) : eq(subscriptionPlans.isActive, true))
       .orderBy(asc(subscriptionPlans.userRole), asc(subscriptionPlans.tier));
 
     // Get pricing and subscriber counts for all plans
@@ -119,7 +122,7 @@ export async function GET(req: NextRequest) {
         price: primaryPricing ? primaryPricing.price : 0,
         currency: primaryPricing ? primaryPricing.currency : 'USD',
         priceFormatted: primaryPricing 
-          ? `${primaryPricing.currency} ${(primaryPricing.price / 100).toFixed(2)}`
+          ? `${primaryPricing.currency} ${Number(primaryPricing.price).toFixed(2)}`
           : 'No pricing',
         subscribers: countMap.get(plan.id) || 0,
       };

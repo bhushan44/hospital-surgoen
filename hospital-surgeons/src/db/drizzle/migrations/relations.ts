@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { subscriptionPlans, doctorPlanFeatures, patients, patientConsents, orders, users, files, doctors, paymentTransactions, planPricing, subscriptions, doctorCredentials, doctorProfilePhotos, hospitals, doctorPreferences, doctorAvailability, doctorAvailabilityHistory, hospitalDocuments, hospitalPreferences, doctorHospitalAffiliations, availabilityTemplates, hospitalUsageTracking, hospitalDepartments, specialties, assignments, enumPriority, enumStatus, doctorAssignmentUsage, auditLogs, assignmentRatings, assignmentPayments, hospitalCancellationFlags, notifications, enumChannel, analyticsEvents, supportTickets, userDevices, notificationPreferences, hospitalPlanFeatures, notificationRecipients, doctorSpecialties, webhookEvents, doctorLeaves } from "./schema";
+import { subscriptionPlans, doctorPlanFeatures, patients, patientConsents, files, doctors, users, paymentTransactions, planPricing, subscriptions, doctorCredentials, doctorProfilePhotos, hospitals, doctorPreferences, doctorAvailability, doctorAvailabilityHistory, hospitalDocuments, hospitalPreferences, doctorHospitalAffiliations, availabilityTemplates, hospitalUsageTracking, hospitalDepartments, specialties, assignments, enumPriority, enumStatus, doctorAssignmentUsage, auditLogs, orders, assignmentRatings, assignmentPayments, hospitalCancellationFlags, notifications, enumChannel, analyticsEvents, supportTickets, userDevices, notificationPreferences, hospitalPlanFeatures, notificationRecipients, doctorSpecialties, webhookEvents, doctorLeaves } from "./schema";
 
 export const doctorPlanFeaturesRelations = relations(doctorPlanFeatures, ({one}) => ({
 	subscriptionPlan: one(subscriptionPlans, {
@@ -10,8 +10,8 @@ export const doctorPlanFeaturesRelations = relations(doctorPlanFeatures, ({one})
 
 export const subscriptionPlansRelations = relations(subscriptionPlans, ({many}) => ({
 	doctorPlanFeatures: many(doctorPlanFeatures),
-	orders: many(orders),
 	paymentTransactions: many(paymentTransactions),
+	orders: many(orders),
 	planPricings: many(planPricing),
 	subscriptions: many(subscriptions),
 	hospitalPlanFeatures: many(hospitalPlanFeatures),
@@ -31,39 +31,6 @@ export const patientsRelations = relations(patients, ({one, many}) => ({
 		references: [hospitals.id]
 	}),
 	assignments: many(assignments),
-}));
-
-export const ordersRelations = relations(orders, ({one, many}) => ({
-	subscriptionPlan: one(subscriptionPlans, {
-		fields: [orders.planId],
-		references: [subscriptionPlans.id]
-	}),
-	user: one(users, {
-		fields: [orders.userId],
-		references: [users.id]
-	}),
-	paymentTransactions: many(paymentTransactions),
-	subscriptions: many(subscriptions),
-}));
-
-export const usersRelations = relations(users, ({many}) => ({
-	orders: many(orders),
-	doctors: many(doctors),
-	paymentTransactions: many(paymentTransactions),
-	hospitals: many(hospitals),
-	doctorAvailabilityHistories: many(doctorAvailabilityHistory),
-	auditLogs: many(auditLogs),
-	analyticsEvents: many(analyticsEvents),
-	supportTickets_assignedTo: many(supportTickets, {
-		relationName: "supportTickets_assignedTo_users_id"
-	}),
-	supportTickets_userId: many(supportTickets, {
-		relationName: "supportTickets_userId_users_id"
-	}),
-	userDevices: many(userDevices),
-	notificationPreferences: many(notificationPreferences),
-	subscriptions: many(subscriptions),
-	notificationRecipients: many(notificationRecipients),
 }));
 
 export const doctorsRelations = relations(doctors, ({one, many}) => ({
@@ -97,11 +64,27 @@ export const filesRelations = relations(files, ({many}) => ({
 	hospitalDocuments: many(hospitalDocuments),
 }));
 
-export const paymentTransactionsRelations = relations(paymentTransactions, ({one, many}) => ({
-	order: one(orders, {
-		fields: [paymentTransactions.orderId],
-		references: [orders.id]
+export const usersRelations = relations(users, ({many}) => ({
+	doctors: many(doctors),
+	paymentTransactions: many(paymentTransactions),
+	hospitals: many(hospitals),
+	doctorAvailabilityHistories: many(doctorAvailabilityHistory),
+	auditLogs: many(auditLogs),
+	orders: many(orders),
+	analyticsEvents: many(analyticsEvents),
+	supportTickets_assignedTo: many(supportTickets, {
+		relationName: "supportTickets_assignedTo_users_id"
 	}),
+	supportTickets_userId: many(supportTickets, {
+		relationName: "supportTickets_userId_users_id"
+	}),
+	userDevices: many(userDevices),
+	notificationPreferences: many(notificationPreferences),
+	subscriptions: many(subscriptions),
+	notificationRecipients: many(notificationRecipients),
+}));
+
+export const paymentTransactionsRelations = relations(paymentTransactions, ({one, many}) => ({
 	subscriptionPlan: one(subscriptionPlans, {
 		fields: [paymentTransactions.planId],
 		references: [subscriptionPlans.id]
@@ -127,6 +110,7 @@ export const paymentTransactionsRelations = relations(paymentTransactions, ({one
 
 export const planPricingRelations = relations(planPricing, ({one, many}) => ({
 	paymentTransactions: many(paymentTransactions),
+	orders: many(orders),
 	subscriptionPlan: one(subscriptionPlans, {
 		fields: [planPricing.planId],
 		references: [subscriptionPlans.id]
@@ -137,10 +121,6 @@ export const planPricingRelations = relations(planPricing, ({one, many}) => ({
 export const subscriptionsRelations = relations(subscriptions, ({one, many}) => ({
 	paymentTransactions: many(paymentTransactions, {
 		relationName: "paymentTransactions_subscriptionId_subscriptions_id"
-	}),
-	order: one(orders, {
-		fields: [subscriptions.orderId],
-		references: [orders.id]
 	}),
 	paymentTransaction: one(paymentTransactions, {
 		fields: [subscriptions.paymentTransactionId],
@@ -354,6 +334,21 @@ export const doctorAssignmentUsageRelations = relations(doctorAssignmentUsage, (
 export const auditLogsRelations = relations(auditLogs, ({one}) => ({
 	user: one(users, {
 		fields: [auditLogs.userId],
+		references: [users.id]
+	}),
+}));
+
+export const ordersRelations = relations(orders, ({one}) => ({
+	subscriptionPlan: one(subscriptionPlans, {
+		fields: [orders.planId],
+		references: [subscriptionPlans.id]
+	}),
+	planPricing: one(planPricing, {
+		fields: [orders.pricingId],
+		references: [planPricing.id]
+	}),
+	user: one(users, {
+		fields: [orders.userId],
 		references: [users.id]
 	}),
 }));

@@ -20,7 +20,7 @@ function PaymentSuccessContent() {
 
   useEffect(() => {
     if (!transactionId && !paymentId) {
-      router.push('/doctor/subscriptions');
+      router.push('/hospital/subscriptions');
       return;
     }
 
@@ -182,11 +182,11 @@ function PaymentSuccessContent() {
                   <>
                     <li className="flex items-start gap-2">
                       <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                      <span>You can now accept up to 20 assignments per month</span>
+                      <span>Enhanced patient management capabilities</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                      <span>Enhanced visibility in hospital searches</span>
+                      <span>Priority access to premium doctors</span>
                     </li>
                   </>
                 )}
@@ -194,11 +194,15 @@ function PaymentSuccessContent() {
                   <>
                     <li className="flex items-start gap-2">
                       <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                      <span>Unlimited assignments per month</span>
+                      <span>Unlimited patient additions</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                      <span>Highest visibility with featured badge</span>
+                      <span>Top priority doctor access</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <span>Advanced analytics & insights</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
@@ -213,14 +217,14 @@ function PaymentSuccessContent() {
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-4">
             <Link
-              href="/doctor/subscriptions"
+              href="/hospital/subscriptions"
               className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
             >
               View Subscription
               <ArrowRight className="w-5 h-5" />
             </Link>
             <Link
-              href="/doctor/dashboard"
+              href="/hospital/dashboard"
               className="flex-1 flex items-center justify-center gap-2 px-6 py-3 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg font-semibold transition-colors"
             >
               Go to Dashboard
@@ -248,4 +252,6 @@ export default function PaymentSuccessPage() {
     </Suspense>
   );
 }
+
+
 

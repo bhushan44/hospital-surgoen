@@ -34,11 +34,13 @@ function RazorpayCheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = searchParams.get('order_id');
+  const planId = searchParams.get('planId');
+  const userRole = searchParams.get('userRole') || 'doctor';
+  const email = searchParams.get('email') || '';
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'success' | 'failed'>('pending');
-  const [orderDetails, setOrderDetails] = useState<any>(null);
 
   useEffect(() => {
     if (!orderId) {
@@ -61,15 +63,7 @@ function RazorpayCheckoutContent() {
         throw new Error('Failed to load Razorpay script');
       }
 
-      // Step 2: Fetch order details from backend to get amount and other info
-      const orderResponse = await apiClient.get(`/api/checkout/razorpay/order/${orderId}`);
-      if (!orderResponse.data.success) {
-        throw new Error('Failed to fetch order details');
-      }
-      const order = orderResponse.data.data;
-      setOrderDetails(order);
-
-      // Step 3: Get Razorpay key from environment
+      // Step 2: Get Razorpay key from environment
       // Note: In production, you might want to fetch this from backend for security
       const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '';
 
@@ -77,7 +71,7 @@ function RazorpayCheckoutContent() {
         throw new Error('Razorpay key not configured. Please set NEXT_PUBLIC_RAZORPAY_KEY_ID');
       }
 
-      // Step 4: Create Razorpay options
+      // Step 3: Create Razorpay options
       // When you use order_id, Razorpay automatically fetches order details from their servers
       // So you don't need to set amount/currency manually - they come from the order
       const options = {
@@ -86,18 +80,14 @@ function RazorpayCheckoutContent() {
         name: 'Hospital Surgeons',
         description: 'Subscription Payment',
         // Amount and currency are automatically fetched from the order
-        // But you can also set them explicitly if needed:
-        // amount: order.amount, // Amount in paise (smallest currency unit)
-        // currency: order.currency,
         handler: function (response: any) {
           // This function is called when payment is successful
           // response contains: razorpay_payment_id, razorpay_order_id, razorpay_signature
           handlePaymentSuccess(response);
         },
         prefill: {
-          // You can prefill customer details if available from order notes
-          email: order.notes?.email || '',
-          name: order.notes?.name || '',
+          // Prefill customer details from URL params
+          email: email || '',
         },
         theme: {
           color: '#2563eb', // Customize modal color
@@ -105,8 +95,12 @@ function RazorpayCheckoutContent() {
         modal: {
           ondismiss: function() {
             // Called when user closes the modal without paying
-            const planId = searchParams.get('planId');
-            router.push(`/doctor/subscriptions${planId ? `?planId=${planId}` : ''}`);
+            // Redirect based on user role from URL params
+            if (userRole === 'hospital') {
+              router.push(`/hospital/subscriptions${planId ? `?planId=${planId}` : ''}`);
+            } else {
+              router.push(`/doctor/subscriptions${planId ? `?planId=${planId}` : ''}`);
+            }
           }
         }
       };
@@ -152,19 +146,12 @@ function RazorpayCheckoutContent() {
       if (verifyResponse.data.success) {
         // Payment verified successfully
         // Redirect to success page with payment details
-        const planId = searchParams.get('planId');
-        
-        if (!planId) {
-          console.error('PlanId is missing from URL params');
-          // Try to get it from order notes if available
-          const orderPlanId = orderDetails?.notes?.planId;
-          if (orderPlanId) {
-            router.push(`/doctor/subscriptions/payment/success?payment_id=${response.razorpay_payment_id}&order_id=${response.razorpay_order_id}&planId=${orderPlanId}`);
-            return;
-          }
+        // Use planId and userRole from URL params
+        if (userRole === 'hospital') {
+          router.push(`/hospital/subscriptions/payment/success?payment_id=${response.razorpay_payment_id}&order_id=${response.razorpay_order_id}&planId=${planId || ''}`);
+        } else {
+          router.push(`/doctor/subscriptions/payment/success?payment_id=${response.razorpay_payment_id}&order_id=${response.razorpay_order_id}&planId=${planId || ''}`);
         }
-        
-        router.push(`/doctor/subscriptions/payment/success?payment_id=${response.razorpay_payment_id}&order_id=${response.razorpay_order_id}&planId=${planId || ''}`);
       } else {
         throw new Error(verifyResponse.data.error || 'Payment verification failed');
       }
@@ -183,14 +170,6 @@ function RazorpayCheckoutContent() {
           <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600 mb-2">Initializing Razorpay payment...</p>
           <p className="text-sm text-gray-500">Loading payment gateway...</p>
-          {orderDetails && (
-            <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200 max-w-md mx-auto">
-              <p className="text-sm font-medium text-gray-700">Order Amount:</p>
-              <p className="text-lg font-bold text-gray-900">
-                ₹{(orderDetails.amount / 100).toLocaleString()}
-              </p>
-            </div>
-          )}
         </div>
       </div>
     );

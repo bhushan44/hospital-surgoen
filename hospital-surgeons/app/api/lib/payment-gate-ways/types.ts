@@ -18,8 +18,13 @@ export interface PaymentGatewayConfig {
   
   export interface CheckoutSession {
     id: string;
-    url: string;
     gateway: string;
+    checkoutData: {
+      orderId: string;
+      planId?: string;
+      userRole?: string;
+      email?: string;
+    };
   }
   
   export interface WebhookEvent {

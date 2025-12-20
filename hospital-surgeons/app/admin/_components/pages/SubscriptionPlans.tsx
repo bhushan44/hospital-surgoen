@@ -130,7 +130,7 @@ function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (p
           {plan.pricingOptions.map((pricing) => (
             <div key={pricing.id} className="text-sm mb-1">
               <span className="font-medium">{pricing.billingCycle}:</span>
-              <span className="ml-2">{pricing.currency} {(pricing.price / 100).toFixed(2)}</span>
+              <span className="ml-2">{pricing.currency} {Number(pricing.price).toFixed(2)}</span>
               {pricing.discountPercentage > 0 && (
                 <span className="text-green-600 ml-2">({pricing.discountPercentage}% off)</span>
               )}
@@ -824,7 +824,7 @@ export function SubscriptionPlans() {
                               <div>
                                 <span className="font-medium">{pricing.billingCycle}</span>
                                 <span className="text-sm text-gray-600 ml-2">
-                                  {pricing.currency} {(pricing.price / 100).toFixed(2)} / {pricing.billingPeriodMonths} month(s)
+                                  {pricing.currency} {Number(pricing.price).toFixed(2)} / {pricing.billingPeriodMonths} month(s)
                                   {pricing.discountPercentage > 0 && (
                                     <span className="text-green-600 ml-2">({pricing.discountPercentage}% off)</span>
                                   )}
@@ -840,8 +840,8 @@ export function SubscriptionPlans() {
                                     setPricingForm({
                                       billingCycle: pricing.billingCycle as any,
                                       billingPeriodMonths: pricing.billingPeriodMonths,
-                                      price: (pricing.price / 100).toFixed(2),
-                                      currency: pricing.currency,
+                                      price: Number(pricing.price).toFixed(2),
+                                      currency: 'INR', // Always use INR
                                       setupFee: '0',
                                       discountPercentage: pricing.discountPercentage.toString(),
                                       isActive: pricing.isActive,
@@ -1045,9 +1045,9 @@ export function SubscriptionPlans() {
                 body: JSON.stringify({
                   billingCycle: pricingForm.billingCycle,
                   billingPeriodMonths: billingPeriodMonths,
-                  price: Math.round(parseFloat(pricingForm.price) * 100), // Convert to cents
-                  currency: pricingForm.currency,
-                  setupFee: Math.round(parseFloat(pricingForm.setupFee || '0') * 100), // Convert to cents
+                  price: parseFloat(pricingForm.price), // Send in rupees, backend will convert to paise
+                  currency: 'INR', // Always use INR (Indian Rupees)
+                  setupFee: parseFloat(pricingForm.setupFee || '0'), // Send in rupees, backend will convert to paise
                   discountPercentage: parseFloat(pricingForm.discountPercentage || '0'),
                   isActive: pricingForm.isActive,
                 }),
@@ -1140,20 +1140,14 @@ export function SubscriptionPlans() {
                 </div>
                 <div>
                   <Label htmlFor="pricingCurrency">Currency *</Label>
-                  <Select
-                    value={pricingForm.currency}
-                    onValueChange={(value) => setPricingForm({ ...pricingForm, currency: value })}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="INR">INR (₹)</SelectItem>
-                      <SelectItem value="USD">USD ($)</SelectItem>
-                      <SelectItem value="EUR">EUR (€)</SelectItem>
-                      <SelectItem value="GBP">GBP (£)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Input
+                    id="pricingCurrency"
+                    type="text"
+                    value="INR (₹)"
+                    disabled
+                    className="mt-1 bg-gray-100 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Currency is fixed to INR (Indian Rupees)</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

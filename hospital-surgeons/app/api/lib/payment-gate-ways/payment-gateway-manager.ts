@@ -7,7 +7,7 @@ export class PaymentManager {
 
   constructor() {
     this.initializeGateways();
-    this.defaultGateway = process.env.DEFAULT_PAYMENT_GATEWAY || 'stripe';
+    this.defaultGateway = process.env.DEFAULT_PAYMENT_GATEWAY || 'razorpay';
   }
 
   private initializeGateways() {
@@ -51,4 +51,7 @@ export class PaymentManager {
 
 // Singleton instance
 export const paymentManager = new PaymentManager();
+
+
+
 

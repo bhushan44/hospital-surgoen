@@ -1,154 +1,454 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Check, Crown, Star, Loader2, AlertCircle } from 'lucide-react';
+import { isAuthenticated } from '@/lib/auth/utils';
+import apiClient from '@/lib/api/httpClient';
+import { toast } from 'sonner';
+
+interface PricingOption {
+  id: string;
+  billingCycle: string;
+  billingPeriodMonths: number;
+  price: number; // in cents
+  currency: string;
+  setupFee: number;
+  discountPercentage: number;
+  isActive: boolean;
+}
 
 interface Plan {
   id: string;
   name: string;
-  tier: string;
-  price: number;
-  billingCycle: string;
-  features: string[];
-  isCurrent?: boolean;
-  isPopular?: boolean;
+  tier: 'free' | 'basic' | 'premium' | 'enterprise';
+  userRole: string;
+  pricingOptions?: PricingOption[];
+  hospitalFeatures?: {
+    maxPatientsPerMonth: number | null;
+    includesPremiumDoctors: boolean | null;
+    maxAssignmentsPerMonth: number | null;
+    notes: string | null;
+  } | null;
+}
+
+interface Subscription {
+  id: string;
+  status: string;
+  startDate: string;
+  endDate: string;
+  billingCycle?: string;
+  billingPeriodMonths?: number;
+  priceAtPurchase?: number;
+  currencyAtPurchase?: string;
+  plan: Plan;
 }
 
 export default function SubscriptionsPage() {
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
+  const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [selectedPricing, setSelectedPricing] = useState<Record<string, string>>({}); // planId -> pricingId
 
-  const plans: Plan[] = [
-    {
-      id: 'basic',
-      name: 'Basic Plan',
-      tier: 'free',
-      price: 0,
-      billingCycle: 'month',
-      isCurrent: true,
-      features: [
-        'Basic hospital registration',
-        'Add up to 5 patients/month',
-        'Access to all doctors',
-        'Standard listing',
-      ],
-      // Excluded features shown with X
-    },
-    {
-      id: 'gold',
-      name: 'Gold Plan',
-      tier: 'gold',
-      price: 5000,
-      billingCycle: 'booking',
-      features: [
-        'Everything in Free',
-        'Pay per confirmed booking',
-        'Unlimited patient additions',
-        'Priority doctor access',
-        'Enhanced hospital visibility',
-        'Basic analytics',
-        'Email support',
-        'No monthly commitment',
-      ],
-    },
-    {
-      id: 'platinum',
-      name: 'Platinum Plan',
-      tier: 'premium',
-      price: 10000,
-      billingCycle: 'month',
-      isPopular: true,
-      features: [
-        'Everything in Gold',
-        'Unlimited transactions (no pre-booking fees!)',
-        'Top priority doctor access',
-        'Premium hospital listing',
-        'Advanced analytics & insights',
-        'Dedicated account manager',
-        'Priority support (24/7)',
-        'Custom integrations available',
-      ],
-    },
-  ];
+  useEffect(() => {
+    if (isAuthenticated()) {
+      fetchData();
+    } else {
+      router.push('/login');
+    }
+  }, []);
 
-  const handleUpgrade = (planId: string) => {
-    setSelectedPlan(planId);
-    // Navigate to payment page
-    window.location.href = `/hospital/payment?plan=${planId}`;
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+
+      // Fetch available plans for hospitals
+      const plansResponse = await apiClient.get('/api/subscriptions/plans');
+      if (plansResponse.data.success && plansResponse.data.data) {
+        const hospitalPlans = plansResponse.data.data.filter(
+          (plan: Plan) => plan.userRole === 'hospital'
+        );
+        setPlans(hospitalPlans);
+      } else {
+        console.error('Failed to fetch plans:', plansResponse.data);
+        const errorMessage = plansResponse.data?.message || plansResponse.data?.error || 'Failed to load subscription plans';
+        toast.error(errorMessage);
+      }
+
+      // Fetch current subscription
+      const subscriptionResponse = await apiClient.get('/api/subscriptions/current');
+      if (subscriptionResponse.data.success && subscriptionResponse.data.data) {
+        const subscriptionData = subscriptionResponse.data.data;
+        if (subscriptionData && subscriptionData.subscription && subscriptionData.plan) {
+          const sub = subscriptionData.subscription;
+          setCurrentSubscription({
+            id: sub.id,
+            status: sub.status,
+            startDate: sub.startDate,
+            endDate: sub.endDate,
+            billingCycle: sub.billingCycle || sub.billing_cycle,
+            billingPeriodMonths: sub.billingPeriodMonths || sub.billing_period_months,
+            priceAtPurchase: sub.priceAtPurchase || sub.price_at_purchase,
+            currencyAtPurchase: sub.currencyAtPurchase || sub.currency_at_purchase,
+            plan: subscriptionData.plan,
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Error fetching data:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to load subscription data';
+      if (error.response?.status !== 404) {
+        toast.error(errorMessage);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-blue-600 text-white p-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">DocSchedule</h1>
-          <button className="text-white">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+  const handleUpgrade = async (planId: string, pricingId?: string) => {
+    try {
+      setUpgrading(planId);
+
+      // Get plan details
+      const planResponse = await apiClient.get(`/api/subscriptions/plans/${planId}`);
+      if (!planResponse.data.success || !planResponse.data.data) {
+        throw new Error('Plan not found');
+      }
+
+      const plan = planResponse.data.data;
+
+      // If free plan, activate directly
+      if (plan.tier === 'free') {
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setFullYear(endDate.getFullYear() + 10); // Free plan valid for 10 years
+
+        const subscriptionData = {
+          planId: planId,
+          status: 'active',
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          autoRenew: false,
+        };
+
+        const createResponse = await apiClient.post('/api/subscriptions', subscriptionData);
+        if (createResponse.data.success) {
+          toast.success('Free plan activated successfully!');
+          await fetchData();
+          router.push('/hospital/dashboard');
+        } else {
+          throw new Error(createResponse.data.message || 'Failed to activate plan');
+        }
+      } else {
+        // Paid plan - need to select pricing option first
+        if (!pricingId) {
+          toast.error('Please select a billing cycle');
+          setUpgrading(null);
+          return;
+        }
+
+        // Find the selected pricing option
+        const selectedPricingOption = plan.pricingOptions?.find((p: any) => p.id === pricingId);
+        if (!selectedPricingOption) {
+          throw new Error('Selected pricing option not found');
+        }
+
+        // Create checkout session and redirect to payment gateway
+        try {
+          const checkoutResponse = await apiClient.post('/api/payments/create-order', {
+            planId: planId,
+            pricingId: pricingId,
+            gateway: 'razorpay',
+          });
+
+          if (checkoutResponse.data.success && checkoutResponse.data.data?.session?.checkoutData) {
+            const orderStatus = checkoutResponse.data.data?.status || 'pending';
+            const checkoutData = checkoutResponse.data.data.session.checkoutData;
+            
+            // Show status message based on order status
+            if (orderStatus === 'pending') {
+              toast.info('Order created. Redirecting to payment...');
+            } else if (orderStatus === 'paid') {
+              toast.success('Payment already processed!');
+            } else if (orderStatus === 'failed') {
+              toast.error('Previous payment failed. Please try again.');
+            } else {
+              toast.info(`Order status: ${orderStatus}`);
+            }
+            
+            // Construct checkout URL from checkoutData
+            const urlParams = new URLSearchParams({
+              order_id: checkoutData.orderId,
+            });
+            if (checkoutData.planId) urlParams.set('planId', checkoutData.planId);
+            if (checkoutData.userRole) urlParams.set('userRole', checkoutData.userRole);
+            if (checkoutData.email) urlParams.set('email', checkoutData.email);
+            const checkoutUrl = `/checkout/razorpay?${urlParams.toString()}`;
+            
+            // Redirect to payment gateway checkout
+            window.location.href = checkoutUrl;
+          } else {
+            throw new Error('Failed to create checkout session');
+          }
+        } catch (checkoutError: any) {
+          console.error('Checkout error:', checkoutError);
+          toast.error(checkoutError.response?.data?.message || checkoutError.message || 'Failed to initiate checkout');
+          setUpgrading(null);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error upgrading plan:', error);
+      toast.error(error.response?.data?.message || error.message || 'Failed to upgrade plan');
+    } finally {
+      setUpgrading(null);
+    }
+  };
+
+  const getPlanFeatures = (plan: Plan): string[] => {
+    const features: string[] = [];
+    
+    // If plan has hospitalFeatures from database, use those
+    if (plan.hospitalFeatures) {
+      const hf = plan.hospitalFeatures;
+      
+      // Max patients per month
+      if (hf.maxPatientsPerMonth !== null && hf.maxPatientsPerMonth !== undefined) {
+        if (hf.maxPatientsPerMonth === -1) {
+          features.push('Unlimited patients per month');
+        } else {
+          features.push(`Up to ${hf.maxPatientsPerMonth} patients per month`);
+        }
+      }
+      
+      // Max assignments per month
+      if (hf.maxAssignmentsPerMonth !== null && hf.maxAssignmentsPerMonth !== undefined) {
+        if (hf.maxAssignmentsPerMonth === -1) {
+          features.push('Unlimited assignments per month');
+        } else {
+          features.push(`Up to ${hf.maxAssignmentsPerMonth} assignments per month`);
+        }
+      }
+      
+      // Premium doctors access
+      if (hf.includesPremiumDoctors) {
+        features.push('Access to premium doctors');
+      }
+      
+      // Notes (can contain additional features)
+      if (hf.notes) {
+        const noteFeatures = hf.notes.split(/\n|,|;/).filter(n => n.trim());
+        features.push(...noteFeatures.map(n => n.trim()));
+      }
+    } else {
+      // Fallback to tier-based features if no database features
+      switch (plan.tier) {
+        case 'free':
+          features.push(
+            'Basic hospital registration',
+            'Add up to 10 patients/month',
+            'Access to all doctors',
+            'Standard listing',
+            'Community support'
+          );
+          break;
+        case 'basic':
+          features.push(
+            'Enhanced visibility',
+            'Up to 50 patients per month',
+            'Priority placement',
+            'Email support'
+          );
+          break;
+        case 'premium':
+          features.push(
+            'Unlimited patients',
+            'Unlimited assignments',
+            'Premium hospital listing',
+            'Priority support (24/7)'
+          );
+          break;
+      }
+    }
+    
+    return features.length > 0 ? features : ['Standard features'];
+  };
+
+  const getTierColor = (tier: string) => {
+    switch (tier) {
+      case 'free':
+        return 'border-gray-300 bg-white';
+      case 'basic':
+        return 'border-yellow-400 bg-yellow-50';
+      case 'premium':
+        return 'border-purple-500 bg-purple-50';
+      default:
+        return 'border-gray-300 bg-white';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading subscription plans...</p>
         </div>
       </div>
+    );
+  }
 
-      {/* Main Content */}
-      <div className="p-6">
-        <h2 className="text-3xl font-bold text-gray-900 mb-2">Choose Your Plan</h2>
-        <p className="text-gray-600 mb-8">Select the plan that best fits your needs</p>
+  const currentPlanId = currentSubscription?.plan?.id;
 
-        {/* Plans Grid */}
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
-          {plans.map((plan) => (
+  return (
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div>
+        <h1 className="text-gray-900 mb-2 text-2xl font-bold">Subscription Plans</h1>
+        <p className="text-gray-600">Choose a plan that fits your hospital's needs</p>
+      </div>
+
+      {/* Current Plan Display */}
+      {currentSubscription && (
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Current Plan</h3>
+              <p className="text-2xl font-bold text-blue-600">{currentSubscription.plan.name}</p>
+              <div className="mt-2 space-y-1">
+                {currentSubscription.plan.tier === 'free' ? (
+                  <p className="text-sm text-gray-600">Free Forever</p>
+                ) : (
+                  <>
+                    {currentSubscription.priceAtPurchase && (
+                      <p className="text-sm text-gray-700">
+                        <span className="font-semibold">Price: </span>
+                        {currentSubscription.currencyAtPurchase === 'INR' ? '₹' : '$'}
+                        {Number(currentSubscription.priceAtPurchase || 0).toLocaleString()}
+                        {currentSubscription.billingCycle && (
+                          <span className="text-gray-600">
+                            {' '}/ {currentSubscription.billingCycle === 'monthly' ? 'month' : 
+                                    currentSubscription.billingCycle === 'quarterly' ? 'quarter' :
+                                    currentSubscription.billingCycle === 'yearly' ? 'year' :
+                                    `${currentSubscription.billingPeriodMonths || 1} months`}
+                          </span>
+                        )}
+                      </p>
+                    )}
+                    <p className="text-sm text-gray-600">
+                      {currentSubscription.status === 'active' ? 'Renews on' : 'Expires on'} {new Date(currentSubscription.endDate).toLocaleDateString()}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="text-right ml-4">
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                currentSubscription.status === 'active'
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-gray-100 text-gray-700'
+              }`}>
+                {currentSubscription.status}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Plans Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {plans.map((plan) => {
+          const isCurrentPlan = plan.id === currentPlanId;
+          const isPopular = plan.tier === 'basic' || plan.tier === 'premium';
+          const features = getPlanFeatures(plan);
+          const pricingOptions = plan.pricingOptions || [];
+          const defaultPricing = pricingOptions.find(p => p.billingCycle === 'monthly') || pricingOptions[0];
+          const selectedPricingId = selectedPricing[plan.id] || defaultPricing?.id;
+          const selectedPricingOption = pricingOptions.find(p => p.id === selectedPricingId);
+
+          return (
             <div
               key={plan.id}
-              className={`relative rounded-lg p-6 border-2 ${
-                plan.isPopular
-                  ? 'border-purple-500 bg-purple-50'
-                  : plan.isCurrent
-                  ? 'border-gray-300 bg-white'
-                  : 'border-yellow-300 bg-yellow-50'
-              }`}
+              className={`relative rounded-lg border-2 p-6 ${getTierColor(plan.tier)} ${
+                isPopular ? 'shadow-lg' : 'shadow'
+              } ${isCurrentPlan ? 'ring-2 ring-blue-500' : ''}`}
             >
-              {plan.isPopular && (
-                <div className="absolute top-0 left-0 bg-purple-600 text-white px-3 py-1 rounded-br-lg text-xs font-semibold">
-                  MOST POPULAR
+              {isPopular && (
+                <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                  <span className="bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full text-xs font-semibold">
+                    MOST POPULAR
+                  </span>
                 </div>
               )}
 
-              <div className="flex items-center gap-3 mb-4">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                  plan.tier === 'free' ? 'bg-gray-200' : plan.tier === 'gold' ? 'bg-yellow-200' : 'bg-purple-200'
-                }`}>
-                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
+              {plan.tier === 'premium' && (
+                <div className="absolute top-4 right-4">
+                  <Crown className="w-6 h-6 text-yellow-500" />
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
-                  {plan.tier === 'free' && <p className="text-sm text-gray-600">Free Plan</p>}
-                </div>
-              </div>
+              )}
 
               <div className="mb-6">
-                <span className="text-3xl font-bold text-gray-900">
-                  ₹{plan.price.toLocaleString()}
-                </span>
-                <span className="text-gray-600"> /{plan.billingCycle}</span>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">{plan.name}</h3>
+                {plan.tier === 'free' ? (
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold text-gray-900">Free</span>
+                  </div>
+                ) : pricingOptions.length > 0 ? (
+                  <div>
+                    {pricingOptions.length > 1 ? (
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Billing Cycle
+                        </label>
+                        <select
+                          value={selectedPricingId || ''}
+                          onChange={(e) => setSelectedPricing({ ...selectedPricing, [plan.id]: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          {pricingOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.billingCycle.charAt(0).toUpperCase() + option.billingCycle.slice(1)} 
+                              {option.billingPeriodMonths > 1 && ` (${option.billingPeriodMonths} months)`}
+                              {option.discountPercentage > 0 && ` - Save ${option.discountPercentage}%`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                    {selectedPricingOption && (
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold text-gray-900">
+                          {selectedPricingOption.currency === 'INR' ? '₹' : '$'}
+                          {Number(selectedPricingOption.price || 0).toLocaleString()}
+                        </span>
+                        <span className="text-gray-600">
+                          /{selectedPricingOption.billingCycle === 'monthly' ? 'month' : 
+                            selectedPricingOption.billingCycle === 'quarterly' ? 'quarter' :
+                            selectedPricingOption.billingCycle === 'yearly' ? 'year' :
+                            `${selectedPricingOption.billingPeriodMonths} months`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-gray-600">No pricing available</div>
+                )}
               </div>
 
-              {/* Features */}
+              {/* Features List */}
               <ul className="space-y-3 mb-6">
-                {plan.features.map((feature, index) => (
+                {features.map((feature, index) => (
                   <li key={index} className="flex items-start gap-2">
-                    <svg className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
+                    <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                     <span className="text-sm text-gray-700">{feature}</span>
                   </li>
                 ))}
               </ul>
 
-              {/* Button */}
-              {plan.isCurrent ? (
+              {/* Action Button */}
+              {isCurrentPlan ? (
                 <button
                   disabled
                   className="w-full bg-gray-300 text-gray-600 py-3 rounded-lg font-semibold cursor-not-allowed"
@@ -157,100 +457,69 @@ export default function SubscriptionsPage() {
                 </button>
               ) : (
                 <button
-                  onClick={() => handleUpgrade(plan.id)}
-                  className={`w-full py-3 rounded-lg font-semibold text-white ${
-                    plan.isPopular ? 'bg-purple-600 hover:bg-purple-700' : 'bg-yellow-500 hover:bg-yellow-600'
-                  }`}
+                  onClick={() => handleUpgrade(plan.id, selectedPricingId)}
+                  disabled={upgrading === plan.id || (plan.tier !== 'free' && !selectedPricingId)}
+                  className={`w-full py-3 rounded-lg font-semibold text-white transition-colors ${
+                    plan.tier === 'free'
+                      ? 'bg-gray-600 hover:bg-gray-700'
+                      : plan.tier === 'basic'
+                      ? 'bg-yellow-500 hover:bg-yellow-600'
+                      : 'bg-purple-600 hover:bg-purple-700'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  Upgrade Now
+                  {upgrading === plan.id ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Processing...
+                    </span>
+                  ) : plan.tier === 'free' ? (
+                    'Select Free Plan'
+                  ) : (
+                    'Upgrade Now'
+                  )}
                 </button>
               )}
             </div>
-          ))}
-        </div>
-
-        {/* Why Choose Section */}
-        <div className="bg-blue-50 rounded-lg p-6 mb-8">
-          <h3 className="text-xl font-bold text-gray-900 mb-4">Why Choose Our Platform?</h3>
-          <p className="text-gray-600 mb-4">Streamlined scheduling that benefits both doctors and hospitals</p>
-          <div className="flex items-start gap-3">
-            <svg className="w-6 h-6 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-            </svg>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-2">For Hospitals</h4>
-              <ul className="space-y-2 text-sm text-gray-700">
-                <li>• Flexible Pricing: Choose between transaction-based or unlimited monthly plans</li>
-                <li>• Enhanced Patient Flow: Attract more patients with premium visibility</li>
-                <li>• Exclusive Benefits: Platinum members receive promotional and marketing advantages</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        {/* FAQ Section */}
-        <div className="mb-8">
-          <h3 className="text-2xl font-bold text-gray-900 mb-6">Frequently Asked Questions</h3>
-          <div className="space-y-6">
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-2">How do the Doctor plans differ?</h4>
-              <p className="text-gray-600">
-                The Basic plan is free but offers limited visibility. Gold members receive priority placement in search results, appearing before free users, and benefit from enhanced visibility based on seniority and location.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-2">Which Hospital plan is right for me?</h4>
-              <p className="text-gray-600">
-                For hospitals with moderate patient flow, the Gold plan offers a pay-per-transaction model. For busy hospitals expecting many bookings, the Platinum plan with unlimited transactions may be more cost-effective.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-2">Can I upgrade my plan later?</h4>
-              <p className="text-gray-600">
-                Yes, you can upgrade or downgrade your plan at any time. Changes will take effect at the start of your next billing cycle.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-2">Is there a contract or commitment?</h4>
-              <p className="text-gray-600">
-                No, all our paid plans are month-to-month with no long-term commitment. You can cancel at any time.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Help Section */}
-        <div className="bg-blue-600 text-white rounded-lg p-6">
-          <div className="flex items-start gap-3 mb-4">
-            <svg className="w-6 h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-            </svg>
-            <div>
-              <h4 className="text-lg font-semibold mb-2">Need help choosing a plan?</h4>
-              <p className="text-blue-100 mb-4">
-                Our team is ready to help you select the best plan for your needs. Contact us for a personalized consultation.
-              </p>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  <span>(800) 555-DOCS</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  <span>support@docschedule.com</span>
-                </div>
-              </div>
-              <button className="mt-4 bg-white text-blue-600 px-6 py-2 rounded-lg font-semibold border-2 border-white">
-                Schedule a Consultation
-              </button>
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
+
+      {/* Why Upgrade Section */}
+      {currentSubscription && currentSubscription.plan.tier === 'free' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Why Upgrade?</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-start gap-3">
+              <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-gray-900">More Patients</p>
+                <p className="text-sm text-gray-600">Attract more patients with premium visibility</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-gray-900">Priority Access</p>
+                <p className="text-sm text-gray-600">Get priority access to premium doctors</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-gray-900">Advanced Analytics</p>
+                <p className="text-sm text-gray-600">Track performance with detailed insights</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-gray-900">Priority Support</p>
+                <p className="text-sm text-gray-600">Get help when you need it most</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

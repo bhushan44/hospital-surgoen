@@ -15,26 +15,40 @@ export class RazorpayGateway extends BasePaymentGateway {
 
     async createCheckoutSession(params: CreateCheckoutParams): Promise<CheckoutSession> {
         const currency = params.currency.toUpperCase();
-        const amount = Math.max(params.amount, 100); // Razorpay minimum amount is 100 (1 INR)
+        // Amount is in rupees from database, convert to paise for Razorpay
+        const amountInRupees = params.amount;
+        const amountInPaise = Math.round(amountInRupees * 100); // Convert rupees to paise
+        const amount = Math.max(amountInPaise, 100); // Razorpay minimum amount is 100 paise (1 INR)
+        
+        // Use DB order ID as receipt for easy debugging and linking
+        const receipt = params.metadata?.orderId || `receipt_${Date.now()}`;
         
         // Create Razorpay order
+        // Convert rupees to paise (Razorpay expects amount in paise)
         const order = await this.razorpay.orders.create({
-            amount: amount * 100, // Razorpay expects amount in paise (smallest currency unit)
+            amount: amount, // Amount in paise (converted from rupees)
             currency: currency,
-            receipt: `receipt_${Date.now()}`,
+            receipt: receipt, // Use DB order ID as receipt
             notes: params.metadata || {},
         });
 
-        // Include planId in the checkout URL if provided in metadata
+        // Include all necessary data for checkout (for mobile apps and web)
         const planId = params.metadata?.planId;
-        const checkoutUrl = planId 
-            ? `/checkout/razorpay?order_id=${order.id}&planId=${planId}`
-            : `/checkout/razorpay?order_id=${order.id}`;
+        const userRole = params.metadata?.userRole;
+        const email = params.metadata?.email;
+        
+        // Return checkout data as object (frontend will construct URL from this)
+        const checkoutData = {
+            orderId: order.id,
+            planId: planId,
+            userRole: userRole,
+            email: email,
+        };
 
         return {
             id: order.id,
-            url: checkoutUrl,
             gateway: 'razorpay',
+            checkoutData: checkoutData,
         };
     }
 

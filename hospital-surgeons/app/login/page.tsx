@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Header from '../components/Header';
+// import Header from '../components/Header';
 import { isAuthenticated, getUserRole, getDashboardPath, decodeToken } from '@/lib/auth/utils';
 import apiClient from '@/lib/api/httpClient';
 
@@ -189,7 +189,7 @@ function LoginForm() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Header />
+      {/* <Header /> */}
 
       <div className="flex items-center justify-center min-h-[calc(100vh-80px)] p-6">
         <div className="grid md:grid-cols-2 gap-8 max-w-6xl w-full">

@@ -162,15 +162,38 @@ export default function SubscriptionPlanPage() {
 
         // Create checkout session and redirect to payment gateway
         try {
-          const checkoutResponse = await apiClient.post('/api/checkout', {
+          const checkoutResponse = await apiClient.post('/api/payments/create-order', {
             planId: planId,
+            pricingId: pricingId,
             gateway: 'razorpay',
           });
 
-          if (checkoutResponse.data.success && checkoutResponse.data.data?.session?.url) {
-            console.log(checkoutResponse);
+          if (checkoutResponse.data.success && checkoutResponse.data.data?.session?.checkoutData) {
+            const orderStatus = checkoutResponse.data.data?.status || 'pending';
+            const checkoutData = checkoutResponse.data.data.session.checkoutData;
+            
+            // Show status message based on order status
+            if (orderStatus === 'pending') {
+              toast.info('Order created. Redirecting to payment...');
+            } else if (orderStatus === 'paid') {
+              toast.success('Payment already processed!');
+            } else if (orderStatus === 'failed') {
+              toast.error('Previous payment failed. Please try again.');
+            } else {
+              toast.info(`Order status: ${orderStatus}`);
+            }
+            
+            // Construct checkout URL from checkoutData
+            const urlParams = new URLSearchParams({
+              order_id: checkoutData.orderId,
+            });
+            if (checkoutData.planId) urlParams.set('planId', checkoutData.planId);
+            if (checkoutData.userRole) urlParams.set('userRole', checkoutData.userRole);
+            if (checkoutData.email) urlParams.set('email', checkoutData.email);
+            const checkoutUrl = `/checkout/razorpay?${urlParams.toString()}`;
+            
             // Redirect to payment gateway checkout
-            window.location.href = checkoutResponse.data.data.session.url;
+            window.location.href = checkoutUrl;
           } else {
             throw new Error('Failed to create checkout session');
           }
@@ -315,7 +338,7 @@ export default function SubscriptionPlanPage() {
                       <p className="text-sm text-gray-700">
                         <span className="font-semibold">Price: </span>
                         {currentSubscription.currencyAtPurchase === 'INR' ? '₹' : '$'}
-                        {(currentSubscription.priceAtPurchase / 100).toLocaleString()}
+                        {Number(currentSubscription.priceAtPurchase || 0).toLocaleString()}
                         {currentSubscription.billingCycle && (
                           <span className="text-gray-600">
                             {' '}/ {currentSubscription.billingCycle === 'monthly' ? 'month' : 
@@ -423,7 +446,7 @@ export default function SubscriptionPlanPage() {
                       <div className="flex items-baseline gap-2">
                         <span className="text-3xl font-bold text-gray-900">
                           {selectedPricingOption.currency === 'INR' ? '₹' : '$'}
-                          {(selectedPricingOption.price / 100).toLocaleString()}
+                          {Number(selectedPricingOption.price || 0).toLocaleString()}
                         </span>
                         <span className="text-gray-600">
                           /{selectedPricingOption.billingCycle === 'monthly' ? 'month' : 

@@ -66,9 +66,9 @@ export async function PUT(
 
     // Build update object
     const updateValues: any = {};
-    if (updateData.price !== undefined) updateValues.price = Math.round(updateData.price * 100); // bigint with mode: "number" accepts number
+    if (updateData.price !== undefined) updateValues.price = Math.round(updateData.price); // Store in rupees (convert to paise only when sending to Razorpay)
     if (updateData.currency !== undefined) updateValues.currency = updateData.currency;
-    if (updateData.setupFee !== undefined) updateValues.setupFee = Math.round(updateData.setupFee * 100); // Convert to cents
+    if (updateData.setupFee !== undefined) updateValues.setupFee = Math.round(updateData.setupFee); // Store in rupees
     if (updateData.discountPercentage !== undefined) updateValues.discountPercentage = updateData.discountPercentage.toString(); // numeric type needs string
     if (updateData.isActive !== undefined) updateValues.isActive = updateData.isActive;
     if (updateData.validFrom !== undefined) updateValues.validFrom = new Date(updateData.validFrom).toISOString();

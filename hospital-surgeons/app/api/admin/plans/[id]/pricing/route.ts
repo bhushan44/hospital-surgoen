@@ -151,9 +151,9 @@ export async function POST(
           planId: planId,
           billingCycle: billingCycle,
           billingPeriodMonths: billingPeriodMonths,
-          price: Math.round(price * 100), // Convert to cents (bigint with mode: "number" accepts number)
+          price: Math.round(price), // Store in rupees (convert to paise only when sending to Razorpay)
           currency: currency,
-          setupFee: Math.round((setupFee || 0) * 100), // Convert to cents
+          setupFee: Math.round(setupFee || 0), // Store in rupees
           discountPercentage: (discountPercentage || 0).toString(), // numeric type needs string
           isActive: isActive !== undefined ? isActive : true,
           validFrom: validFrom ? new Date(validFrom).toISOString() : new Date().toISOString(),
