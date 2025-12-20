@@ -94,12 +94,21 @@ export function AssignmentManagement() {
     
     try {
       const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/hospitals/${hospitalId}/assignment-usage`, {
+      const response = await fetch(`/api/hospitals/${hospitalId}/usage`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const result = await response.json();
-      if (result.success) {
-        setUsage(result.data);
+      if (result.success && result.data) {
+        // Extract assignment usage from the combined usage response
+        setUsage({
+          used: result.data.assignments.used,
+          limit: result.data.assignments.limit,
+          percentage: result.data.assignments.percentage,
+          status: result.data.assignments.status,
+          remaining: result.data.assignments.remaining,
+          resetDate: result.data.resetDate,
+          plan: result.data.plan,
+        });
       }
     } catch (error) {
       console.error('Error fetching usage:', error);

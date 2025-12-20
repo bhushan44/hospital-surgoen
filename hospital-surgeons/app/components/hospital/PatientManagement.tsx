@@ -85,9 +85,18 @@ export function PatientManagement() {
     if (!hospitalId) return;
     
     try {
-      const response = await apiClient.get(`/api/hospitals/${hospitalId}/patient-usage`);
-      if (response.data.success) {
-        setUsage(response.data.data);
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/usage`);
+      if (response.data.success && response.data.data) {
+        // Extract patient usage from the combined usage response
+        setUsage({
+          used: response.data.data.patients.used,
+          limit: response.data.data.patients.limit,
+          percentage: response.data.data.patients.percentage,
+          status: response.data.data.patients.status,
+          remaining: response.data.data.patients.remaining,
+          resetDate: response.data.data.resetDate,
+          plan: response.data.data.plan,
+        });
       }
     } catch (error) {
       console.error('Error fetching usage:', error);
