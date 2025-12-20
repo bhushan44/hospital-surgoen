@@ -45,6 +45,7 @@ export function PatientManagement() {
   const [loading, setLoading] = useState(true);
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [usage, setUsage] = useState<any>(null);
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -57,6 +58,7 @@ export function PatientManagement() {
   useEffect(() => {
     if (hospitalId) {
       fetchPatients();
+      fetchUsage();
     }
   }, [hospitalId]);
 
@@ -76,6 +78,19 @@ export function PatientManagement() {
         return;
       }
       setError('Failed to load hospital profile');
+    }
+  };
+
+  const fetchUsage = async () => {
+    if (!hospitalId) return;
+    
+    try {
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/patient-usage`);
+      if (response.data.success) {
+        setUsage(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching usage:', error);
     }
   };
 
@@ -192,6 +207,59 @@ export function PatientManagement() {
             {error}
           </div>
         )}
+
+        {/* Usage Banner */}
+        {usage && (
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">
+                  {usage.used} / {usage.limit === -1 ? 'Unlimited' : usage.limit} patients added this month
+                </p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Resets on {new Date(usage.resetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
+              </div>
+              {usage.status === 'reached' && (
+                <button
+                  onClick={() => router.push('/hospital/subscriptions')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                >
+                  Upgrade Plan
+                </button>
+              )}
+            </div>
+            {usage.limit !== -1 && (
+              <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full ${
+                    usage.status === 'reached' ? 'bg-red-500' :
+                    usage.status === 'critical' ? 'bg-orange-500' :
+                    usage.status === 'warning' ? 'bg-yellow-500' :
+                    'bg-green-500'
+                  }`}
+                  style={{ width: `${Math.min(usage.percentage, 100)}%` }}
+                />
+              </div>
+            )}
+            {(usage.status === 'critical' || usage.status === 'warning') && (
+              <div className={`mt-3 p-3 rounded-lg text-xs ${
+                usage.status === 'critical' 
+                  ? 'bg-orange-50 text-orange-700 border border-orange-200' 
+                  : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+              }`}>
+                ⚠️ Almost at limit! {usage.remaining} patient{usage.remaining !== 1 ? 's' : ''} remaining. 
+                <button
+                  onClick={() => router.push('/hospital/subscriptions')}
+                  className="ml-2 underline font-medium"
+                >
+                  View Plans
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
       <div className="bg-white rounded-lg shadow p-6">
         <div className="mb-6">
           <h3 className="text-slate-900 font-semibold">All Patients</h3>

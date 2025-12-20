@@ -53,6 +53,7 @@ export function AssignmentManagement() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [tempSelectedDate, setTempSelectedDate] = useState<string>('');
   const [hospitalId, setHospitalId] = useState<string | null>(null);
+  const [usage, setUsage] = useState<any>(null);
 
   useEffect(() => {
     fetchHospitalProfile();
@@ -85,6 +86,23 @@ export function AssignmentManagement() {
       console.error('Error fetching hospital profile:', err);
       setError('Failed to load hospital profile');
       setLoading(false);
+    }
+  };
+
+  const fetchUsage = async () => {
+    if (!hospitalId) return;
+    
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`/api/hospitals/${hospitalId}/assignment-usage`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json();
+      if (result.success) {
+        setUsage(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching usage:', error);
     }
   };
 
@@ -261,6 +279,58 @@ export function AssignmentManagement() {
         </div>
       ) : (
       <div className="space-y-6">
+        {/* Usage Banner */}
+        {usage && (
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">
+                  {usage.used} / {usage.limit === -1 ? 'Unlimited' : usage.limit} assignments used this month
+                </p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Resets on {new Date(usage.resetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
+              </div>
+              {usage.status === 'reached' && (
+                <button
+                  onClick={() => router.push('/hospital/subscriptions')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                >
+                  Upgrade Plan
+                </button>
+              )}
+            </div>
+            {usage.limit !== -1 && (
+              <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full ${
+                    usage.status === 'reached' ? 'bg-red-500' :
+                    usage.status === 'critical' ? 'bg-orange-500' :
+                    usage.status === 'warning' ? 'bg-yellow-500' :
+                    'bg-green-500'
+                  }`}
+                  style={{ width: `${Math.min(usage.percentage, 100)}%` }}
+                />
+              </div>
+            )}
+            {(usage.status === 'critical' || usage.status === 'warning') && (
+              <div className={`mt-3 p-3 rounded-lg text-xs ${
+                usage.status === 'critical' 
+                  ? 'bg-orange-50 text-orange-700 border border-orange-200' 
+                  : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+              }`}>
+                ⚠️ Almost at limit! {usage.remaining} assignment{usage.remaining !== 1 ? 's' : ''} remaining. 
+                <button
+                  onClick={() => router.push('/hospital/subscriptions')}
+                  className="ml-2 underline font-medium"
+                >
+                  View Plans
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Header Section */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-6">
