@@ -451,6 +451,7 @@ export class SubscriptionsRepository {
       .select({
         subscription: subscriptions,
         plan: subscriptionPlans,
+        pricing: planPricing,
         doctorFeatures: {
           id: doctorPlanFeatures.id,
           planId: doctorPlanFeatures.planId,
@@ -462,6 +463,10 @@ export class SubscriptionsRepository {
       })
       .from(subscriptions)
       .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+      .leftJoin(
+        planPricing,
+        eq(subscriptions.pricingId, planPricing.id)
+      )
       .leftJoin(
         doctorPlanFeatures,
         eq(subscriptionPlans.id, doctorPlanFeatures.planId)
@@ -489,6 +494,15 @@ export class SubscriptionsRepository {
         doctorFeatures: row.doctorFeatures?.id ? row.doctorFeatures : null,
         hospitalFeatures: row.hospitalFeatures?.id ? row.hospitalFeatures : null,
       },
+      pricing: row.pricing ? {
+        id: row.pricing.id,
+        billingCycle: row.pricing.billingCycle,
+        billingPeriodMonths: row.pricing.billingPeriodMonths,
+        price: Number(row.pricing.price),
+        currency: row.pricing.currency,
+        setupFee: row.pricing.setupFee ? Number(row.pricing.setupFee) : 0,
+        discountPercentage: row.pricing.discountPercentage ? Number(row.pricing.discountPercentage) : 0,
+      } : null,
     };
   }
 
