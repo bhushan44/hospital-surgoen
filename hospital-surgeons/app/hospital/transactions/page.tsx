@@ -196,9 +196,9 @@ export default function HospitalTransactionsPage() {
                           <div className="text-sm font-medium text-gray-900">
                             {transaction.description}
                           </div>
-                          {transaction.planId && (
+                          {transaction.plan?.id && (
                             <div className="text-xs text-gray-500 mt-1">
-                              Plan ID: {transaction.planId.substring(0, 8)}...
+                              Plan ID: {transaction.plan.id.substring(0, 8)}...
                             </div>
                           )}
                         </td>

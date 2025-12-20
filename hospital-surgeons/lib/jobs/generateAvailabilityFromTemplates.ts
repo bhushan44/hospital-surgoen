@@ -6,8 +6,10 @@ type TemplateRecord = NonNullable<Awaited<ReturnType<DoctorsRepository['getTempl
 
 export interface AvailabilityGenerationOptions {
   startDate?: Date;
-  days?: number;
+  endDate?: Date; // Optional end date - if provided, calculates days from startDate to endDate
+  days?: number; // Optional days - used if endDate not provided (default: 7)
   doctorIds?: string[];
+  templateIds?: string[]; // Optional: generate only for specific templates
 }
 
 export interface TemplateGenerationSummary {
@@ -71,16 +73,42 @@ export async function generateAvailabilityFromTemplates(
   options: AvailabilityGenerationOptions = {}
 ): Promise<AvailabilityGenerationSummary> {
   const doctorsRepository = new DoctorsRepository();
+  
+  // Determine start date
   const start = startOfDay(options.startDate ?? new Date());
-  const days = Math.max(1, options.days ?? 7);
-  const end = addDays(start, days - 1);
+  
+  // Determine end date: use endDate if provided, otherwise calculate from days
+  let end: Date;
+  if (options.endDate) {
+    end = startOfDay(options.endDate);
+  } else {
+    const days = Math.max(1, options.days ?? 7);
+    end = addDays(start, days - 1);
+  }
+  
+  // Ensure end is not before start
+  if (end < start) {
+    end = start;
+  }
+  
+  // Calculate actual days between start and end
+  const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  
   const startStr = formatDate(start);
   const endStr = formatDate(end);
 
   const templatesRaw = await doctorsRepository.getTemplatesActiveBetween(startStr, endStr);
-  const templates = (templatesRaw.filter(Boolean) as TemplateRecord[]).filter((template) =>
-    options.doctorIds ? options.doctorIds.includes(template.doctorId) : true
-  );
+  const templates = (templatesRaw.filter(Boolean) as TemplateRecord[]).filter((template) => {
+    // Filter by doctor IDs if provided
+    if (options.doctorIds && !options.doctorIds.includes(template.doctorId)) {
+      return false;
+    }
+    // Filter by template IDs if provided
+    if (options.templateIds && !options.templateIds.includes(template.id)) {
+      return false;
+    }
+    return true;
+  });
 
   const summary: AvailabilityGenerationSummary = {
     startDate: startStr,
@@ -116,7 +144,21 @@ export async function generateAvailabilityFromTemplates(
         continue;
       }
 
-      // Check for overlapping availability slots
+      // Check for exact duplicate slot from same template (prevent duplicates)
+      const hasExactDuplicate = await doctorsRepository.hasExactAvailabilitySlot(
+        template.doctorId,
+        slotDate,
+        template.startTime,
+        template.endTime,
+        template.id
+      );
+
+      if (hasExactDuplicate) {
+        templateSummary.skippedExisting += 1;
+        continue;
+      }
+
+      // Check for overlapping availability slots (prevent time conflicts)
       const hasOverlap = await doctorsRepository.hasAvailabilityOverlap(
         template.doctorId,
         slotDate,

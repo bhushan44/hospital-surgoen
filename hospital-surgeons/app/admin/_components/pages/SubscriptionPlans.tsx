@@ -424,7 +424,8 @@ export function SubscriptionPlans() {
           userRole: formData.userRole,
           description: formData.description || null,
           isActive: formData.isActive,
-          defaultBillingCycle: formData.defaultBillingCycle,
+          // Only include defaultBillingCycle for non-free plans
+          ...(formData.tier !== 'free' && { defaultBillingCycle: formData.defaultBillingCycle }),
           features: features, // Always include features
         }),
       });
@@ -489,7 +490,8 @@ export function SubscriptionPlans() {
       userRole: plan.userRole,
       description: plan.description || '',
       isActive: plan.isActive !== undefined ? plan.isActive : true,
-      defaultBillingCycle: (plan.defaultBillingCycle as any) || 'monthly',
+      // Only set defaultBillingCycle for non-free plans
+      defaultBillingCycle: plan.tier === 'free' ? undefined : ((plan.defaultBillingCycle as any) || 'monthly'),
     });
     // Load pricing options
     if (plan.id) {
@@ -721,7 +723,17 @@ export function SubscriptionPlans() {
                     <Label htmlFor="tier">Tier *</Label>
                     <Select
                       value={formData.tier}
-                      onValueChange={(value) => setFormData({ ...formData, tier: value })}
+                      onValueChange={(value) => {
+                        // Clear defaultBillingCycle when switching to free tier
+                        const updates: any = { tier: value };
+                        if (value === 'free') {
+                          updates.defaultBillingCycle = undefined;
+                        } else if (formData.tier === 'free' && !formData.defaultBillingCycle) {
+                          // Set default to monthly when switching from free to paid
+                          updates.defaultBillingCycle = 'monthly';
+                        }
+                        setFormData({ ...formData, ...updates });
+                      }}
                     >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
@@ -746,24 +758,26 @@ export function SubscriptionPlans() {
                     rows={2}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="defaultBillingCycle">Default Billing Cycle</Label>
-                    <Select
-                      value={formData.defaultBillingCycle}
-                      onValueChange={(value) => setFormData({ ...formData, defaultBillingCycle: value as any })}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="quarterly">Quarterly</SelectItem>
-                        <SelectItem value="yearly">Yearly</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center space-x-2 pt-8">
+                <div className={`grid gap-4 ${formData.tier === 'free' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  {formData.tier !== 'free' ? (
+                    <div key="billing-cycle-field">
+                      <Label htmlFor="defaultBillingCycle">Default Billing Cycle</Label>
+                      <Select
+                        value={formData.defaultBillingCycle || 'monthly'}
+                        onValueChange={(value) => setFormData({ ...formData, defaultBillingCycle: value as any })}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select billing cycle" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="monthly">Monthly</SelectItem>
+                          <SelectItem value="quarterly">Quarterly</SelectItem>
+                          <SelectItem value="yearly">Yearly</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+                  <div className={`flex items-center space-x-2 ${formData.tier === 'free' ? '' : 'pt-8'}`}>
                     <input
                       type="checkbox"
                       id="isActive"

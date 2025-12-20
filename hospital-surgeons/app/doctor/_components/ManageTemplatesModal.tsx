@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, X, Loader2, Trash2, Pencil, CheckCircle2, AlertTriangle } from 'lucide-react';
 import apiClient from '@/lib/api/httpClient';
+import { toast } from 'sonner';
 
 type RecurrencePattern = 'daily' | 'weekly' | 'monthly' | 'custom';
 
@@ -88,9 +89,11 @@ export function ManageTemplatesModal({ doctorId, onClose }: ManageTemplatesModal
         } else {
           setError(data.message || 'Failed to load templates');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load templates', err);
-        setError('Failed to load templates');
+        const errorMessage = err.response?.data?.message || err.message || 'Failed to load templates';
+        setError(errorMessage);
+        toast.error(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -178,19 +181,30 @@ export function ManageTemplatesModal({ doctorId, onClose }: ManageTemplatesModal
 
       const data = response.data;
       if (!data.success) {
+        // Show detailed error message as toast
+        toast.error(data.message || 'Failed to save template', {
+          duration: 5000, // Show for 5 seconds to allow reading the detailed message
+        });
         setFormError(data.message || 'Failed to save template');
         return;
       }
 
+      // Show success toast
       if (editingTemplateId) {
+        toast.success('Template updated successfully');
         setTemplates((prev) => prev.map((tpl) => (tpl.id === editingTemplateId ? data.data : tpl)));
       } else {
+        toast.success('Template created successfully');
         setTemplates((prev) => [data.data, ...prev]);
       }
       resetForm();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save template', err);
-      setFormError('Failed to save template. Please try again.');
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to save template. Please try again.';
+      toast.error(errorMessage, {
+        duration: 5000,
+      });
+      setFormError(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -213,14 +227,17 @@ export function ManageTemplatesModal({ doctorId, onClose }: ManageTemplatesModal
   const handleDelete = async (templateId: string) => {
     if (!window.confirm('Delete this template? Generated slots will stay untouched.')) return;
     try {
-      setTemplates((prev) => prev.filter((tpl) => tpl.id !== templateId));
       await apiClient.delete(`/api/doctors/${doctorId}/availability/templates/${templateId}`);
+      setTemplates((prev) => prev.filter((tpl) => tpl.id !== templateId));
       if (editingTemplateId === templateId) {
         resetForm();
       }
-    } catch (err) {
+      toast.success('Template deleted successfully');
+    } catch (err: any) {
       console.error('Failed to delete template', err);
-      setError('Failed to delete template. Refresh to see current state.');
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to delete template. Please try again.';
+      toast.error(errorMessage);
+      setError(errorMessage);
     }
   };
 

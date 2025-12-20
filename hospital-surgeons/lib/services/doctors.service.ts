@@ -98,6 +98,33 @@ export class DoctorsService {
     return false;
   }
 
+  private getConflictDetails(newTemplate: any, existingTemplate: any): string {
+    const details: string[] = [];
+    
+    // Check date overlap
+    if (this.datesOverlap(newTemplate.validFrom, newTemplate.validUntil, existingTemplate.validFrom, existingTemplate.validUntil)) {
+      details.push('date ranges overlap');
+    }
+    
+    // Check time overlap
+    const timesOverlap = newTemplate.startTime < existingTemplate.endTime && existingTemplate.startTime < newTemplate.endTime;
+    if (timesOverlap) {
+      details.push(`time slots overlap (${existingTemplate.startTime} - ${existingTemplate.endTime})`);
+    }
+    
+    // Check day overlap
+    const newDays = this.getTemplateDaySet(newTemplate);
+    const existingDays = this.getTemplateDaySet(existingTemplate);
+    if (newDays.size > 0 && existingDays.size > 0) {
+      const commonDays = Array.from(newDays).filter(day => existingDays.has(day));
+      if (commonDays.length > 0) {
+        details.push(`days overlap: ${commonDays.join(', ')}`);
+      }
+    }
+    
+    return details.length > 0 ? details.join('; ') : 'Please adjust timing or days.';
+  }
+
   async createDoctor(createDoctorDto: CreateDoctorDto) {
     try {
       // Check if user already exists
@@ -626,7 +653,7 @@ export class DoctorsService {
       }
 
       const existingTemplates = await this.doctorsRepository.getAvailabilityTemplates(doctorId);
-      const conflict = existingTemplates.some((template) =>
+      const conflictingTemplate = existingTemplates.find((template) =>
         this.templatesConflict(
           {
             ...templateDto,
@@ -638,10 +665,19 @@ export class DoctorsService {
         )
       );
 
-      if (conflict) {
+      if (conflictingTemplate) {
+        const conflictDetails = this.getConflictDetails(
+          {
+            ...templateDto,
+            recurrenceDays: templateDto.recurrencePattern === 'daily' || templateDto.recurrencePattern === 'monthly'
+              ? []
+              : templateDto.recurrenceDays || [],
+          },
+          conflictingTemplate,
+        );
         return {
           success: false,
-          message: 'Template overlaps with an existing recurring schedule. Adjust timing or days.',
+          message: `Template overlaps with existing template "${conflictingTemplate.templateName}". ${conflictDetails}`,
         };
       }
 
@@ -703,14 +739,15 @@ export class DoctorsService {
       };
 
       const templates = await this.doctorsRepository.getAvailabilityTemplates(doctorId);
-      const conflict = templates
+      const conflictingTemplate = templates
         .filter((tpl) => tpl.id !== templateId)
-        .some((tpl) => this.templatesConflict(mergedTemplate, tpl));
+        .find((tpl) => this.templatesConflict(mergedTemplate, tpl));
 
-      if (conflict) {
+      if (conflictingTemplate) {
+        const conflictDetails = this.getConflictDetails(mergedTemplate, conflictingTemplate);
         return {
           success: false,
-          message: 'Updated template overlaps with another recurring schedule. Please adjust times/days.',
+          message: `Updated template overlaps with existing template "${conflictingTemplate.templateName}". ${conflictDetails}`,
         };
       }
 

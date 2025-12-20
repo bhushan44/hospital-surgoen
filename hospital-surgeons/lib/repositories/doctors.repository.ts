@@ -472,6 +472,30 @@ export class DoctorsRepository {
     return !!result;
   }
 
+  async hasExactAvailabilitySlot(
+    doctorId: string,
+    slotDate: string,
+    startTime: string,
+    endTime: string,
+    templateId: string
+  ) {
+    const [result] = await this.db
+      .select({ id: doctorAvailability.id })
+      .from(doctorAvailability)
+      .where(
+        and(
+          eq(doctorAvailability.doctorId, doctorId),
+          eq(doctorAvailability.slotDate, slotDate),
+          eq(doctorAvailability.startTime, startTime),
+          eq(doctorAvailability.endTime, endTime),
+          eq(doctorAvailability.templateId, templateId)
+        )
+      )
+      .limit(1);
+
+    return !!result;
+  }
+
   // Doctor Leaves (replaces doctorUnavailability)
   async createUnavailability(unavailabilityData: CreateDoctorUnavailabilityData, doctorId: string) {
     // Use doctorLeaves table instead of doctorUnavailability

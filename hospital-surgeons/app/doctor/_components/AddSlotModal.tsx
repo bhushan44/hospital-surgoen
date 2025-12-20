@@ -1,16 +1,25 @@
 'use client';
 
 import { X, Calendar, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import apiClient from '@/lib/api/httpClient';
+
+interface TimeSlot {
+  id: string;
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  notes?: string | null;
+}
 
 interface AddSlotModalProps {
   doctorId: string;
   onClose: () => void;
   onSuccess?: () => void;
+  editingSlot?: TimeSlot | null;
 }
 
-export function AddSlotModal({ doctorId, onClose, onSuccess }: AddSlotModalProps) {
+export function AddSlotModal({ doctorId, onClose, onSuccess, editingSlot }: AddSlotModalProps) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     slotDate: '',
@@ -19,6 +28,26 @@ export function AddSlotModal({ doctorId, onClose, onSuccess }: AddSlotModalProps
     notes: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Prefill form when editing
+  useEffect(() => {
+    if (editingSlot) {
+      setFormData({
+        slotDate: editingSlot.slotDate,
+        startTime: editingSlot.startTime,
+        endTime: editingSlot.endTime,
+        notes: editingSlot.notes || '',
+      });
+    } else {
+      // Reset form when not editing
+      setFormData({
+        slotDate: '',
+        startTime: '',
+        endTime: '',
+        notes: '',
+      });
+    }
+  }, [editingSlot]);
 
   const generateTimeOptions = () => {
     const options = [];
@@ -64,26 +93,48 @@ export function AddSlotModal({ doctorId, onClose, onSuccess }: AddSlotModalProps
 
     try {
       setLoading(true);
-      const response = await apiClient.post(`/api/doctors/${doctorId}/availability`, {
-        slotDate: formData.slotDate,
-        startTime: formData.startTime,
-        endTime: formData.endTime,
-        notes: formData.notes || null,
-        status: 'available',
-        isManual: true,
-      });
+      
+      if (editingSlot) {
+        // Update existing slot
+        const response = await apiClient.patch(`/api/doctors/availability/${editingSlot.id}`, {
+          slotDate: formData.slotDate,
+          startTime: formData.startTime,
+          endTime: formData.endTime,
+          notes: formData.notes || null,
+          status: 'available',
+        });
 
-      const data = response.data;
+        const data = response.data;
 
-      if (data.success) {
-        onSuccess?.();
-        onClose();
+        if (data.success) {
+          onSuccess?.();
+          onClose();
+        } else {
+          setErrors({ submit: data.message || 'Failed to update slot' });
+        }
       } else {
-        setErrors({ submit: data.message || 'Failed to create slot' });
+        // Create new slot
+        const response = await apiClient.post(`/api/doctors/${doctorId}/availability`, {
+          slotDate: formData.slotDate,
+          startTime: formData.startTime,
+          endTime: formData.endTime,
+          notes: formData.notes || null,
+          status: 'available',
+          isManual: true,
+        });
+
+        const data = response.data;
+
+        if (data.success) {
+          onSuccess?.();
+          onClose();
+        } else {
+          setErrors({ submit: data.message || 'Failed to create slot' });
+        }
       }
     } catch (err) {
-      console.error('Error creating slot:', err);
-      setErrors({ submit: 'Failed to create slot. Please try again.' });
+      console.error(`Error ${editingSlot ? 'updating' : 'creating'} slot:`, err);
+      setErrors({ submit: `Failed to ${editingSlot ? 'update' : 'create'} slot. Please try again.` });
     } finally {
       setLoading(false);
     }
@@ -94,7 +145,7 @@ export function AddSlotModal({ doctorId, onClose, onSuccess }: AddSlotModalProps
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-gray-900 font-semibold">Add Availability Slot</h2>
+          <h2 className="text-gray-900 font-semibold">{editingSlot ? 'Edit Availability Slot' : 'Add Availability Slot'}</h2>
           <button 
             onClick={onClose}
             disabled={loading}
@@ -228,7 +279,7 @@ export function AddSlotModal({ doctorId, onClose, onSuccess }: AddSlotModalProps
               className="px-4 py-2 bg-[#0066CC] hover:bg-[#0052a3] text-white rounded-lg transition-colors font-medium disabled:opacity-50 flex items-center gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {loading ? 'Saving...' : 'Save Slot'}
+              {loading ? (editingSlot ? 'Updating...' : 'Saving...') : (editingSlot ? 'Update Slot' : 'Save Slot')}
             </button>
           </div>
         </form>

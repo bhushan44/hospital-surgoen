@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AddSlotModal } from '../_components/AddSlotModal';
 import { ManageTemplatesModal } from '../_components/ManageTemplatesModal';
+import { GenerateSlotsModal } from '../_components/GenerateSlotsModal';
 import { isAuthenticated } from '@/lib/auth/utils';
 import apiClient from '@/lib/api/httpClient';
 import type { AxiosError } from 'axios';
@@ -34,6 +35,7 @@ interface AvailabilityTemplate {
 export default function SetAvailabilityPage() {
   const router = useRouter();
   const [showModal, setShowModal] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -45,6 +47,10 @@ export default function SetAvailabilityPage() {
   const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
+  const [generatingTemplateId, setGeneratingTemplateId] = useState<string | null>(null);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [showTemplateGenerateModal, setShowTemplateGenerateModal] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -165,18 +171,41 @@ export default function SetAvailabilityPage() {
   const handleSlotAdded = () => {
     fetchAvailability();
     fetchTemplates();
+    setEditingSlot(null);
   };
 
-  const handleGenerateFromTemplates = async () => {
+  const handleEdit = (slot: TimeSlot) => {
+    setEditingSlot(slot);
+    setShowModal(true);
+  };
+
+  const handleGenerateFromTemplates = () => {
     if (!doctorId || generating) return;
+    setShowGenerateModal(true);
+  };
+
+  const handleConfirmGenerate = async (startDate: string, endDate: string) => {
+    if (!doctorId) return;
     setGenerationMessage(null);
     try {
       setGenerating(true);
-      const { data } = await apiClient.post(`/api/doctors/${doctorId}/availability/templates/generate`);
+      setShowGenerateModal(false);
+      
+      // Calculate days between start and end date
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+      const { data } = await apiClient.post(`/api/doctors/${doctorId}/availability/templates/generate`, {
+        startDate: startDate,
+        endDate: endDate,
+        days: days
+      });
+      
       if (data.success) {
         const created = data.data?.slotsCreated ?? 0;
         const processed = data.data?.templatesProcessed ?? 0;
-        setGenerationMessage(`Generated ${created} slot${created === 1 ? '' : 's'} from ${processed} template${processed === 1 ? '' : 's'}.`);
+        setGenerationMessage(`Generated ${created} slot${created === 1 ? '' : 's'} from ${processed} template${processed === 1 ? '' : 's'} for ${days} day${days === 1 ? '' : 's'}.`);
         fetchAvailability();
       } else {
         setGenerationMessage(data.message || 'Failed to generate slots');
@@ -186,6 +215,46 @@ export default function SetAvailabilityPage() {
       setGenerationMessage('Failed to generate slots. Please try again.');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleGenerateFromTemplate = (templateId: string, templateName: string) => {
+    if (!doctorId || generatingTemplateId === templateId) return;
+    setSelectedTemplate({ id: templateId, name: templateName });
+    setShowTemplateGenerateModal(true);
+  };
+
+  const handleConfirmTemplateGenerate = async (startDate: string, endDate: string) => {
+    if (!doctorId || !selectedTemplate) return;
+    try {
+      setGeneratingTemplateId(selectedTemplate.id);
+      setShowTemplateGenerateModal(false);
+      
+      // Calculate days between start and end date
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+      const { data } = await apiClient.post(`/api/doctors/${doctorId}/availability/templates/generate`, {
+        templateId: selectedTemplate.id,
+        startDate: startDate,
+        endDate: endDate,
+        days: days
+      });
+      
+      if (data.success) {
+        const created = data.data?.slotsCreated ?? 0;
+        setGenerationMessage(`Generated ${created} slot${created === 1 ? '' : 's'} from template "${selectedTemplate.name}" for ${days} day${days === 1 ? '' : 's'}.`);
+        fetchAvailability();
+      } else {
+        setGenerationMessage(data.message || `Failed to generate slots from template "${selectedTemplate.name}"`);
+      }
+    } catch (err) {
+      console.error('Error generating slots from template:', err);
+      setGenerationMessage(`Failed to generate slots from template "${selectedTemplate.name}". Please try again.`);
+    } finally {
+      setGeneratingTemplateId(null);
+      setSelectedTemplate(null);
     }
   };
 
@@ -280,7 +349,7 @@ export default function SetAvailabilityPage() {
               className="px-4 py-2 bg-[#0066CC] hover:bg-[#0052a3] text-white rounded-lg flex items-center gap-2 transition-colors font-medium disabled:opacity-50"
             >
               {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              Generate next 7 days
+              Generate Slots
             </button>
           </div>
         </div>
@@ -297,8 +366,8 @@ export default function SetAvailabilityPage() {
           </div>
         ) : templates.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {templates.slice(0, 4).map((template) => (
-              <div key={template.id} className="border border-gray-200 rounded-lg p-3 text-sm space-y-1">
+            {templates.map((template) => (
+              <div key={template.id} className="border border-gray-200 rounded-lg p-3 text-sm space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="font-medium text-gray-900">{template.templateName}</p>
                   {template.validUntil ? (
@@ -311,6 +380,23 @@ export default function SetAvailabilityPage() {
                   {formatTime(template.startTime)} - {formatTime(template.endTime)}
                 </p>
                 <p className="text-gray-500">{formatPattern(template)}</p>
+                <button
+                  onClick={() => handleGenerateFromTemplate(template.id, template.templateName)}
+                  disabled={generatingTemplateId === template.id || generating}
+                  className="w-full mt-2 px-3 py-1.5 bg-[#0066CC] hover:bg-[#0052a3] text-white rounded-lg flex items-center justify-center gap-2 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {generatingTemplateId === template.id ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3 h-3" />
+                      Generate Slots
+                    </>
+                  )}
+                </button>
               </div>
             ))}
           </div>
@@ -389,17 +475,27 @@ export default function SetAvailabilityPage() {
 
                 {/* Actions */}
                 {slot.status === 'available' && (
-                  <button
-                    onClick={() => handleDelete(slot.id)}
-                    disabled={deletingId === slot.id}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {deletingId === slot.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleEdit(slot)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Edit slot"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(slot.id)}
+                      disabled={deletingId === slot.id}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Delete slot"
+                    >
+                      {deletingId === slot.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -407,12 +503,16 @@ export default function SetAvailabilityPage() {
         )}
       </div>
 
-      {/* Add Slot Modal */}
+      {/* Add/Edit Slot Modal */}
       {showModal && doctorId && (
         <AddSlotModal 
           doctorId={doctorId}
-          onClose={() => setShowModal(false)} 
+          onClose={() => {
+            setShowModal(false);
+            setEditingSlot(null);
+          }} 
           onSuccess={handleSlotAdded}
+          editingSlot={editingSlot}
         />
       )}
       {showTemplatesModal && doctorId && (
@@ -422,6 +522,28 @@ export default function SetAvailabilityPage() {
             setShowTemplatesModal(false);
             fetchTemplates();
           }}
+        />
+      )}
+      
+      {/* Generate Slots Modal (All Templates) */}
+      {showGenerateModal && (
+        <GenerateSlotsModal
+          onClose={() => setShowGenerateModal(false)}
+          onConfirm={handleConfirmGenerate}
+          loading={generating}
+        />
+      )}
+
+      {/* Generate Slots Modal (Specific Template) */}
+      {showTemplateGenerateModal && selectedTemplate && (
+        <GenerateSlotsModal
+          templateName={selectedTemplate.name}
+          onClose={() => {
+            setShowTemplateGenerateModal(false);
+            setSelectedTemplate(null);
+          }}
+          onConfirm={handleConfirmTemplateGenerate}
+          loading={generatingTemplateId === selectedTemplate.id}
         />
       )}
     </div>
