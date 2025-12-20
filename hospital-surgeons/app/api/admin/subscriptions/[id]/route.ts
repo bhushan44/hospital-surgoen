@@ -21,11 +21,12 @@ export async function GET(
         sp.name as plan_name,
         sp.tier as plan_tier,
         sp.user_role as plan_user_role,
-        sp.price as plan_price,
-        sp.currency as plan_currency
+        pp.price as plan_price,
+        pp.currency as plan_currency
       FROM subscriptions s
       LEFT JOIN users u ON s.user_id = u.id
       LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
+      LEFT JOIN plan_pricing pp ON s.pricing_id = pp.id
       WHERE s.id = ${subscriptionId}
     `);
 
@@ -52,7 +53,7 @@ export async function GET(
           name: subscription.plan_name,
           tier: subscription.plan_tier,
           userRole: subscription.plan_user_role,
-          price: Number(subscription.plan_price) / 100,
+          price: subscription.plan_price ? Number(subscription.plan_price) : null,
           currency: subscription.plan_currency,
         },
         status: subscription.status,

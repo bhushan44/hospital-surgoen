@@ -187,7 +187,7 @@ export function SubscriptionsOverview() {
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-slate-900">
-                                {sub.plan.currency} {sub.plan.price.toFixed(2)}
+                                {sub.plan.currency} {sub.plan.price != null ? sub.plan.price.toFixed(2) : 'N/A'}
                               </td>
                             </tr>
                           ))
@@ -338,7 +338,7 @@ export function SubscriptionsOverview() {
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-slate-900">
-                                {sub.plan.currency} {sub.plan.price.toFixed(2)}
+                                {sub.plan.currency} {sub.plan.price != null ? sub.plan.price.toFixed(2) : 'N/A'}
                               </td>
                             </tr>
                           ))
@@ -431,7 +431,7 @@ export function SubscriptionsOverview() {
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-slate-900">
-                                {sub.plan.currency} {sub.plan.price.toFixed(2)}
+                                {sub.plan.currency} {sub.plan.price != null ? sub.plan.price.toFixed(2) : 'N/A'}
                               </td>
                             </tr>
                           ))

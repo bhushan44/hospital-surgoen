@@ -22,11 +22,12 @@ export async function GET(req: NextRequest) {
         sp.name as plan_name,
         sp.tier as plan_tier,
         sp.user_role as plan_user_role,
-        s.price_at_purchase as plan_price,
-        s.currency_at_purchase as plan_currency
+        pp.price as plan_price,
+        pp.currency as plan_currency
       FROM subscriptions s
       LEFT JOIN users u ON s.user_id = u.id
       LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
+      LEFT JOIN plan_pricing pp ON s.pricing_id = pp.id
       WHERE s.status = 'active'
         AND s.end_date >= ${now.toISOString()}
         AND s.end_date <= ${futureDate.toISOString()}
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
         name: sub.plan_name,
         tier: sub.plan_tier,
         userRole: sub.plan_user_role,
-        price: Number(sub.plan_price) / 100,
+        price: sub.plan_price ? Number(sub.plan_price) : null,
         currency: sub.plan_currency,
       },
       status: sub.status,

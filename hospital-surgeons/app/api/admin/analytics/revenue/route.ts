@@ -28,15 +28,16 @@ export async function GET(req: NextRequest) {
       ORDER BY DATE_TRUNC('month', created_at) ASC
     `);
 
-    // Revenue by plan (from subscriptions - using price_at_purchase)
+    // Revenue by plan (from subscriptions - using pricing)
     const revenueByPlan = await db.execute(sql`
       SELECT 
         sp.name as plan_name,
         sp.tier as plan_tier,
         COUNT(s.id)::int as subscription_count,
-        COALESCE(SUM(s.price_at_purchase)::bigint, 0) as total_revenue
+        COALESCE(SUM(pp.price)::bigint, 0) as total_revenue
       FROM subscriptions s
       JOIN subscription_plans sp ON s.plan_id = sp.id
+      LEFT JOIN plan_pricing pp ON s.pricing_id = pp.id
       WHERE s.status = 'active'
       GROUP BY sp.id, sp.name, sp.tier
       ORDER BY total_revenue DESC
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
           planName: row.plan_name,
           tier: row.plan_tier,
           subscriptionCount: row.subscription_count || 0,
-          totalRevenue: Number(row.total_revenue || 0) / 100,
+          totalRevenue: Number(row.total_revenue || 0),
         })),
         transactionStats: (transactionStats.rows || []).map((row: any) => ({
           status: row.status,

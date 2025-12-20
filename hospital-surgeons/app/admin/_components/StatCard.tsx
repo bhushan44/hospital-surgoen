@@ -24,7 +24,7 @@ export function StatCard({ title, value, icon: Icon, trend, className }: StatCar
               "mt-2",
               trend.isPositive ? "text-green-600" : "text-red-600"
             )}>
-              {trend.isPositive ? "â†‘" : "â†“"} {trend.value}
+              {trend.value}
             </p>
           )}
         </div>
