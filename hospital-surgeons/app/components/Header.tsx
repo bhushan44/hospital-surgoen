@@ -114,7 +114,7 @@ export default function Header() {
                 e.preventDefault();
                 // If user is logged in and is admin, go to dashboard
                 if (isLoggedIn && userRole === 'admin') {
-                  router.push('/admin/dashboard');
+                  router.push('/admin');
                 } else if (isLoggedIn) {
                   // User is logged in but not admin, go to their dashboard
                   router.push(getDashboardPath(userRole));

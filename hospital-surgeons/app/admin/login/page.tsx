@@ -17,7 +17,7 @@ export default function AdminLoginPage() {
       const role = getUserRole();
       if (role === 'admin') {
         // Already logged in as admin, go to dashboard
-        router.push('/admin/dashboard');
+        router.push('/admin');
       } else {
         // Logged in as different role, go to their dashboard
         router.push(getDashboardPath(role));

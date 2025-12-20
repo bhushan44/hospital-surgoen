@@ -97,7 +97,7 @@ export function hasRole(role: 'admin' | 'doctor' | 'hospital'): boolean {
 export function getDashboardPath(role: string | null): string {
   switch (role) {
     case 'admin':
-      return '/admin/dashboard';
+      return '/admin';
     case 'doctor':
       return '/doctor/dashboard';
     case 'hospital':
