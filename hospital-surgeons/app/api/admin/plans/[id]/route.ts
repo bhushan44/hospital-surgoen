@@ -187,17 +187,24 @@ export async function PUT(
     if (isActive !== undefined) updateData.isActive = isActive;
     if (defaultBillingCycle !== undefined) updateData.defaultBillingCycle = defaultBillingCycle;
 
-    // Check for duplicate name if name is being updated
+    // Check for duplicate name if name is being updated (only for active plans with same userRole)
     if (name && name.trim() !== existing[0].name) {
       const duplicateByName = await db
         .select()
         .from(subscriptionPlans)
-        .where(eq(subscriptionPlans.name, name.trim()))
+        .where(
+          and(
+            eq(subscriptionPlans.name, name.trim()),
+            eq(subscriptionPlans.userRole, userRole),
+            eq(subscriptionPlans.isActive, true),
+            ne(subscriptionPlans.id, planId)
+          )
+        )
         .limit(1);
 
       if (duplicateByName.length > 0) {
         return NextResponse.json(
-          { success: false, message: 'Plan with this name already exists' },
+          { success: false, message: `An active plan with the name "${name.trim()}" already exists for ${userRole}s` },
           { status: 409 }
         );
       }

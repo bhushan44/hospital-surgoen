@@ -169,7 +169,8 @@ export async function POST(req: NextRequest) {
     const existingByName = await db
       .select()
       .from(subscriptionPlans)
-      .where(eq(subscriptionPlans.name, name.trim()))
+      .where(and(eq(subscriptionPlans.name, name.trim()), eq(subscriptionPlans.isActive, true ), eq(subscriptionPlans.userRole, userRole)))
+
       .limit(1);
 
     if (existingByName.length > 0) {
@@ -186,7 +187,8 @@ export async function POST(req: NextRequest) {
       .where(
         and(
           eq(subscriptionPlans.tier, tier),
-          eq(subscriptionPlans.userRole, userRole)
+          eq(subscriptionPlans.userRole, userRole),
+          eq(subscriptionPlans.isActive, true)
         )
       )
       .limit(1);

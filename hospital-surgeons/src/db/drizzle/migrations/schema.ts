@@ -130,7 +130,7 @@ export const specialties = pgTable("specialties", {
 	unique("specialties_name_key").on(table.name),
 ]);
 
-export const paymentTransactions: any = pgTable("payment_transactions", {
+export const paymentTransactions = pgTable("payment_transactions", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	orderId: uuid("order_id").notNull(),
 	paymentGateway: text("payment_gateway").notNull(),
@@ -845,7 +845,6 @@ export const subscriptionPlans = pgTable("subscription_plans", {
 	description: text(),
 	defaultBillingCycle: text("default_billing_cycle"),
 }, (table) => [
-	unique("subscription_plans_name_key").on(table.name),
 	check("subscription_plans_default_billing_cycle_check", sql`default_billing_cycle = ANY (ARRAY['monthly'::text, 'quarterly'::text, 'yearly'::text, 'custom'::text])`),
 	check("subscription_plans_tier_check", sql`tier = ANY (ARRAY['free'::text, 'basic'::text, 'premium'::text, 'enterprise'::text])`),
 	check("subscription_plans_user_role_check", sql`user_role = ANY (ARRAY['doctor'::text, 'hospital'::text])`),
