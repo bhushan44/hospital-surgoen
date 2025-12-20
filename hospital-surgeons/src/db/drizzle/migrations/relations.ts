@@ -13,7 +13,12 @@ export const subscriptionPlansRelations = relations(subscriptionPlans, ({many}) 
 	paymentTransactions: many(paymentTransactions),
 	orders: many(orders),
 	planPricings: many(planPricing),
-	subscriptions: many(subscriptions),
+	subscriptions_nextPlanId: many(subscriptions, {
+		relationName: "subscriptions_nextPlanId_subscriptionPlans_id"
+	}),
+	subscriptions_planId: many(subscriptions, {
+		relationName: "subscriptions_planId_subscriptionPlans_id"
+	}),
 	hospitalPlanFeatures: many(hospitalPlanFeatures),
 }));
 
@@ -115,25 +120,50 @@ export const planPricingRelations = relations(planPricing, ({one, many}) => ({
 		fields: [planPricing.planId],
 		references: [subscriptionPlans.id]
 	}),
-	subscriptions: many(subscriptions),
+	subscriptions_nextPricingId: many(subscriptions, {
+		relationName: "subscriptions_nextPricingId_planPricing_id"
+	}),
+	subscriptions_pricingId: many(subscriptions, {
+		relationName: "subscriptions_pricingId_planPricing_id"
+	}),
 }));
 
 export const subscriptionsRelations = relations(subscriptions, ({one, many}) => ({
 	paymentTransactions: many(paymentTransactions, {
 		relationName: "paymentTransactions_subscriptionId_subscriptions_id"
 	}),
+	subscriptionPlan_nextPlanId: one(subscriptionPlans, {
+		fields: [subscriptions.nextPlanId],
+		references: [subscriptionPlans.id],
+		relationName: "subscriptions_nextPlanId_subscriptionPlans_id"
+	}),
+	planPricing_nextPricingId: one(planPricing, {
+		fields: [subscriptions.nextPricingId],
+		references: [planPricing.id],
+		relationName: "subscriptions_nextPricingId_planPricing_id"
+	}),
 	paymentTransaction: one(paymentTransactions, {
 		fields: [subscriptions.paymentTransactionId],
 		references: [paymentTransactions.id],
 		relationName: "subscriptions_paymentTransactionId_paymentTransactions_id"
 	}),
-	subscriptionPlan: one(subscriptionPlans, {
+	subscriptionPlan_planId: one(subscriptionPlans, {
 		fields: [subscriptions.planId],
-		references: [subscriptionPlans.id]
+		references: [subscriptionPlans.id],
+		relationName: "subscriptions_planId_subscriptionPlans_id"
 	}),
-	planPricing: one(planPricing, {
+	planPricing_pricingId: one(planPricing, {
 		fields: [subscriptions.pricingId],
-		references: [planPricing.id]
+		references: [planPricing.id],
+		relationName: "subscriptions_pricingId_planPricing_id"
+	}),
+	subscription: one(subscriptions, {
+		fields: [subscriptions.replacedBySubscriptionId],
+		references: [subscriptions.id],
+		relationName: "subscriptions_replacedBySubscriptionId_subscriptions_id"
+	}),
+	subscriptions: many(subscriptions, {
+		relationName: "subscriptions_replacedBySubscriptionId_subscriptions_id"
 	}),
 	user: one(users, {
 		fields: [subscriptions.userId],

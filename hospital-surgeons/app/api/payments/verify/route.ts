@@ -2,10 +2,99 @@ import { NextRequest, NextResponse } from 'next/server';
 import { paymentManager } from '@/app/api/lib/payment-gate-ways/payment-gateway-manager';
 import { RazorpayGateway } from '@/app/api/lib/payment-gate-ways/gatways/razorpay';
 import { getDb } from '@/lib/db';
-import { orders, paymentTransactions, webhookEvents, subscriptions, planPricing } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { orders, paymentTransactions, webhookEvents, subscriptions, planPricing, subscriptionPlans } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, asc, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import { SubscriptionsService } from '@/lib/services/subscriptions.service';
+
+/**
+ * @swagger
+ * /api/payments/verify:
+ *   post:
+ *     summary: Verify payment after successful transaction
+ *     description: Verifies Razorpay payment signature, updates order status, creates payment transaction record, and creates subscription if payment is successful. Also handles upgrades and billing cycle changes automatically.
+ *     tags: [Payments]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - razorpay_order_id
+ *               - razorpay_payment_id
+ *               - razorpay_signature
+ *             properties:
+ *               razorpay_order_id:
+ *                 type: string
+ *                 description: Razorpay order ID returned from payment gateway
+ *                 example: "order_ABC123xyz"
+ *               razorpay_payment_id:
+ *                 type: string
+ *                 description: Razorpay payment ID returned from payment gateway
+ *                 example: "pay_XYZ789abc"
+ *               razorpay_signature:
+ *                 type: string
+ *                 description: Payment signature for verification
+ *                 example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+ *     responses:
+ *       200:
+ *         description: Payment verified and processed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Payment verified and processed successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     orderId:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Database order ID
+ *                       example: "123e4567-e89b-12d3-a456-426614174002"
+ *                     paymentTransactionId:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Payment transaction record ID
+ *                       example: "123e4567-e89b-12d3-a456-426614174003"
+ *                     subscriptionId:
+ *                       type: string
+ *                       format: uuid
+ *                       nullable: true
+ *                       description: Subscription ID if created
+ *                       example: "123e4567-e89b-12d3-a456-426614174004"
+ *                     status:
+ *                       type: string
+ *                       enum: [success, pending, failed, refunded]
+ *                       example: "success"
+ *                     razorpayPaymentId:
+ *                       type: string
+ *                       example: "pay_XYZ789abc"
+ *       400:
+ *         description: Bad request - missing payment details or invalid signature
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Missing payment details" or "Invalid payment signature"
+ *       404:
+ *         description: Associated order not found in database
+ *       500:
+ *         description: Internal server error
+ */
 
 /**
  * Map Razorpay payment status to internal status
@@ -298,6 +387,89 @@ export async function POST(req: NextRequest) {
                 subscriptionId: subscriptionId,
               })
               .where(eq(paymentTransactions.id, paymentTransaction.id));
+
+            // ============================================
+            // STEP 9.5: Handle upgrade (cancel old subscription if upgrade)
+            // ============================================
+            try {
+              // Check if user has another active subscription
+              const existingActiveSubscriptions = await getDb()
+                .select()
+                .from(subscriptions)
+                .where(
+                  and(
+                    eq(subscriptions.userId, dbOrder.userId),
+                    eq(subscriptions.status, 'active'),
+                    sql`${subscriptions.id} != ${subscriptionId}` // Not the one we just created
+                  )
+                );
+
+              if (existingActiveSubscriptions.length > 0) {
+                // Get plan details to compare tiers
+                const newPlanResult = await getDb()
+                  .select()
+                  .from(subscriptionPlans)
+                  .where(eq(subscriptionPlans.id, dbOrder.planId))
+                  .limit(1);
+
+                if (newPlanResult.length > 0) {
+                  const newPlan = newPlanResult[0];
+                  
+                  // Check each existing subscription
+                  for (const oldSub of existingActiveSubscriptions) {
+                    const oldPlanResult = await getDb()
+                      .select()
+                      .from(subscriptionPlans)
+                      .where(eq(subscriptionPlans.id, oldSub.planId))
+                      .limit(1);
+
+                    if (oldPlanResult.length > 0) {
+                      const oldPlan = oldPlanResult[0];
+                      
+                      // Check if it's an upgrade (new tier > old tier)
+                      const tierOrder: Record<string, number> = {
+                        'free': 0,
+                        'basic': 1,
+                        'premium': 2,
+                        'enterprise': 3,
+                      };
+                      
+                      const newTierLevel = tierOrder[newPlan.tier as string] || 0;
+                      const oldTierLevel = tierOrder[oldPlan.tier as string] || 0;
+                      
+                      // Check if it's an upgrade (new tier > old tier)
+                      const isUpgrade = newTierLevel > oldTierLevel;
+                      
+                      // Check if it's same plan with different billing cycle (e.g., Gold Monthly → Gold Yearly)
+                      const isSamePlanDifferentPricing = newPlan.id === oldPlan.id && dbOrder.pricingId !== oldSub.pricingId;
+                      
+                      if (isUpgrade || isSamePlanDifferentPricing) {
+                        // It's an upgrade or plan change - cancel old subscription
+                        // User has paid for new subscription, so old one should be cancelled
+                        await getDb()
+                          .update(subscriptions)
+                          .set({
+                            status: 'cancelled',
+                            replacedBySubscriptionId: subscriptionId,
+                            cancelledAt: new Date().toISOString(),
+                            cancellationReason: isUpgrade ? 'upgraded' : 'plan_changed',
+                          })
+                          .where(eq(subscriptions.id, oldSub.id));
+                        
+                        if (isUpgrade) {
+                          console.log(`Upgraded subscription: Cancelled old subscription ${oldSub.id}, replaced with ${subscriptionId}`);
+                        } else {
+                          console.log(`Plan change: Cancelled old subscription ${oldSub.id} (same plan, different billing), replaced with ${subscriptionId}`);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (upgradeError: any) {
+              // Log error but don't fail the verification
+              console.error('Error handling upgrade:', upgradeError);
+            }
           } else {
             console.error('Failed to create subscription:', subscriptionResult.message);
           }

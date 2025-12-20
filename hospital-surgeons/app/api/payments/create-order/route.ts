@@ -5,6 +5,110 @@ import { getDb } from '@/lib/db';
 import { users, planPricing, subscriptionPlans, orders } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql, asc, count } from 'drizzle-orm';
 
+/**
+ * @swagger
+ * /api/payments/create-order:
+ *   post:
+ *     summary: Create a payment order for subscription
+ *     description: Creates a database order first, then creates a payment gateway order (Razorpay). Returns checkout data for frontend to initiate payment.
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - planId
+ *               - pricingId
+ *               - gateway
+ *             properties:
+ *               planId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: The subscription plan ID
+ *                 example: "123e4567-e89b-12d3-a456-426614174000"
+ *               pricingId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: The pricing option ID (monthly, yearly, etc.)
+ *                 example: "123e4567-e89b-12d3-a456-426614174001"
+ *               gateway:
+ *                 type: string
+ *                 enum: [razorpay, stripe]
+ *                 description: Payment gateway to use
+ *                 example: "razorpay"
+ *     responses:
+ *       200:
+ *         description: Order created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     session:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           description: Payment gateway order ID
+ *                           example: "order_ABC123xyz"
+ *                         gateway:
+ *                           type: string
+ *                           example: "razorpay"
+ *                         checkoutData:
+ *                           type: object
+ *                           properties:
+ *                             orderId:
+ *                               type: string
+ *                               description: Razorpay order ID
+ *                               example: "order_ABC123xyz"
+ *                             planId:
+ *                               type: string
+ *                               example: "123e4567-e89b-12d3-a456-426614174000"
+ *                             userRole:
+ *                               type: string
+ *                               example: "doctor"
+ *                             email:
+ *                               type: string
+ *                               example: "user@example.com"
+ *                     orderId:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Database order ID
+ *                       example: "123e4567-e89b-12d3-a456-426614174002"
+ *                     status:
+ *                       type: string
+ *                       enum: [pending, paid, failed, expired, refunded]
+ *                       example: "pending"
+ *       400:
+ *         description: Bad request - missing required fields
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "planId, pricingId, and gateway are required"
+ *       401:
+ *         description: Unauthorized - user not authenticated
+ *       404:
+ *         description: Plan or pricing not found
+ *       500:
+ *         description: Internal server error
+ */
 async function postHandler(req: AuthenticatedRequest) {
   try {
     const { planId, pricingId, gateway } = await req.json();

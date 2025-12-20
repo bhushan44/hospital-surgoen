@@ -50,6 +50,13 @@
       "when": 1766222262714,
       "tag": "0006_steady_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1766234667967,
+      "tag": "0007_bent_jetstream",
+      "breakpoints": true
     }
   ]
 }

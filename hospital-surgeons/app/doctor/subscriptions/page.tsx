@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Crown, Star, Loader2, AlertCircle } from 'lucide-react';
+import { Check, Crown, Star, Loader2, AlertCircle, History, Package } from 'lucide-react';
 import { isAuthenticated } from '@/lib/auth/utils';
 import apiClient from '@/lib/api/httpClient';
 import { toast } from 'sonner';
@@ -41,7 +41,11 @@ interface Subscription {
   billingPeriodMonths?: number;
   priceAtPurchase?: number;
   currencyAtPurchase?: string;
+  pricingId?: string;
   plan: Plan;
+  nextPlanId?: string | null;
+  nextPricingId?: string | null;
+  planChangeStatus?: string | null;
 }
 
 export default function SubscriptionPlanPage() {
@@ -51,14 +55,32 @@ export default function SubscriptionPlanPage() {
   const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
   const [upgrading, setUpgrading] = useState<string | null>(null);
   const [selectedPricing, setSelectedPricing] = useState<Record<string, string>>({}); // planId -> pricingId
+  const [showPlans, setShowPlans] = useState(false); // Hide plans by default
+  const [subscriptionHistory, setSubscriptionHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated()) {
       fetchData();
+      fetchSubscriptionHistory();
     } else {
       router.push('/login');
     }
   }, []);
+
+  const fetchSubscriptionHistory = async () => {
+    try {
+      setLoadingHistory(true);
+      const response = await apiClient.get('/api/subscriptions/history?limit=50');
+      if (response.data.success) {
+        setSubscriptionHistory(response.data.data || []);
+      }
+    } catch (error: any) {
+      console.error('Error fetching subscription history:', error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -83,7 +105,7 @@ export default function SubscriptionPlanPage() {
         const subscriptionData = subscriptionResponse.data.data;
         if (subscriptionData && subscriptionData.subscription && subscriptionData.plan) {
           const sub = subscriptionData.subscription;
-          setCurrentSubscription({
+          const currentSub = {
             id: sub.id,
             status: sub.status,
             startDate: sub.startDate,
@@ -92,8 +114,27 @@ export default function SubscriptionPlanPage() {
             billingPeriodMonths: sub.billingPeriodMonths || sub.billing_period_months,
             priceAtPurchase: sub.priceAtPurchase || sub.price_at_purchase,
             currencyAtPurchase: sub.currencyAtPurchase || sub.currency_at_purchase,
+            pricingId: sub.pricingId || sub.pricing_id,
             plan: subscriptionData.plan,
-          });
+            nextPlanId: sub.nextPlanId || sub.next_plan_id,
+            nextPricingId: sub.nextPricingId || sub.next_pricing_id,
+            planChangeStatus: sub.planChangeStatus || sub.plan_change_status,
+          };
+          setCurrentSubscription(currentSub);
+          
+          // Set default selected pricing for current plan
+          if (currentSub.plan.pricingOptions && currentSub.plan.pricingOptions.length > 0) {
+            const currentPricing = currentSub.plan.pricingOptions.find(
+              (p: PricingOption) => p.billingCycle === currentSub.billingCycle
+            ) || currentSub.plan.pricingOptions[0];
+            if (currentPricing) {
+              setSelectedPricing(prev => ({
+                ...prev,
+                [currentSub.plan.id]: currentPricing.id
+              }));
+            }
+          }
+
         }
       }
     } catch (error: any) {
@@ -107,8 +148,24 @@ export default function SubscriptionPlanPage() {
     }
   };
 
+  // Check if a plan is an upgrade over current plan
+  const isUpgrade = (currentTier: string, newTier: string): boolean => {
+    const tierOrder: Record<string, number> = {
+      'free': 0,
+      'basic': 1,
+      'premium': 2,
+      'enterprise': 3,
+    };
+    return (tierOrder[newTier] || 0) > (tierOrder[currentTier] || 0);
+  };
+
   const handleUpgrade = async (planId: string, pricingId?: string) => {
     try {
+      if (!currentSubscription) {
+        toast.error('No active subscription found');
+        return;
+      }
+
       setUpgrading(planId);
 
       // Get plan details
@@ -141,75 +198,61 @@ export default function SubscriptionPlanPage() {
         } else {
           throw new Error(createResponse.data.message || 'Failed to activate plan');
         }
-      } else {
-        // Paid plan - need to select pricing option first
-        if (!pricingId) {
-          toast.error('Please select a billing cycle');
-          setUpgrading(null);
-          return;
-        }
+        return;
+      }
 
-        // Find the selected pricing option
-        const selectedPricingOption = plan.pricingOptions?.find((p: any) => p.id === pricingId);
-        if (!selectedPricingOption) {
-          throw new Error('Selected pricing option not found');
-        }
+      // Paid plan - need to select pricing option first
+      if (!pricingId) {
+        toast.error('Please select a billing cycle');
+        setUpgrading(null);
+        return;
+      }
 
-        // Calculate end date based on billing period
-        const startDate = new Date();
-        const endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + selectedPricingOption.billingPeriodMonths);
+      // For ALL paid plans: Create order → Pay → Verify (handles upgrade/change automatically)
+      // No separate API calls needed - everything goes through payment flow
+      try {
+        const checkoutResponse = await apiClient.post('/api/payments/create-order', {
+          planId: planId,
+          pricingId: pricingId,
+          gateway: 'razorpay',
+        });
 
-        // Create checkout session and redirect to payment gateway
-        try {
-          const checkoutResponse = await apiClient.post('/api/payments/create-order', {
-            planId: planId,
-            pricingId: pricingId,
-            gateway: 'razorpay',
-          });
-
-          if (checkoutResponse.data.success && checkoutResponse.data.data?.session?.checkoutData) {
-            const orderStatus = checkoutResponse.data.data?.status || 'pending';
-            const checkoutData = checkoutResponse.data.data.session.checkoutData;
-            
-            // Show status message based on order status
-            if (orderStatus === 'pending') {
-              toast.info('Order created. Redirecting to payment...');
-            } else if (orderStatus === 'paid') {
-              toast.success('Payment already processed!');
-            } else if (orderStatus === 'failed') {
-              toast.error('Previous payment failed. Please try again.');
-            } else {
-              toast.info(`Order status: ${orderStatus}`);
-            }
-            
-            // Construct checkout URL from checkoutData
-            const urlParams = new URLSearchParams({
-              order_id: checkoutData.orderId,
-            });
-            if (checkoutData.planId) urlParams.set('planId', checkoutData.planId);
-            if (checkoutData.userRole) urlParams.set('userRole', checkoutData.userRole);
-            if (checkoutData.email) urlParams.set('email', checkoutData.email);
-            const checkoutUrl = `/checkout/razorpay?${urlParams.toString()}`;
-            
-            // Redirect to payment gateway checkout
-            window.location.href = checkoutUrl;
-          } else {
-            throw new Error('Failed to create checkout session');
+        if (checkoutResponse.data.success && checkoutResponse.data.data?.session?.checkoutData) {
+          const orderStatus = checkoutResponse.data.data?.status || 'pending';
+          const checkoutData = checkoutResponse.data.data.session.checkoutData;
+          
+          if (orderStatus === 'pending') {
+            toast.info('Order created. Redirecting to payment...');
+          } else if (orderStatus === 'paid') {
+            toast.success('Payment already processed!');
+          } else if (orderStatus === 'failed') {
+            toast.error('Previous payment failed. Please try again.');
           }
-        } catch (checkoutError: any) {
-          console.error('Checkout error:', checkoutError);
-          toast.error(checkoutError.response?.data?.message || checkoutError.message || 'Failed to initiate checkout');
-          setUpgrading(null);
+          
+          const urlParams = new URLSearchParams({
+            order_id: checkoutData.orderId,
+          });
+          if (checkoutData.planId) urlParams.set('planId', checkoutData.planId);
+          if (checkoutData.userRole) urlParams.set('userRole', checkoutData.userRole);
+          if (checkoutData.email) urlParams.set('email', checkoutData.email);
+          const checkoutUrl = `/checkout/razorpay?${urlParams.toString()}`;
+          
+          window.location.href = checkoutUrl;
+        } else {
+          throw new Error('Failed to create checkout session');
         }
+      } catch (checkoutError: any) {
+        console.error('Checkout error:', checkoutError);
+        toast.error(checkoutError.response?.data?.message || checkoutError.message || 'Failed to initiate checkout');
+        setUpgrading(null);
       }
     } catch (error: any) {
-      console.error('Error upgrading plan:', error);
-      toast.error(error.response?.data?.message || error.message || 'Failed to upgrade plan');
-    } finally {
+      console.error('Error handling plan change:', error);
+      toast.error(error.response?.data?.message || error.message || 'Failed to process plan change');
       setUpgrading(null);
     }
   };
+
 
   const getPlanFeatures = (plan: Plan): string[] => {
     const features: string[] = [];
@@ -318,54 +361,197 @@ export default function SubscriptionPlanPage() {
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-gray-900 mb-2 text-2xl font-bold">Subscription Plans</h1>
-        <p className="text-gray-600">Choose a plan that fits your needs</p>
+        <h1 className="text-gray-900 mb-2 text-2xl font-bold">Subscriptions</h1>
+        <p className="text-gray-600">Manage your subscription plans and view history</p>
       </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setShowPlans(false)}
+            className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              !showPlans
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            Subscription History
+          </button>
+          <button
+            onClick={() => setShowPlans(true)}
+            className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              showPlans
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            Available Plans
+          </button>
+        </nav>
+      </div>
+
+      {/* Subscription History View */}
+      {!showPlans && (
+        <div className="space-y-4">
+          {loadingHistory ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+          ) : subscriptionHistory.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-12 text-center">
+              <History className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No subscription history</h3>
+              <p className="text-gray-600">You haven't had any subscriptions yet.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Plan
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Period
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Amount
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Type
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {subscriptionHistory.map((sub) => (
+                      <tr key={sub.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-medium text-gray-900">
+                            {sub.plan?.name || 'N/A'}
+                          </div>
+                          {sub.description && (
+                            <div className="text-xs text-gray-500 mt-1">{sub.description}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              sub.status === 'active'
+                                ? 'bg-green-100 text-green-800'
+                                : sub.status === 'expired'
+                                ? 'bg-gray-100 text-gray-800'
+                                : sub.status === 'cancelled'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}
+                          >
+                            {sub.status.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {new Date(sub.startDate).toLocaleDateString()}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            to {new Date(sub.endDate).toLocaleDateString()}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {sub.payment ? (
+                            <div className="text-sm font-medium text-gray-900">
+                              {sub.payment.currency === 'INR' ? '₹' : '$'}
+                              {Number(sub.payment.amount || 0).toLocaleString()}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-gray-500">Free</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">
+                            {sub.subscriptionType === 'billing_cycle_change' && (
+                              <span className="text-blue-600">Billing Cycle Change</span>
+                            )}
+                            {sub.subscriptionType === 'upgrade' && (
+                              <span className="text-green-600">Upgrade</span>
+                            )}
+                            {sub.subscriptionType === 'new' && (
+                              <span className="text-gray-600">New Subscription</span>
+                            )}
+                          </div>
+                          {sub.pricing && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {sub.pricing.billingCycle || `${sub.pricing.billingPeriodMonths} months`}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Plans View */}
+      {showPlans && (
+        <>
 
       {/* Current Plan Display */}
       {currentSubscription && (
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">Current Plan</h3>
-              <p className="text-2xl font-bold text-blue-600">{currentSubscription.plan.name}</p>
-              <div className="mt-2 space-y-1">
-                {currentSubscription.plan.tier === 'free' ? (
-                  <p className="text-sm text-gray-600">Free Forever</p>
-                ) : (
-                  <>
-                    {currentSubscription.priceAtPurchase && (
-                      <p className="text-sm text-gray-700">
-                        <span className="font-semibold">Price: </span>
-                        {currentSubscription.currencyAtPurchase === 'INR' ? '₹' : '$'}
-                        {Number(currentSubscription.priceAtPurchase || 0).toLocaleString()}
-                        {currentSubscription.billingCycle && (
-                          <span className="text-gray-600">
-                            {' '}/ {currentSubscription.billingCycle === 'monthly' ? 'month' : 
-                                    currentSubscription.billingCycle === 'quarterly' ? 'quarter' :
-                                    currentSubscription.billingCycle === 'yearly' ? 'year' :
-                                    `${currentSubscription.billingPeriodMonths || 1} months`}
-                          </span>
-                        )}
+        <div className="space-y-4">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">Current Plan</h3>
+                <p className="text-2xl font-bold text-blue-600">{currentSubscription.plan.name}</p>
+                <div className="mt-2 space-y-1">
+                  {currentSubscription.plan.tier === 'free' ? (
+                    <p className="text-sm text-gray-600">Free Forever</p>
+                  ) : (
+                    <>
+                      {currentSubscription.priceAtPurchase && (
+                        <p className="text-sm text-gray-700">
+                          <span className="font-semibold">Price: </span>
+                          {currentSubscription.currencyAtPurchase === 'INR' ? '₹' : '$'}
+                          {Number(currentSubscription.priceAtPurchase || 0).toLocaleString()}
+                          {currentSubscription.billingCycle && (
+                            <span className="text-gray-600">
+                              {' '}/ {currentSubscription.billingCycle === 'monthly' ? 'month' : 
+                                      currentSubscription.billingCycle === 'quarterly' ? 'quarter' :
+                                      currentSubscription.billingCycle === 'yearly' ? 'year' :
+                                      `${currentSubscription.billingPeriodMonths || 1} months`}
+                            </span>
+                          )}
+                        </p>
+                      )}
+                      <p className="text-sm text-gray-600">
+                        {currentSubscription.status === 'active' ? 'Expires on' : 'Expired on'} {new Date(currentSubscription.endDate).toLocaleDateString()}
                       </p>
-                    )}
-                    <p className="text-sm text-gray-600">
-                      {currentSubscription.status === 'active' ? 'Renews on' : 'Expires on'} {new Date(currentSubscription.endDate).toLocaleDateString()}
-                    </p>
-                  </>
-                )}
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="text-right ml-4">
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  currentSubscription.status === 'active'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-gray-700'
+                }`}>
+                  {currentSubscription.status}
+                </span>
               </div>
             </div>
-            <div className="text-right ml-4">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                currentSubscription.status === 'active'
-                  ? 'bg-green-100 text-green-700'
-                  : 'bg-gray-100 text-gray-700'
-              }`}>
-                {currentSubscription.status}
-              </span>
-            </div>
           </div>
+
         </div>
       )}
 
@@ -473,77 +659,109 @@ export default function SubscriptionPlanPage() {
               </ul>
 
               {/* Action Button */}
-              {isCurrentPlan ? (
-                <button
-                  disabled
-                  className="w-full bg-gray-300 text-gray-600 py-3 rounded-lg font-semibold cursor-not-allowed"
-                >
-                  Current Plan
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleUpgrade(plan.id, selectedPricingId)}
-                  disabled={upgrading === plan.id || (plan.tier !== 'free' && !selectedPricingId)}
-                  className={`w-full py-3 rounded-lg font-semibold text-white transition-colors ${
-                    plan.tier === 'free'
-                      ? 'bg-gray-600 hover:bg-gray-700'
-                      : plan.tier === 'basic'
-                      ? 'bg-yellow-500 hover:bg-yellow-600'
-                      : 'bg-purple-600 hover:bg-purple-700'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  {upgrading === plan.id ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </span>
-                  ) : plan.tier === 'free' ? (
-                    'Select Free Plan'
-                  ) : (
-                    'Upgrade Now'
-                  )}
-                </button>
-              )}
+              {(() => {
+                // Check if this is the current plan
+                const isCurrentPlan = plan.id === currentPlanId;
+                
+                // Check if user selected a different pricing option than current
+                const currentPricingId = currentSubscription?.plan?.pricingOptions?.find(
+                  (p: PricingOption) => p.billingCycle === currentSubscription.billingCycle
+                )?.id || currentSubscription?.pricingId;
+                const isDifferentPricing = isCurrentPlan && selectedPricingId && selectedPricingId !== currentPricingId;
+                
+                // If it's the current plan and same pricing, show "Current Plan"
+                if (isCurrentPlan && !isDifferentPricing) {
+                  return (
+                    <button
+                      disabled
+                      className="w-full bg-gray-300 text-gray-600 py-3 rounded-lg font-semibold cursor-not-allowed"
+                    >
+                      Current Plan
+                    </button>
+                  );
+                }
+                
+                // For current plan with different pricing, or different plan
+                const isUpgradePlan = currentSubscription 
+                  ? isUpgrade(currentSubscription.plan.tier, plan.tier)
+                  : false;
+                
+                let buttonText = 'Select Plan';
+                if (isCurrentPlan && isDifferentPricing) {
+                  buttonText = 'Change Billing Cycle';
+                } else if (plan.tier === 'free') {
+                  buttonText = 'Select Free Plan';
+                } else if (isUpgradePlan) {
+                  buttonText = 'Upgrade Now';
+                } else {
+                  buttonText = 'Change Plan';
+                }
+                
+                return (
+                  <button
+                    onClick={() => handleUpgrade(plan.id, selectedPricingId)}
+                    disabled={upgrading === plan.id || (plan.tier !== 'free' && !selectedPricingId)}
+                    className={`w-full py-3 rounded-lg font-semibold text-white transition-colors ${
+                      plan.tier === 'free'
+                        ? 'bg-gray-600 hover:bg-gray-700'
+                        : plan.tier === 'basic'
+                        ? 'bg-yellow-500 hover:bg-yellow-600'
+                        : 'bg-purple-600 hover:bg-purple-700'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {upgrading === plan.id ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Processing...
+                      </span>
+                    ) : (
+                      buttonText
+                    )}
+                  </button>
+                );
+              })()}
             </div>
           );
         })}
       </div>
 
-      {/* Why Upgrade Section */}
-      {currentSubscription && currentSubscription.plan.tier === 'free' && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Why Upgrade?</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-start gap-3">
-              <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-gray-900">More Visibility</p>
-                <p className="text-sm text-gray-600">Get priority placement in hospital searches</p>
+          {/* Why Upgrade Section */}
+          {currentSubscription && currentSubscription.plan.tier === 'free' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Why Upgrade?</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-start gap-3">
+                  <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-gray-900">More Visibility</p>
+                    <p className="text-sm text-gray-600">Get priority placement in hospital searches</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-gray-900">More Assignments</p>
+                    <p className="text-sm text-gray-600">Accept unlimited assignments with premium plans</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-gray-900">More Affiliations</p>
+                    <p className="text-sm text-gray-600">Partner with more hospitals</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-gray-900">Priority Support</p>
+                    <p className="text-sm text-gray-600">Get help when you need it most</p>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="flex items-start gap-3">
-              <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-gray-900">More Assignments</p>
-                <p className="text-sm text-gray-600">Accept unlimited assignments with premium plans</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-gray-900">More Affiliations</p>
-                <p className="text-sm text-gray-600">Partner with more hospitals</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <Star className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-gray-900">Priority Support</p>
-                <p className="text-sm text-gray-600">Get help when you need it most</p>
-              </div>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );

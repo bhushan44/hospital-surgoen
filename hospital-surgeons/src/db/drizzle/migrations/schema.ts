@@ -174,7 +174,7 @@ export const paymentTransactions = pgTable("payment_transactions", {
 	subscriptionId: uuid("subscription_id"),
 	planId: uuid("plan_id"),
 	pricingId: uuid("pricing_id"),
-}, (table): any => [
+}, (table) => [
 	index("idx_payment_transactions_created_at").using("btree", table.createdAt.asc().nullsLast().op("timestamp_ops")),
 	index("idx_payment_transactions_gateway_order").using("btree", table.gatewayName.asc().nullsLast().op("text_ops"), table.gatewayOrderId.asc().nullsLast().op("text_ops")),
 	index("idx_payment_transactions_order").using("btree", table.orderId.asc().nullsLast().op("uuid_ops")),
@@ -899,10 +899,27 @@ export const subscriptions = pgTable("subscriptions", {
 	cancelledAt: timestamp("cancelled_at", { mode: 'string' }),
 	cancellationReason: text("cancellation_reason"),
 	cancelledBy: text("cancelled_by"),
+	nextPlanId: uuid("next_plan_id"),
+	nextPricingId: uuid("next_pricing_id"),
+	planChangeStatus: text("plan_change_status"),
+	replacedBySubscriptionId: uuid("replaced_by_subscription_id"),
 }, (table) => [
 	index("idx_subscriptions_end_date").using("btree", table.endDate.asc().nullsLast().op("timestamp_ops")),
+	index("idx_subscriptions_next_plan_id").using("btree", table.nextPlanId.asc().nullsLast().op("uuid_ops")).where(sql`(next_plan_id IS NOT NULL)`),
+	index("idx_subscriptions_plan_change_status").using("btree", table.planChangeStatus.asc().nullsLast().op("text_ops")).where(sql`(plan_change_status IS NOT NULL)`),
+	index("idx_subscriptions_replaced_by_subscription_id").using("btree", table.replacedBySubscriptionId.asc().nullsLast().op("uuid_ops")).where(sql`(replaced_by_subscription_id IS NOT NULL)`),
 	index("idx_subscriptions_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
 	index("idx_subscriptions_user_id").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.nextPlanId],
+			foreignColumns: [subscriptionPlans.id],
+			name: "subscriptions_next_plan_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.nextPricingId],
+			foreignColumns: [planPricing.id],
+			name: "subscriptions_next_pricing_id_fkey"
+		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.paymentTransactionId],
 			foreignColumns: [paymentTransactions.id],
@@ -919,12 +936,18 @@ export const subscriptions = pgTable("subscriptions", {
 			name: "subscriptions_pricing_id_fkey"
 		}).onDelete("set null"),
 	foreignKey({
+			columns: [table.replacedBySubscriptionId],
+			foreignColumns: [table.id],
+			name: "subscriptions_replaced_by_subscription_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
 			columns: [table.userId],
 			foreignColumns: [users.id],
 			name: "subscriptions_user_id_fkey"
 		}).onDelete("cascade"),
 	check("subscriptions_billing_cycle_check", sql`billing_cycle = ANY (ARRAY['monthly'::text, 'quarterly'::text, 'yearly'::text, 'custom'::text])`),
 	check("subscriptions_cancelled_by_check", sql`cancelled_by = ANY (ARRAY['user'::text, 'admin'::text, 'system'::text])`),
+	check("subscriptions_plan_change_status_check", sql`(plan_change_status IS NULL) OR (plan_change_status = ANY (ARRAY['pending'::text, 'cancelled'::text, 'failed'::text]))`),
 	check("subscriptions_status_check", sql`status = ANY (ARRAY['active'::text, 'expired'::text, 'cancelled'::text, 'suspended'::text])`),
 ]);
 

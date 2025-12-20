@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  Receipt,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "../_lib/utils";
@@ -199,6 +200,7 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
         { id: 'leaves', label: 'Leaves & Time Off', icon: Umbrella, href: '/doctor/leaves' },
         { id: 'earnings', label: 'Earnings & Payments', icon: DollarSign, href: '/doctor/earnings' },
         { id: 'subscriptions', label: 'Subscription Plan', icon: Star, href: '/doctor/subscriptions' },
+        { id: 'transactions', label: 'Payment Transactions', icon: Receipt, href: '/doctor/transactions' },
       ]
     },
     // {
