@@ -19,9 +19,10 @@ import {
   ChevronRight,
   LogOut,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "../_lib/utils";
+import apiClient from "@/lib/api/httpClient";
 
 interface MenuItem {
   id: string;
@@ -35,6 +36,30 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>("Admin User");
+  const [userName, setUserName] = useState<string>("Admin User");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, []);
+
+  const fetchUserProfile = async () => {
+    try {
+      const response = await apiClient.get("/api/users/profile");
+      const data = response.data;
+      
+      if (data.success && data.data) {
+        setUserEmail(data.data.email || "Admin User");
+        setUserName(data.data.name || data.data.fullName || "Admin User");
+      }
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      // Keep default values on error
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("accessToken");
@@ -141,12 +166,12 @@ export function Sidebar() {
       <div className="p-4 border-t border-slate-800">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-8 h-8 rounded-full bg-teal-600 flex items-center justify-center flex-shrink-0">
-            <span>A</span>
+            <span>{userName.charAt(0).toUpperCase()}</span>
           </div>
           {!collapsed && (
             <div className="flex-1 min-w-0">
-              <div className="text-slate-200">Admin User</div>
-              <div className="text-slate-400">admin@health.com</div>
+              <div className="text-slate-200 truncate">{userName}</div>
+              <div className="text-slate-400 truncate text-sm">{userEmail}</div>
             </div>
           )}
         </div>

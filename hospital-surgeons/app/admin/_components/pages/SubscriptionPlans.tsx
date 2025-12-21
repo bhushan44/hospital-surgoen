@@ -94,7 +94,8 @@ function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (p
         features.push('Includes Premium Doctors');
       }
     }
-    if (plan.features.notes) {
+    // Skip notes that contain "Features for plan" (these are system-generated, not user-facing features)
+    if (plan.features.notes && !plan.features.notes.toLowerCase().includes('features for plan')) {
       features.push(plan.features.notes);
     }
     return features;
@@ -124,7 +125,8 @@ function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (p
           </Button>
         </div>
       </div>
-      {plan.pricingOptions && plan.pricingOptions.length > 0 ? (
+      {/* Pricing Options - Hidden for free plans */}
+      {plan.tier !== 'free' && plan.pricingOptions && plan.pricingOptions.length > 0 ? (
         <div className="mb-4">
           <p className="text-sm text-slate-600 mb-2">Pricing Options:</p>
           {plan.pricingOptions.map((pricing) => (
@@ -137,9 +139,10 @@ function PlanCard({ plan, onEdit, onDelete, deleting }: { plan: Plan; onEdit: (p
             </div>
           ))}
         </div>
-      ) : (
+      ) : plan.tier !== 'free' ? (
         <p className="text-lg text-slate-500 mb-4 italic">No pricing options</p>
-      )}
+      ) : null}
+      {/* Features List */}
       {displayFeatures.length > 0 ? (
         <ul className="space-y-2 mb-4">
           {displayFeatures.map((feature, idx) => (
