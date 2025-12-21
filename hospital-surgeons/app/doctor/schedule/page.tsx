@@ -121,19 +121,23 @@ export default function SetAvailabilityPage() {
     try {
       setLoading(true);
       setError(null);
-      // Get all slots (parent and sub-slots) in flat format for schedule page
-      const { data } = await apiClient.get(`/api/doctors/${doctorId}/availability?allSlots=true`);
+      // Fetch only parent slots (not sub-slots) for availability display
+      // Parent slots are availability windows - they don't have "booked" status
+      const { data } = await apiClient.get(`/api/doctors/${doctorId}/availability`);
       if (data.success && data.data) {
-        const formattedSlots = Array.isArray(data.data) ? data.data.map((slot: any) => ({
-          id: slot.id,
-          slotDate: slot.slotDate,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          status: slot.status || 'available',
-          notes: slot.notes,
-          templateId: slot.templateId,
-          isManual: slot.isManual,
-        })) : [];
+        // API returns: [{ parentSlot: {...}, bookedSubslots: [...] }]
+        // Extract only parent slots for display
+        const parentSlotsData = Array.isArray(data.data) ? data.data : [];
+        const formattedSlots = parentSlotsData.map((item: any) => ({
+          id: item.parentSlot?.id,
+          slotDate: item.parentSlot?.slotDate,
+          startTime: item.parentSlot?.start,
+          endTime: item.parentSlot?.end,
+          status: 'available' as const, // Parent slots are always "available" (they're just availability windows)
+          notes: null,
+          templateId: null, // Will need to fetch separately if needed
+          isManual: null,
+        })).filter((slot: any) => slot.id); // Filter out invalid slots
         setSlots(formattedSlots);
       } else {
         setError('Failed to load availability slots');
@@ -286,8 +290,10 @@ export default function SetAvailabilityPage() {
     return timeStr;
   };
 
-  const availableSlots = slots.filter(s => s.status === 'available').length;
-  const bookedSlots = slots.filter(s => s.status === 'booked').length;
+  // All parent slots are "available" (they're just availability windows)
+  const availableSlots = slots.length;
+  // Sub-slots (actual bookings) are shown in assignments page, not here
+  const bookedSlots = 0; // Parent slots don't have "booked" status
 
   if (loading) {
     return (
@@ -439,24 +445,16 @@ export default function SetAvailabilityPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4 flex-1">
                   {/* Icon */}
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                    slot.status === 'available' ? 'bg-green-100' : 'bg-orange-100'
-                  }`}>
-                    <Calendar className={`w-6 h-6 ${
-                      slot.status === 'available' ? 'text-green-600' : 'text-orange-600'
-                    }`} />
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-green-100">
+                    <Calendar className="w-6 h-6 text-green-600" />
                   </div>
 
                   {/* Details */}
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <h4 className="text-gray-900 font-semibold">{formatDate(slot.slotDate)}</h4>
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        slot.status === 'available'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-orange-100 text-orange-700'
-                      }`}>
-                        {slot.status === 'available' ? 'Available' : 'Booked'}
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                        Available
                       </span>
                       {slot.templateId && (
                         <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
@@ -475,8 +473,8 @@ export default function SetAvailabilityPage() {
                 </div>
 
                 {/* Actions */}
-                {slot.status === 'available' && (
-                  <div className="flex items-center gap-2">
+                {/* Parent slots are always available (they're just availability windows) */}
+                <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleEdit(slot)}
                       className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -497,7 +495,6 @@ export default function SetAvailabilityPage() {
                       )}
                     </button>
                   </div>
-                )}
               </div>
             </div>
           ))
