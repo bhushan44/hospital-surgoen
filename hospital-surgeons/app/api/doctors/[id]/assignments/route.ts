@@ -148,6 +148,7 @@ async function getHandler(
         cancellationReason: assignments.cancellationReason,
         treatmentNotes: assignments.treatmentNotes,
         consultationFee: assignments.consultationFee,
+        availabilitySlotId: assignments.availabilitySlotId,
         // Patient info
         patientName: sql<string>`(SELECT full_name FROM patients WHERE id = ${assignments.patientId})`,
         patientCondition: sql<string>`(SELECT medical_condition FROM patients WHERE id = ${assignments.patientId})`,
