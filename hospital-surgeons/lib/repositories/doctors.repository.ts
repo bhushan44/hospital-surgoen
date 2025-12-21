@@ -53,6 +53,7 @@ export interface CreateDoctorAvailabilityData {
   status?: string;
   isManual?: boolean;
   notes?: string;
+  parentSlotId?: string | null; // NULL for parent slots, UUID for sub-slots
 }
 
 export interface CreateDoctorUnavailabilityData {
@@ -409,6 +410,7 @@ export class DoctorsRepository {
         status: availabilityData.status || 'available',
         isManual: availabilityData.isManual ?? false,
         notes: availabilityData.notes,
+        parentSlotId: availabilityData.parentSlotId ?? null, // NULL for parent slots
       })
       .returning();
   }
@@ -494,6 +496,151 @@ export class DoctorsRepository {
       .limit(1);
 
     return !!result;
+  }
+
+  /**
+   * Get parent slot by ID
+   */
+  async getParentSlot(parentSlotId: string) {
+    const [result] = await this.db
+      .select()
+      .from(doctorAvailability)
+      .where(
+        and(
+          eq(doctorAvailability.id, parentSlotId),
+          isNull(doctorAvailability.parentSlotId) // Must be a parent slot
+        )
+      )
+      .limit(1);
+    
+    return result || null;
+  }
+
+  /**
+   * Check if sub-slot time range fits within parent slot
+   */
+  fitsWithinParent(
+    parentStartTime: string,
+    parentEndTime: string,
+    subStartTime: string,
+    subEndTime: string
+  ): boolean {
+    // Parse times (format: "HH:mm")
+    const parseTime = (timeStr: string): number => {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes; // Convert to minutes from midnight
+    };
+
+    const parentStart = parseTime(parentStartTime);
+    const parentEnd = parseTime(parentEndTime);
+    const subStart = parseTime(subStartTime);
+    const subEnd = parseTime(subEndTime);
+
+    // Sub-slot must start at or after parent start
+    // Sub-slot must end at or before parent end
+    return subStart >= parentStart && subEnd <= parentEnd && subStart < subEnd;
+  }
+
+  /**
+   * Check for overlapping sub-slots within the same parent
+   */
+  async hasOverlappingSubSlots(
+    parentSlotId: string,
+    startTime: string,
+    endTime: string,
+    excludeSubSlotId?: string
+  ): Promise<boolean> {
+    let condition = and(
+      eq(doctorAvailability.parentSlotId, parentSlotId),
+      lt(doctorAvailability.startTime, endTime),
+      gt(doctorAvailability.endTime, startTime)
+    );
+
+    if (excludeSubSlotId) {
+      condition = and(condition, ne(doctorAvailability.id, excludeSubSlotId));
+    }
+
+    const [result] = await this.db
+      .select({ id: doctorAvailability.id })
+      .from(doctorAvailability)
+      .where(condition)
+      .limit(1);
+
+    return !!result;
+  }
+
+  /**
+   * Get all booked sub-slots for a parent slot
+   */
+  async getSubSlotsByParent(parentSlotId: string) {
+    return await this.db
+      .select()
+      .from(doctorAvailability)
+      .where(eq(doctorAvailability.parentSlotId, parentSlotId))
+      .orderBy(asc(doctorAvailability.startTime));
+  }
+
+  /**
+   * Calculate available time ranges for a parent slot
+   * Returns array of {startTime, endTime} objects
+   */
+  async getAvailableRanges(parentSlotId: string): Promise<Array<{startTime: string, endTime: string}>> {
+    const parent = await this.getParentSlot(parentSlotId);
+    if (!parent) {
+      return [];
+    }
+
+    // Get all booked sub-slots
+    const subSlots = await this.getSubSlotsByParent(parentSlotId);
+    
+    // Parse times to minutes
+    const parseTime = (timeStr: string): number => {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+
+    const formatTime = (minutes: number): string => {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    };
+
+    const parentStart = parseTime(parent.startTime);
+    const parentEnd = parseTime(parent.endTime);
+
+    // Sort sub-slots by start time
+    const bookedRanges = subSlots
+      .map(slot => ({
+        start: parseTime(slot.startTime),
+        end: parseTime(slot.endTime)
+      }))
+      .sort((a, b) => a.start - b.start);
+
+    // Calculate available ranges
+    const availableRanges: Array<{startTime: string, endTime: string}> = [];
+    let currentStart = parentStart;
+
+    for (const booked of bookedRanges) {
+      // If there's a gap before this booked slot, it's available
+      if (currentStart < booked.start) {
+        availableRanges.push({
+          startTime: formatTime(currentStart),
+          endTime: formatTime(booked.start)
+        });
+      }
+      // Move currentStart to end of booked slot
+      currentStart = Math.max(currentStart, booked.end);
+    }
+
+    // If there's remaining time after last booked slot
+    if (currentStart < parentEnd) {
+      availableRanges.push({
+        startTime: formatTime(currentStart),
+        endTime: formatTime(parentEnd)
+      });
+    }
+
+    return availableRanges;
   }
 
   // Doctor Leaves (replaces doctorUnavailability)

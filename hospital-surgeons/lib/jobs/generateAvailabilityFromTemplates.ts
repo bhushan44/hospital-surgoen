@@ -179,6 +179,7 @@ export async function generateAvailabilityFromTemplates(
         status: 'available',
         isManual: false,
         notes: `Auto-generated from template ${template.templateName}`,
+        parentSlotId: null, // Parent slots have NULL parentSlotId
       };
 
       await doctorsRepository.createAvailability(availabilityPayload, template.doctorId);

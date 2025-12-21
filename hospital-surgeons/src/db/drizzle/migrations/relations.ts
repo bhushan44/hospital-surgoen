@@ -57,8 +57,8 @@ export const doctorsRelations = relations(doctors, ({one, many}) => ({
 	assignmentRatings: many(assignmentRatings),
 	assignmentPayments: many(assignmentPayments),
 	doctorSpecialties: many(doctorSpecialties),
-	doctorLeaves: many(doctorLeaves),
 	doctorAvailabilities: many(doctorAvailability),
+	doctorLeaves: many(doctorLeaves),
 }));
 
 export const filesRelations = relations(files, ({many}) => ({
@@ -243,6 +243,14 @@ export const doctorAvailabilityRelations = relations(doctorAvailability, ({one, 
 	doctor: one(doctors, {
 		fields: [doctorAvailability.doctorId],
 		references: [doctors.id]
+	}),
+	doctorAvailability: one(doctorAvailability, {
+		fields: [doctorAvailability.parentSlotId],
+		references: [doctorAvailability.id],
+		relationName: "doctorAvailability_parentSlotId_doctorAvailability_id"
+	}),
+	doctorAvailabilities: many(doctorAvailability, {
+		relationName: "doctorAvailability_parentSlotId_doctorAvailability_id"
 	}),
 	enumStatus: one(enumStatus, {
 		fields: [doctorAvailability.status],

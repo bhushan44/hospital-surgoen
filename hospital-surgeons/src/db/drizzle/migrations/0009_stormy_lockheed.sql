@@ -1,0 +1,2 @@
+ALTER TABLE "doctor_availability" ADD COLUMN "parent_slot_id" uuid;--> statement-breakpoint
+ALTER TABLE "doctor_availability" ADD CONSTRAINT "doctor_availability_parent_slot_fkey" FOREIGN KEY ("parent_slot_id") REFERENCES "public"."doctor_availability"("id") ON DELETE cascade ON UPDATE no action;

@@ -41,7 +41,16 @@ export function FindDoctors() {
   const [showPatientModal, setShowPatientModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
-  const [selectedSlot, setSelectedSlot] = useState<{ id: string; time: string; startTime?: string; endTime?: string; slotDate?: string } | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ 
+    parentSlot?: { id: string; start: string; end: string; slotDate?: string };
+    bookedSubslots?: Array<{ id: string; start: string; end: string }>;
+    slotDate?: string;
+    // Legacy format support
+    id?: string; 
+    time?: string; 
+    startTime?: string; 
+    endTime?: string;
+  } | null>(null);
   const [doctors, setDoctors] = useState<any[]>([]);
   const [specialties, setSpecialties] = useState([
     'Cardiology',
@@ -271,22 +280,40 @@ export function FindDoctors() {
     }
   };
 
-  const handleSlotSelect = (doctor: any, slot: any) => {
+  const handleSlotSelect = async (doctor: any, parentSlot: any) => {
     if (!hasAccessToDoctor(doctor.requiredPlan)) {
       setShowUpgradeModal(true);
       return;
     }
-    setSelectedDoctor(doctor);
-    // Format slot with date if available
-    const formattedSlot = {
-      id: slot.id,
-      time: slot.time || slot.startTime || 'TBD',
-      startTime: slot.startTime,
-      endTime: slot.endTime,
-      slotDate: slot.slotDate || searchParams.date,
-    };
-    setSelectedSlot(formattedSlot);
-    setShowPatientModal(true);
+
+    // Fetch full availability details including booked sub-slots
+    try {
+      const date = parentSlot.slotDate || searchParams.date || new Date().toISOString().split('T')[0];
+      const availabilityResponse = await apiClient.get(`/api/doctors/${doctor.id}/availability?date=${date}`);
+      
+      if (availabilityResponse.data.success && availabilityResponse.data.data) {
+        const availability = availabilityResponse.data.data;
+        // Find the matching parent slot
+        const matchedParent = availability.find((item: any) => item.parentSlot.id === parentSlot.id);
+        
+        if (matchedParent) {
+          setSelectedDoctor(doctor);
+          setSelectedSlot({
+            parentSlot: matchedParent.parentSlot,
+            bookedSubslots: matchedParent.bookedSubslots || [],
+            slotDate: date,
+          });
+          setShowPatientModal(true);
+        } else {
+          alert('Slot not found. Please try again.');
+        }
+      } else {
+        alert('Failed to fetch slot details. Please try again.');
+      }
+    } catch (error: any) {
+      console.error('Error fetching slot details:', error);
+      alert('Failed to fetch slot details. Please try again.');
+    }
   };
 
   const handleAssignmentSuccess = () => {

@@ -32,6 +32,7 @@ import { Label } from '../../components/ui/label';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
 import { cn } from '../../components/ui/utils';
+import apiClient from '@/lib/api/httpClient';
 
 export function AssignmentManagement() {
   const router = useRouter();
@@ -67,24 +68,21 @@ export function AssignmentManagement() {
 
   const fetchHospitalProfile = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-      const response = await fetch('/api/hospitals/profile', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
+      const response = await apiClient.get('/api/hospitals/profile');
+      const data = response.data;
       if (data.success && data.data) {
         setHospitalId(data.data.id);
       } else {
-        setError('Failed to load hospital profile');
+        setError(data.message || 'Failed to load hospital profile');
         setLoading(false);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching hospital profile:', err);
-      setError('Failed to load hospital profile');
+      if (err.response?.status === 401) {
+        router.push('/login');
+        return;
+      }
+      setError(err.response?.data?.message || 'Failed to load hospital profile');
       setLoading(false);
     }
   };
@@ -93,11 +91,8 @@ export function AssignmentManagement() {
     if (!hospitalId) return;
     
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`/api/hospitals/${hospitalId}/usage`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = await response.json();
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/usage`);
+      const result = response.data;
       if (result.success && result.data) {
         // Extract assignment usage from the combined usage response
         setUsage({
@@ -121,7 +116,6 @@ export function AssignmentManagement() {
     try {
       setLoading(true);
       setError(null);
-      const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams();
       const statusToUse = statusOverride !== undefined ? statusOverride : statusFilter;
       if (statusToUse !== 'all') {
@@ -136,10 +130,8 @@ export function AssignmentManagement() {
         params.append('search', searchToUse);
       }
       
-      const response = await fetch(`/api/hospitals/${hospitalId}/assignments?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = await response.json();
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/assignments?${params.toString()}`);
+      const result = response.data;
       
       if (result.success && result.data) {
         // Format the data to match the component's expected structure

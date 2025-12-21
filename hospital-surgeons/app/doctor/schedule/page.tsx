@@ -121,7 +121,8 @@ export default function SetAvailabilityPage() {
     try {
       setLoading(true);
       setError(null);
-      const { data } = await apiClient.get(`/api/doctors/${doctorId}/availability`);
+      // Get all slots (parent and sub-slots) in flat format for schedule page
+      const { data } = await apiClient.get(`/api/doctors/${doctorId}/availability?allSlots=true`);
       if (data.success && data.data) {
         const formattedSlots = Array.isArray(data.data) ? data.data.map((slot: any) => ({
           id: slot.id,
@@ -433,8 +434,8 @@ export default function SetAvailabilityPage() {
             </button>
           </div>
         ) : (
-          slots.map((slot) => (
-            <div key={slot.id} className="p-6 hover:bg-gray-50 transition-colors">
+          slots.map((slot, index) => (
+            <div key={slot.id || `slot-${index}`} className="p-6 hover:bg-gray-50 transition-colors">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4 flex-1">
                   {/* Icon */}

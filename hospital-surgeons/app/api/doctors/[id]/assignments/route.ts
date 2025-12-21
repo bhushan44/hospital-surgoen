@@ -157,6 +157,7 @@ async function getHandler(
         slotDate: sql<string>`(SELECT slot_date::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
         slotTime: sql<string>`(SELECT start_time::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
         slotEndTime: sql<string>`(SELECT end_time::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
+        parentSlotId: sql<string | null>`(SELECT parent_slot_id FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
       })
       .from(assignments)
       .where(whereClause)
@@ -216,6 +217,8 @@ async function getHandler(
         declinedAt: assignment.status === 'declined' && assignment.cancelledAt ? assignment.cancelledAt : null,
         completedAt: assignment.completedAt,
         expiresIn,
+        parentSlotId: assignment.parentSlotId || null,
+        availabilitySlotId: assignment.availabilitySlotId || null,
         expiresAt: assignment.expiresAt,
         fee: assignment.consultationFee ? Number(assignment.consultationFee) : 0,
         declineReason: assignment.cancellationReason,

@@ -27,6 +27,7 @@ import { Textarea } from '../../components/ui/textarea';
 import { Label } from '../../components/ui/label';
 import { useRouter } from 'next/navigation';
 import { isAuthenticated } from '@/lib/auth/utils';
+import apiClient from '@/lib/api/httpClient';
 
 interface Assignment {
   id: string;
@@ -49,6 +50,8 @@ interface Assignment {
   treatmentNotes?: string | null;
   hospitalId: string;
   patientId: string;
+  parentSlotId?: string | null;
+  availabilitySlotId?: string | null;
 }
 
 export default function AssignmentsPage() {

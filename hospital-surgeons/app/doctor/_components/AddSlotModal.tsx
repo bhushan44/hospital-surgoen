@@ -166,7 +166,7 @@ export function AddSlotModal({ doctorId, onClose, onSuccess, editingSlot }: AddS
               <div className="relative">
                 <input 
                   type="date"
-                  value={formData.slotDate}
+                  value={formData.slotDate || ''}
                   onChange={(e) => setFormData({ ...formData, slotDate: e.target.value })}
                   min={(() => {
                     // Get today's date in local timezone (not UTC) to avoid date shifts
@@ -194,7 +194,7 @@ export function AddSlotModal({ doctorId, onClose, onSuccess, editingSlot }: AddS
                   Start Time <span className="text-[#EF4444]">*</span>
                 </label>
                 <select 
-                  value={formData.startTime}
+                  value={formData.startTime || ''}
                   onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
                   className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0066CC] ${
                     errors.startTime ? 'border-red-300' : 'border-gray-300'
@@ -216,7 +216,7 @@ export function AddSlotModal({ doctorId, onClose, onSuccess, editingSlot }: AddS
                   End Time <span className="text-[#EF4444]">*</span>
                 </label>
                 <select 
-                  value={formData.endTime}
+                  value={formData.endTime || ''}
                   onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
                   className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0066CC] ${
                     errors.endTime ? 'border-red-300' : 'border-gray-300'
@@ -241,7 +241,7 @@ export function AddSlotModal({ doctorId, onClose, onSuccess, editingSlot }: AddS
                 Notes (Optional)
               </label>
               <textarea 
-                value={formData.notes}
+                value={formData.notes || ''}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 placeholder="Special consultation day..."
                 rows={3}

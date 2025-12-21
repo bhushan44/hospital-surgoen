@@ -40,7 +40,7 @@ export async function POST(
       return validation.response;
     }
 
-    const { patientId, doctorId, availabilitySlotId, priority = 'routine', consultationFee } = validation.data;
+    const { patientId, doctorId, parentSlotId, startTime, endTime, availabilitySlotId, priority = 'routine', consultationFee } = validation.data;
 
     // Check hospital assignment limit first
     const { HospitalUsageService } = await import('@/lib/services/hospital-usage.service');
@@ -176,23 +176,131 @@ export async function POST(
       }).onConflictDoNothing();
     }
 
-    // Create assignment
-    const newAssignment = await db
-      .insert(assignments)
-      .values({
-        hospitalId,
-        doctorId,
-        patientId,
-        availabilitySlotId,
-        priority,
-        status: 'pending',
-        expiresAt: expiresAt.toISOString(),
-        consultationFee: consultationFee ? String(consultationFee) : null,
-      })
-      .returning();
+    // Determine which slot to use (parent slot -> create sub-slot, or use existing sub-slot)
+    let finalAvailabilitySlotId: string;
+    const { DoctorsRepository } = await import('@/lib/repositories/doctors.repository');
+    const doctorsRepository = new DoctorsRepository();
 
-    // Mark availability slot as booked
-    if (availabilitySlotId) {
+    if (parentSlotId && startTime && endTime) {
+      // NEW FLOW: Create sub-slot from parent slot
+      
+      // 1. Get and validate parent slot
+      const parentSlot = await doctorsRepository.getParentSlot(parentSlotId);
+      if (!parentSlot) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Parent slot not found or is not a valid parent slot',
+            error: 'PARENT_SLOT_NOT_FOUND',
+          },
+          { status: 404 }
+        );
+      }
+
+      // 2. Validate time range fits within parent slot
+      if (!doctorsRepository.fitsWithinParent(
+        parentSlot.startTime,
+        parentSlot.endTime,
+        startTime,
+        endTime
+      )) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Selected time range (${startTime}-${endTime}) does not fit within parent slot (${parentSlot.startTime}-${parentSlot.endTime})`,
+            error: 'TIME_RANGE_OUT_OF_BOUNDS',
+          },
+          { status: 400 }
+        );
+      }
+
+      // 3. Check for overlapping sub-slots
+      const hasOverlap = await doctorsRepository.hasOverlappingSubSlots(
+        parentSlotId,
+        startTime,
+        endTime
+      );
+
+      if (hasOverlap) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Selected time range (${startTime}-${endTime}) overlaps with an existing booking`,
+            error: 'TIME_OVERLAP',
+          },
+          { status: 400 }
+        );
+      }
+
+      // 4. Create sub-slot
+      const subSlotResult = await doctorsRepository.createAvailability(
+        {
+          slotDate: parentSlot.slotDate,
+          startTime,
+          endTime,
+          parentSlotId: parentSlotId,
+          status: 'booked',
+          isManual: false,
+          notes: `Sub-slot created for assignment`,
+        },
+        doctorId
+      );
+
+      const subSlot = Array.isArray(subSlotResult) ? subSlotResult[0] : subSlotResult;
+      if (!subSlot || !subSlot.id) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Failed to create sub-slot',
+            error: 'SUB_SLOT_CREATION_FAILED',
+          },
+          { status: 500 }
+        );
+      }
+
+      // 5. Update sub-slot with booking info
+      await db
+        .update(doctorAvailability)
+        .set({
+          bookedByHospitalId: hospitalId,
+          bookedAt: new Date().toISOString(),
+        })
+        .where(eq(doctorAvailability.id, subSlot.id));
+
+      finalAvailabilitySlotId = subSlot.id;
+    } else if (availabilitySlotId) {
+      // OLD FLOW: Direct slot reference (backward compatibility)
+      // Check if it's a parent slot - if so, reject (must use parentSlotId flow)
+      const slot = await db
+        .select({ id: doctorAvailability.id, parentSlotId: doctorAvailability.parentSlotId })
+        .from(doctorAvailability)
+        .where(eq(doctorAvailability.id, availabilitySlotId))
+        .limit(1);
+
+      if (slot.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Availability slot not found',
+            error: 'SLOT_NOT_FOUND',
+          },
+          { status: 404 }
+        );
+      }
+
+      // If it's a parent slot, reject (must use parentSlotId + time range)
+      if (!slot[0].parentSlotId) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Cannot book parent slot directly. Please provide parentSlotId with startTime and endTime to create a sub-slot',
+            error: 'PARENT_SLOT_CANNOT_BE_BOOKED_DIRECTLY',
+          },
+          { status: 400 }
+        );
+      }
+
+      // It's a sub-slot, mark as booked
       await db
         .update(doctorAvailability)
         .set({
@@ -201,7 +309,33 @@ export async function POST(
           bookedAt: new Date().toISOString(),
         })
         .where(eq(doctorAvailability.id, availabilitySlotId));
+
+      finalAvailabilitySlotId = availabilitySlotId;
+    } else {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Either parentSlotId with startTime/endTime or availabilitySlotId must be provided',
+          error: 'MISSING_SLOT_INFO',
+        },
+        { status: 400 }
+      );
     }
+
+    // Create assignment
+    const newAssignment = await db
+      .insert(assignments)
+      .values({
+        hospitalId,
+        doctorId,
+        patientId,
+        availabilitySlotId: finalAvailabilitySlotId,
+        priority,
+        status: 'pending',
+        expiresAt: expiresAt.toISOString(),
+        consultationFee: consultationFee ? String(consultationFee) : null,
+      })
+      .returning();
 
     // Increment assignment usage count for both hospital and doctor
     await hospitalUsageService.incrementAssignmentUsage(hospitalId);

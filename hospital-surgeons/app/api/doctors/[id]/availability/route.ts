@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
+import { doctorAvailability } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, isNull, asc } from 'drizzle-orm';
+import { getDb } from '@/lib/db';
 
 /**
  * @swagger
@@ -110,10 +113,90 @@ import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware'
 async function getHandler(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const params = await context.params;
-    const doctorsService = new DoctorsService();
-    const result = await doctorsService.getDoctorAvailability(params.id);
-    
-    return NextResponse.json(result, { status: result.success ? 200 : 400 });
+    const { searchParams } = new URL(req.url);
+    const date = searchParams.get('date'); // Optional date filter
+    const allSlots = searchParams.get('allSlots') === 'true'; // Return all slots (parent + sub-slots) in flat format
+
+    const { DoctorsRepository } = await import('@/lib/repositories/doctors.repository');
+    const doctorsRepository = new DoctorsRepository();
+    const db = getDb();
+
+    if (allSlots) {
+      // Return all slots in flat format (for doctor's schedule page)
+      const conditions = [
+        eq(doctorAvailability.doctorId, params.id)
+      ];
+
+      if (date) {
+        conditions.push(eq(doctorAvailability.slotDate, date));
+      }
+
+      const allSlotsResult = await db
+        .select()
+        .from(doctorAvailability)
+        .where(and(...conditions))
+        .orderBy(asc(doctorAvailability.slotDate), asc(doctorAvailability.startTime));
+
+      return NextResponse.json(
+        {
+          success: true,
+          data: allSlotsResult,
+        },
+        { status: 200 }
+      );
+    }
+
+    // Default: Return parent slots with booked sub-slots (for hospital find-doctors)
+    const conditions = [
+      eq(doctorAvailability.doctorId, params.id),
+      isNull(doctorAvailability.parentSlotId) // Only parent slots
+    ];
+
+    // If date is provided, filter by date
+    if (date) {
+      conditions.push(eq(doctorAvailability.slotDate, date));
+    }
+
+    // Fetch parent slots
+    const parentSlots = await db
+      .select()
+      .from(doctorAvailability)
+      .where(and(...conditions))
+      .orderBy(asc(doctorAvailability.startTime));
+
+    // For each parent slot, fetch its booked sub-slots
+    const result = await Promise.all(
+      parentSlots.map(async (parentSlot) => {
+        const subSlots = await doctorsRepository.getSubSlotsByParent(parentSlot.id);
+        
+        // Filter only booked sub-slots
+        const bookedSubslots = subSlots
+          .filter(subSlot => subSlot.status === 'booked')
+          .map(subSlot => ({
+            id: subSlot.id,
+            start: subSlot.startTime,
+            end: subSlot.endTime,
+          }));
+
+        return {
+          parentSlot: {
+            id: parentSlot.id,
+            start: parentSlot.startTime,
+            end: parentSlot.endTime,
+            slotDate: parentSlot.slotDate,
+          },
+          bookedSubslots,
+        };
+      })
+    );
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: result,
+      },
+      { status: 200 }
+    );
   } catch (error) {
     return NextResponse.json(
       { success: false, message: 'Internal server error', error: String(error) },

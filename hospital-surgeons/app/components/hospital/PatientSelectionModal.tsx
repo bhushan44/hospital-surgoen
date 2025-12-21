@@ -24,7 +24,16 @@ interface PatientSelectionModalProps {
   open: boolean;
   onClose: () => void;
   selectedDoctor: any;
-  selectedSlot: { id: string; time: string; startTime?: string; endTime?: string; slotDate?: string } | null;
+  selectedSlot: { 
+    parentSlot?: { id: string; start: string; end: string; slotDate?: string };
+    bookedSubslots?: Array<{ id: string; start: string; end: string }>;
+    slotDate?: string;
+    // Legacy format support
+    id?: string; 
+    time?: string; 
+    startTime?: string; 
+    endTime?: string;
+  } | null;
   hospitalId: string | null;
   onSuccess?: () => void;
 }
@@ -46,6 +55,9 @@ export function PatientSelectionModal({
   const [loading, setLoading] = useState(false);
   const [creatingAssignment, setCreatingAssignment] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedStartTime, setSelectedStartTime] = useState<string>('');
+  const [selectedEndTime, setSelectedEndTime] = useState<string>('');
+  const [availableRanges, setAvailableRanges] = useState<Array<{start: string, end: string}>>([]);
 
   useEffect(() => {
     if (open && hospitalId) {
@@ -55,8 +67,74 @@ export function PatientSelectionModal({
       setPriority('routine');
       setSearchQuery('');
       setError(null);
+      setSelectedStartTime('');
+      setSelectedEndTime('');
+      calculateAvailableRanges();
     }
-  }, [open, hospitalId]);
+  }, [open, hospitalId, selectedSlot]);
+
+  // Calculate available time ranges from parent slot minus booked sub-slots
+  const calculateAvailableRanges = () => {
+    if (!selectedSlot?.parentSlot) {
+      setAvailableRanges([]);
+      return;
+    }
+
+    const parentStart = selectedSlot.parentSlot.start;
+    const parentEnd = selectedSlot.parentSlot.end;
+    const booked = selectedSlot.bookedSubslots || [];
+
+    // Parse times to minutes (handles both HH:mm and HH:mm:ss formats)
+    const parseTime = (timeStr: string): number => {
+      const parts = timeStr.split(':');
+      const hours = parseInt(parts[0], 10) || 0;
+      const minutes = parseInt(parts[1], 10) || 0;
+      return hours * 60 + minutes;
+    };
+
+    const formatTime = (minutes: number): string => {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    };
+
+    const parentStartMinutes = parseTime(parentStart);
+    const parentEndMinutes = parseTime(parentEnd);
+
+    // Sort booked slots by start time
+    const bookedRanges = booked
+      .map(subSlot => ({
+        start: parseTime(subSlot.start),
+        end: parseTime(subSlot.end)
+      }))
+      .sort((a, b) => a.start - b.start);
+
+    // Calculate available ranges
+    const available: Array<{start: string, end: string}> = [];
+    let currentStart = parentStartMinutes;
+
+    for (const bookedRange of bookedRanges) {
+      // If there's a gap before this booked slot, it's available
+      if (currentStart < bookedRange.start) {
+        available.push({
+          start: formatTime(currentStart),
+          end: formatTime(bookedRange.start)
+        });
+      }
+      // Move currentStart to end of booked slot
+      currentStart = Math.max(currentStart, bookedRange.end);
+    }
+
+    // If there's remaining time after last booked slot
+    if (currentStart < parentEndMinutes) {
+      available.push({
+        start: formatTime(currentStart),
+        end: formatTime(parentEndMinutes)
+      });
+    }
+
+    setAvailableRanges(available);
+  };
 
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -102,6 +180,35 @@ export function PatientSelectionModal({
       return;
     }
 
+    // Validate time range selection for new parent slot flow
+    if (selectedSlot.parentSlot) {
+      if (!selectedStartTime || !selectedEndTime) {
+        setError('Please select a time range for the appointment');
+        return;
+      }
+
+      // Validate time range fits within available ranges
+      const isValidRange = availableRanges.some(range => {
+        const parseTime = (timeStr: string): number => {
+          const [hours, minutes] = timeStr.split(':').map(Number);
+          return hours * 60 + minutes;
+        };
+        const rangeStart = parseTime(range.start);
+        const rangeEnd = parseTime(range.end);
+        const selectedStart = parseTime(selectedStartTime);
+        const selectedEnd = parseTime(selectedEndTime);
+        return selectedStart >= rangeStart && selectedEnd <= rangeEnd && selectedStart < selectedEnd;
+      });
+
+      if (!isValidRange) {
+        setError('Selected time range must be within available time slots');
+        return;
+      }
+    } else if (!selectedSlot.id) {
+      setError('Please select a time slot');
+      return;
+    }
+
     if (creatingAssignment) {
       return;
     }
@@ -110,13 +217,25 @@ export function PatientSelectionModal({
       setCreatingAssignment(true);
       setError(null);
       
-      const response = await apiClient.post(`/api/hospitals/${hospitalId}/assignments/create`, {
+      // Use new parent slot flow or legacy flow
+      const requestBody: any = {
         patientId: selectedPatientId,
         doctorId: selectedDoctor.id,
-        availabilitySlotId: selectedSlot.id,
         priority: priority,
         consultationFee: selectedDoctor.fee,
-      });
+      };
+
+      if (selectedSlot.parentSlot) {
+        // New flow: parent slot + time range
+        requestBody.parentSlotId = selectedSlot.parentSlot.id;
+        requestBody.startTime = selectedStartTime;
+        requestBody.endTime = selectedEndTime;
+      } else {
+        // Legacy flow: direct slot ID
+        requestBody.availabilitySlotId = selectedSlot.id;
+      }
+      
+      const response = await apiClient.post(`/api/hospitals/${hospitalId}/assignments/create`, requestBody);
 
       const result = response.data;
 
@@ -128,6 +247,8 @@ export function PatientSelectionModal({
         setSelectedPatientId('');
         setPriority('routine');
         setSearchQuery('');
+        setSelectedStartTime('');
+        setSelectedEndTime('');
         router.push('/hospital/assignments');
       } else {
         setError(result.message || 'Failed to create assignment');
@@ -228,12 +349,12 @@ export function PatientSelectionModal({
                 
                 {selectedSlot && (
                   <div className="mt-4 pt-4 border-t border-teal-200/50">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 mb-4">
                       <div className="flex items-center gap-2 text-slate-700">
                         <Calendar className="w-4 h-4" />
                         <span className="text-sm font-medium">
-                          {selectedSlot.slotDate 
-                            ? new Date(selectedSlot.slotDate).toLocaleDateString('en-US', {
+                          {selectedSlot.parentSlot?.slotDate || selectedSlot.slotDate 
+                            ? new Date(selectedSlot.parentSlot?.slotDate || selectedSlot.slotDate || '').toLocaleDateString('en-US', {
                                 weekday: 'short',
                                 month: 'short',
                                 day: 'numeric',
@@ -242,11 +363,134 @@ export function PatientSelectionModal({
                             : 'Date TBD'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-slate-700">
-                        <Clock className="w-4 h-4" />
-                        <span className="text-sm font-medium">{selectedSlot.time || selectedSlot.startTime || 'Time TBD'}</span>
-                      </div>
+                      {selectedSlot.parentSlot && (
+                        <div className="flex items-center gap-2 text-slate-700">
+                          <Clock className="w-4 h-4" />
+                          <span className="text-sm font-medium">
+                            Available: {selectedSlot.parentSlot.start} - {selectedSlot.parentSlot.end}
+                          </span>
+                        </div>
+                      )}
+                      {!selectedSlot.parentSlot && (
+                        <div className="flex items-center gap-2 text-slate-700">
+                          <Clock className="w-4 h-4" />
+                          <span className="text-sm font-medium">{selectedSlot.time || selectedSlot.startTime || 'Time TBD'}</span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Time Range Picker for Parent Slots */}
+                    {selectedSlot.parentSlot && (
+                      <div className="mt-4 space-y-3">
+                        <Label className="text-sm font-semibold text-slate-900">
+                          Select Appointment Time Range
+                        </Label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label htmlFor="start-time" className="text-xs text-slate-600 mb-1 block">
+                              Start Time
+                            </Label>
+                            <select
+                              id="start-time"
+                              value={selectedStartTime || ''}
+                              onChange={(e) => {
+                                setSelectedStartTime(e.target.value);
+                                // Auto-set end time to 30 minutes later if not set
+                                if (!selectedEndTime && e.target.value) {
+                                  const [hours, minutes] = e.target.value.split(':').map(Number);
+                                  const endMinutes = minutes + 30;
+                                  const endHours = hours + Math.floor(endMinutes / 60);
+                                  setSelectedEndTime(`${String(endHours % 24).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`);
+                                }
+                              }}
+                              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                            >
+                              <option value="">Select start time</option>
+                              {availableRanges.length === 0 ? (
+                                <option value="" disabled>No available times</option>
+                              ) : (
+                                availableRanges.map((range, idx) => {
+                                  const parseTime = (timeStr: string): number => {
+                                    const parts = timeStr.split(':');
+                                    const hours = parseInt(parts[0], 10) || 0;
+                                    const minutes = parseInt(parts[1], 10) || 0;
+                                    return hours * 60 + minutes;
+                                  };
+                                  const formatTime = (minutes: number): string => {
+                                    const hours = Math.floor(minutes / 60);
+                                    const mins = minutes % 60;
+                                    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+                                  };
+                                  
+                                  const rangeStart = parseTime(range.start);
+                                  const rangeEnd = parseTime(range.end);
+                                  const options: string[] = [];
+                                  
+                                  // Generate 15-minute intervals
+                                  for (let t = rangeStart; t < rangeEnd; t += 15) {
+                                    options.push(formatTime(t));
+                                  }
+                                  
+                                  return options.map(opt => (
+                                    <option key={`${idx}-${opt}`} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ));
+                                })
+                              )}
+                            </select>
+                          </div>
+                          <div>
+                            <Label htmlFor="end-time" className="text-xs text-slate-600 mb-1 block">
+                              End Time
+                            </Label>
+                            <select
+                              id="end-time"
+                              value={selectedEndTime || ''}
+                              onChange={(e) => setSelectedEndTime(e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                              disabled={!selectedStartTime}
+                            >
+                              <option value="">Select end time</option>
+                              {selectedStartTime && availableRanges.map((range, idx) => {
+                                const parseTime = (timeStr: string): number => {
+                                  const parts = timeStr.split(':');
+                                  const hours = parseInt(parts[0], 10) || 0;
+                                  const minutes = parseInt(parts[1], 10) || 0;
+                                  return hours * 60 + minutes;
+                                };
+                                const formatTime = (minutes: number): string => {
+                                  const hours = Math.floor(minutes / 60);
+                                  const mins = minutes % 60;
+                                  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+                                };
+                                
+                                const rangeStart = parseTime(range.start);
+                                const rangeEnd = parseTime(range.end);
+                                const selectedStart = parseTime(selectedStartTime);
+                                const options: string[] = [];
+                                
+                                // Generate 15-minute intervals starting after selected start time
+                                for (let t = selectedStart + 15; t <= rangeEnd; t += 15) {
+                                  options.push(formatTime(t));
+                                }
+                                
+                                return options.map(opt => (
+                                  <option key={`${idx}-${opt}`} value={opt}>
+                                    {opt}
+                                  </option>
+                                ));
+                              })}
+                            </select>
+                          </div>
+                        </div>
+                        {selectedStartTime && selectedEndTime && (
+                          <p className="text-xs text-slate-600">
+                            Selected: {selectedStartTime} - {selectedEndTime}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

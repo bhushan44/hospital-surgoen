@@ -1038,6 +1038,52 @@ export const webhookEvents = pgTable("webhook_events", {
 	unique("uq_gateway_event").on(table.gatewayName, table.gatewayEventId),
 ]);
 
+export const doctorAvailability = pgTable("doctor_availability", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	doctorId: uuid("doctor_id").notNull(),
+	templateId: uuid("template_id"),
+	slotDate: date("slot_date").notNull(),
+	startTime: time("start_time").notNull(),
+	endTime: time("end_time").notNull(),
+	status: text().default('available').notNull(),
+	isManual: boolean("is_manual").default(false),
+	bookedByHospitalId: uuid("booked_by_hospital_id"),
+	bookedAt: timestamp("booked_at", { mode: 'string' }),
+	notes: text(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	parentSlotId: uuid("parent_slot_id"),
+}, (table) => [
+	index("idx_availability_date").using("btree", table.slotDate.asc().nullsLast().op("date_ops")),
+	index("idx_availability_doctor_date").using("btree", table.doctorId.asc().nullsLast().op("date_ops"), table.slotDate.asc().nullsLast().op("date_ops")),
+	index("idx_availability_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.bookedByHospitalId],
+			foreignColumns: [hospitals.id],
+			name: "doctor_availability_booked_by_hospital_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.doctorId],
+			foreignColumns: [doctors.id],
+			name: "doctor_availability_doctor_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.parentSlotId],
+			foreignColumns: [table.id],
+			name: "doctor_availability_parent_slot_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.status],
+			foreignColumns: [enumStatus.status],
+			name: "doctor_availability_status_fkey"
+		}),
+	foreignKey({
+			columns: [table.templateId],
+			foreignColumns: [availabilityTemplates.id],
+			name: "doctor_availability_template_id_fkey"
+		}).onDelete("set null"),
+	check("doctor_availability_check", sql`end_time > start_time`),
+]);
+
 export const doctorLeaves = pgTable("doctor_leaves", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	doctorId: uuid("doctor_id").notNull(),
@@ -1054,44 +1100,4 @@ export const doctorLeaves = pgTable("doctor_leaves", {
 		}).onDelete("cascade"),
 	check("doctor_leaves_check", sql`end_date >= start_date`),
 	check("doctor_leaves_leave_type_check", sql`leave_type = ANY (ARRAY['sick'::text, 'vacation'::text, 'personal'::text, 'emergency'::text, 'other'::text])`),
-]);
-
-export const doctorAvailability = pgTable("doctor_availability", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	doctorId: uuid("doctor_id").notNull(),
-	templateId: uuid("template_id"),
-	slotDate: date("slot_date").notNull(),
-	startTime: time("start_time").notNull(),
-	endTime: time("end_time").notNull(),
-	status: text().default('available').notNull(),
-	isManual: boolean("is_manual").default(false),
-	bookedByHospitalId: uuid("booked_by_hospital_id"),
-	bookedAt: timestamp("booked_at", { mode: 'string' }),
-	notes: text(),
-	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-	index("idx_availability_date").using("btree", table.slotDate.asc().nullsLast().op("date_ops")),
-	index("idx_availability_doctor_date").using("btree", table.doctorId.asc().nullsLast().op("date_ops"), table.slotDate.asc().nullsLast().op("date_ops")),
-	index("idx_availability_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.bookedByHospitalId],
-			foreignColumns: [hospitals.id],
-			name: "doctor_availability_booked_by_hospital_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.doctorId],
-			foreignColumns: [doctors.id],
-			name: "doctor_availability_doctor_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.status],
-			foreignColumns: [enumStatus.status],
-			name: "doctor_availability_status_fkey"
-		}),
-	foreignKey({
-			columns: [table.templateId],
-			foreignColumns: [availabilityTemplates.id],
-			name: "doctor_availability_template_id_fkey"
-		}).onDelete("set null"),
-	check("doctor_availability_check", sql`end_time > start_time`),
 ]);

@@ -190,14 +190,14 @@ export async function GET(
     // Get list of doctor IDs from the results
     const doctorIds = doctorsList.rows.map((row: any) => row.id);
     
-    // Fetch availability slots for each doctor for the specified date
+    // Fetch parent slots for each doctor for the specified date
     const targetDate = date || new Date().toISOString().split('T')[0];
     
-    // Group availability by doctor ID
+    // Group parent slots by doctor ID (only parent slots, parentSlotId IS NULL)
     const availabilityByDoctor: Record<string, any[]> = {};
     
     if (doctorIds.length > 0) {
-      // Use Drizzle ORM to query availability
+      // Query parent slots only (parentSlotId IS NULL)
       const availabilityResults = await db
         .select({
           doctorId: doctorAvailability.doctorId,
@@ -210,12 +210,8 @@ export async function GET(
         .where(
           and(
             eq(doctorAvailability.slotDate, targetDate),
-            eq(doctorAvailability.status, 'available'),
-            inArray(doctorAvailability.doctorId, doctorIds),
-            or(
-              isNull(doctorAvailability.bookedByHospitalId),
-              ne(doctorAvailability.bookedByHospitalId, hospitalId)
-            )
+            isNull(doctorAvailability.parentSlotId), // Only parent slots
+            inArray(doctorAvailability.doctorId, doctorIds)
           )
         )
         .orderBy(doctorAvailability.doctorId, asc(doctorAvailability.startTime));
@@ -351,16 +347,24 @@ export async function GET(
         requiredPlan = 'free';
       }
 
-      // Format time slots with IDs
+      // Format parent slots - these are the main availability windows
+      // The UI will fetch detailed availability (with booked sub-slots) when user selects a slot
       const slots = (doctor.availableSlots || []).map((slot: any) => {
         if (!slot || !slot.startTime) return null;
-        // Convert time format (HH:MM:SS) to readable format
+        // Convert time format (HH:MM:SS) to readable format for display
         const timeStr = typeof slot.startTime === 'string' ? slot.startTime : slot.startTime.toString();
-        const [hours, minutes] = timeStr.split(':');
-        const hour = parseInt(hours);
-        const ampm = hour >= 12 ? 'PM' : 'AM';
-        const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-        const formattedTime = `${displayHour}:${minutes} ${ampm}`;
+        const [startHours, startMinutes] = timeStr.split(':');
+        const startHour = parseInt(startHours);
+        const startAmpm = startHour >= 12 ? 'PM' : 'AM';
+        const startDisplayHour = startHour > 12 ? startHour - 12 : startHour === 0 ? 12 : startHour;
+        
+        const endTimeStr = typeof slot.endTime === 'string' ? slot.endTime : slot.endTime.toString();
+        const [endHours, endMinutes] = endTimeStr.split(':');
+        const endHour = parseInt(endHours);
+        const endAmpm = endHour >= 12 ? 'PM' : 'AM';
+        const endDisplayHour = endHour > 12 ? endHour - 12 : endHour === 0 ? 12 : endHour;
+        
+        const formattedTime = `${startDisplayHour}:${startMinutes} ${startAmpm} - ${endDisplayHour}:${endMinutes} ${endAmpm}`;
         
         return {
           id: slot.id,
