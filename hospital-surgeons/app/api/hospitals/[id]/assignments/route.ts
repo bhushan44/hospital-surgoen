@@ -160,10 +160,12 @@ async function getHandler(
         createdAt: assignment.requestedAt,
         acceptedAt: assignment.status === 'accepted' && assignment.actualStartTime ? assignment.actualStartTime : null,
         declinedAt: assignment.status === 'declined' && assignment.cancelledAt ? assignment.cancelledAt : null,
+        cancelledAt: assignment.status === 'cancelled' && assignment.cancelledAt ? assignment.cancelledAt : null,
         completedAt: assignment.completedAt,
         expiresIn,
         fee: assignment.consultationFee ? Number(assignment.consultationFee) : 0,
-        declineReason: assignment.cancellationReason,
+        declineReason: assignment.status === 'declined' ? assignment.cancellationReason : null,
+        cancellationReason: assignment.status === 'cancelled' ? assignment.cancellationReason : null,
         treatmentNotes: assignment.treatmentNotes,
       };
     });

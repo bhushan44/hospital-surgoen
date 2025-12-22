@@ -46,6 +46,7 @@ export function AssignmentManagement() {
   const [showDetails, setShowDetails] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancellingAssignment, setCancellingAssignment] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState('');
   const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -159,10 +160,12 @@ export function AssignmentManagement() {
             createdAt: assignment.createdAt ? new Date(assignment.createdAt).toLocaleString() : '',
             acceptedAt: assignment.acceptedAt ? new Date(assignment.acceptedAt).toLocaleString() : null,
             declinedAt: assignment.declinedAt ? new Date(assignment.declinedAt).toLocaleString() : null,
+            cancelledAt: assignment.cancelledAt ? new Date(assignment.cancelledAt).toLocaleString() : null,
             completedAt: assignment.completedAt ? new Date(assignment.completedAt).toLocaleString() : null,
             expiresIn: assignment.expiresIn || null,
             fee: assignment.fee || 0,
             declineReason: assignment.declineReason || null,
+            cancellationReason: assignment.cancellationReason || null,
             treatmentNotes: assignment.treatmentNotes || null,
           };
         });
@@ -203,6 +206,13 @@ export function AssignmentManagement() {
             Declined
           </Badge>
         );
+      case 'cancelled':
+        return (
+          <Badge variant="destructive" className="bg-orange-100 text-orange-800 hover:bg-orange-100 gap-1">
+            <XCircle className="w-3 h-3" />
+            Cancelled
+          </Badge>
+        );
       case 'completed':
         return (
           <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 gap-1">
@@ -211,7 +221,11 @@ export function AssignmentManagement() {
           </Badge>
         );
       default:
-        return null;
+        return (
+          <Badge variant="outline" className="bg-slate-100 text-slate-800">
+            {status}
+          </Badge>
+        );
     }
   };
 
@@ -386,6 +400,7 @@ export function AssignmentManagement() {
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="accepted">Accepted</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
                   <SelectItem value="declined">Needs Action</SelectItem>
                 </SelectContent>
               </Select>
@@ -617,6 +632,13 @@ export function AssignmentManagement() {
                       <span>{selectedAssignment.declinedAt}</span>
                     </div>
                   )}
+                  {selectedAssignment.cancelledAt && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-orange-600"></div>
+                      <span className="text-gray-500">Cancelled:</span>
+                      <span>{selectedAssignment.cancelledAt}</span>
+                    </div>
+                  )}
                   {selectedAssignment.completedAt && (
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-blue-600"></div>
@@ -632,6 +654,16 @@ export function AssignmentManagement() {
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
                     <span className="font-medium">Decline Reason:</span> {selectedAssignment.declineReason}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {selectedAssignment.status === 'cancelled' && (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <span className="font-medium">Cancellation Reason:</span>{' '}
+                    {selectedAssignment.cancellationReason || 'No reason provided'}
                   </AlertDescription>
                 </Alert>
               )}
@@ -677,7 +709,14 @@ export function AssignmentManagement() {
       </Dialog>
 
       {/* Cancel Assignment Modal */}
-      <Dialog open={showCancelModal} onOpenChange={setShowCancelModal}>
+      <Dialog open={showCancelModal} onOpenChange={(open) => {
+        if (!cancellingAssignment) {
+          setShowCancelModal(open);
+          if (!open) {
+            setCancellationReason('');
+          }
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Cancel Assignment</DialogTitle>
@@ -697,7 +736,12 @@ export function AssignmentManagement() {
 
               <div className="space-y-2">
                 <Label>Cancellation Reason (Optional)</Label>
-                <Textarea placeholder="Please provide a reason for cancellation..." rows={3} />
+                <Textarea 
+                  placeholder="Please provide a reason for cancellation..." 
+                  rows={3}
+                  value={cancellationReason}
+                  onChange={(e) => setCancellationReason(e.target.value)}
+                />
               </div>
 
               <div className="p-4 bg-slate-50 rounded-lg">
@@ -709,23 +753,42 @@ export function AssignmentManagement() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCancelModal(false)} disabled={cancellingAssignment}>
+            <Button variant="outline" onClick={() => {
+              if (!cancellingAssignment) {
+                setShowCancelModal(false);
+                setCancellationReason('');
+              }
+            }} disabled={cancellingAssignment}>
               Keep Assignment
             </Button>
             <Button
               variant="destructive"
+              className="bg-red-600 hover:bg-red-700 text-white"
               onClick={async () => {
                 if (cancellingAssignment || !selectedAssignment) return;
                 try {
                   setCancellingAssignment(true);
-                  // TODO: Implement cancel assignment API call
-                  // For now, just close the modal
-                  await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
-                  setShowCancelModal(false);
-                  alert('Assignment cancelled successfully');
-                  fetchAssignments(); // Refresh the list
-                } catch (error) {
-                  alert('Failed to cancel assignment');
+                  
+                  const response = await apiClient.patch(
+                    `/api/assignments/${selectedAssignment.id}/status`,
+                    {
+                      status: 'cancelled',
+                      cancellationReason: cancellationReason || undefined,
+                    }
+                  );
+
+                  if (response.data.success) {
+                    setShowCancelModal(false);
+                    setCancellationReason('');
+                    alert('Assignment cancelled successfully');
+                    fetchAssignments(); // Refresh the list
+                  } else {
+                    alert(response.data.message || 'Failed to cancel assignment');
+                  }
+                } catch (error: any) {
+                  console.error('Error cancelling assignment:', error);
+                  const errorMessage = error.response?.data?.message || 'Failed to cancel assignment';
+                  alert(errorMessage);
                 } finally {
                   setCancellingAssignment(false);
                 }

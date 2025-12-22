@@ -48,7 +48,7 @@ async function patchHandler(
 
     const assignmentData = assignment[0];
 
-    // Verify the assignment belongs to the doctor (if user is a doctor)
+    // Verify ownership based on user role
     if (user.userRole === 'doctor') {
       // For doctors, we need to check if the assignment's doctorId matches the doctor's profile
       // Get doctor profile to match userId with doctorId
@@ -65,10 +65,27 @@ async function patchHandler(
           { status: 403 }
         );
       }
+    } else if (user.userRole === 'hospital') {
+      // For hospitals, check if the assignment's hospitalId matches the hospital's profile
+      const { HospitalsService } = await import('@/lib/services/hospitals.service');
+      const hospitalsService = new HospitalsService();
+      const hospitalResult = await hospitalsService.findHospitalByUserId(user.userId);
+      
+      if (!hospitalResult.success || !hospitalResult.data || hospitalResult.data.id !== assignmentData.hospitalId) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'You do not have permission to update this assignment',
+          },
+          { status: 403 }
+        );
+      }
     }
 
-    // Check if assignment is already in a final state (but allow completed if current status is accepted)
-    if (assignmentData.status === 'declined' || assignmentData.status === 'completed') {
+    // Check if assignment is already in a final state
+    // Allow 'cancelled' status even if already 'cancelled' (idempotency)
+    // But block updates to 'declined' or 'completed' assignments
+    if ((assignmentData.status === 'declined' || assignmentData.status === 'completed') && status !== 'cancelled') {
       return NextResponse.json(
         {
           success: false,
@@ -84,6 +101,17 @@ async function patchHandler(
         {
           success: false,
           message: 'Assignment must be accepted before it can be marked as completed',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Only allow 'cancelled' status if assignment is 'pending' or 'accepted'
+    if (status === 'cancelled' && assignmentData.status !== 'pending' && assignmentData.status !== 'accepted') {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Assignment cannot be cancelled from ${assignmentData.status} status`,
         },
         { status: 400 }
       );
@@ -132,6 +160,13 @@ async function patchHandler(
       if (cancellationReason) {
         updateData.cancellationReason = cancellationReason;
       }
+    } else if (status === 'cancelled') {
+      updateData.cancelledAt = new Date().toISOString();
+      // Set cancelledBy based on user role
+      updateData.cancelledBy = user.userRole === 'hospital' ? 'hospital' : 'doctor';
+      if (cancellationReason) {
+        updateData.cancellationReason = cancellationReason;
+      }
     } else if (status === 'completed') {
       updateData.completedAt = new Date().toISOString();
       updateData.actualEndTime = new Date().toISOString();
@@ -146,16 +181,38 @@ async function patchHandler(
       .where(eq(assignments.id, assignmentId))
       .returning();
 
-    // If declined, release the availability slot
-    if (status === 'declined' && assignmentData.availabilitySlotId) {
-      await db
-        .update(doctorAvailability)
-        .set({
-          status: 'available',
-          bookedByHospitalId: null,
-          bookedAt: null,
+    // Release or delete availability slot for declined or cancelled assignments
+    if ((status === 'declined' || status === 'cancelled') && assignmentData.availabilitySlotId) {
+      // Check if this is a sub-slot (has parentSlotId) or a parent slot
+      const slotInfo = await db
+        .select({
+          id: doctorAvailability.id,
+          parentSlotId: doctorAvailability.parentSlotId,
         })
-        .where(eq(doctorAvailability.id, assignmentData.availabilitySlotId));
+        .from(doctorAvailability)
+        .where(eq(doctorAvailability.id, assignmentData.availabilitySlotId))
+        .limit(1);
+
+      if (slotInfo.length > 0) {
+        const slot = slotInfo[0];
+        
+        if (slot.parentSlotId) {
+          // This is a sub-slot: delete it
+          await db
+            .delete(doctorAvailability)
+            .where(eq(doctorAvailability.id, assignmentData.availabilitySlotId));
+        } else {
+          // This is a parent slot: just release it (set to available)
+          await db
+            .update(doctorAvailability)
+            .set({
+              status: 'available',
+              bookedByHospitalId: null,
+              bookedAt: null,
+            })
+            .where(eq(doctorAvailability.id, assignmentData.availabilitySlotId));
+        }
+      }
     }
 
     return NextResponse.json({
@@ -176,5 +233,5 @@ async function patchHandler(
   }
 }
 
-export const PATCH = withAuthAndContext(patchHandler, ['doctor', 'admin']);
+export const PATCH = withAuthAndContext(patchHandler, ['doctor', 'hospital', 'admin']);
 

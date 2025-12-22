@@ -42,11 +42,13 @@ interface Assignment {
   createdAt: string;
   acceptedAt: string | null;
   declinedAt: string | null;
+  cancelledAt: string | null;
   completedAt: string | null;
   expiresIn: string | null;
   expiresAt?: string | null;
   fee: number;
   declineReason: string | null;
+  cancellationReason: string | null;
   treatmentNotes?: string | null;
   hospitalId: string;
   patientId: string;
@@ -299,6 +301,9 @@ export default function AssignmentsPage() {
       setUpdatingStatus(true);
       const token = localStorage.getItem('accessToken');
       
+      // Determine status based on current assignment status
+      const targetStatus = selectedAssignment.status === 'accepted' ? 'cancelled' : 'declined';
+      
       const response = await fetch(`/api/assignments/${selectedAssignment.id}/status`, {
         method: 'PATCH',
         headers: {
@@ -306,7 +311,7 @@ export default function AssignmentsPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          status: 'declined',
+          status: targetStatus,
           cancellationReason: declineReason || undefined,
         }),
       });
@@ -314,17 +319,20 @@ export default function AssignmentsPage() {
       const result = await response.json();
 
       if (result.success) {
-        setShowDetails(false);
         setShowDeclineModal(false);
         setDeclineReason('');
+        setShowDetails(false);
         await fetchAssignments(); // Refresh the list
-        alert('Assignment declined successfully');
+        const successMessage = targetStatus === 'cancelled' 
+          ? 'Assignment cancelled successfully' 
+          : 'Assignment declined successfully';
+        alert(successMessage);
       } else {
-        alert(result.message || 'Failed to decline assignment');
+        alert(result.message || `Failed to ${targetStatus} assignment`);
       }
     } catch (error) {
-      console.error('Error declining assignment:', error);
-      alert('An error occurred while declining the assignment');
+      console.error(`Error ${selectedAssignment.status === 'accepted' ? 'cancelling' : 'declining'} assignment:`, error);
+      alert(`An error occurred while ${selectedAssignment.status === 'accepted' ? 'cancelling' : 'declining'} the assignment`);
     } finally {
       setUpdatingStatus(false);
     }
@@ -334,9 +342,15 @@ export default function AssignmentsPage() {
     setShowDeclineModal(true);
   };
 
-  const closeDeclineModal = () => {
-    setShowDeclineModal(false);
-    setDeclineReason('');
+  const closeDeclineModal = (open?: boolean) => {
+    // Only close if explicitly set to false, or if updatingStatus is false
+    if (open === false && !updatingStatus) {
+      setShowDeclineModal(false);
+      setDeclineReason('');
+    } else if (open === true) {
+      // Allow opening
+      setShowDeclineModal(true);
+    }
   };
 
   const openCompleteModal = () => {
@@ -740,6 +754,13 @@ export default function AssignmentsPage() {
                       <span>{new Date(selectedAssignment.declinedAt).toLocaleString()}</span>
                     </div>
                   )}
+                  {selectedAssignment.cancelledAt && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-orange-600"></div>
+                      <span className="text-gray-500">Cancelled:</span>
+                      <span>{new Date(selectedAssignment.cancelledAt).toLocaleString()}</span>
+                    </div>
+                  )}
                   {selectedAssignment.completedAt && (
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-blue-600"></div>
@@ -755,6 +776,16 @@ export default function AssignmentsPage() {
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
                     <span className="font-medium">Decline Reason:</span> {selectedAssignment.declineReason}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {selectedAssignment.status === 'cancelled' && (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <span className="font-medium">Cancellation Reason:</span>{' '}
+                    {selectedAssignment.cancellationReason || 'No reason provided'}
                   </AlertDescription>
                 </Alert>
               )}
@@ -821,7 +852,7 @@ export default function AssignmentsPage() {
                       onClick={openDeclineModal}
                       disabled={updatingStatus}
                       variant="destructive"
-                      className="flex-1"
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white"
                     >
                       <XCircle className="w-4 h-4 mr-2" />
                       Decline Assignment
@@ -840,6 +871,15 @@ export default function AssignmentsPage() {
                   >
                     <CheckCircle className="w-4 h-4 mr-2" />
                     Mark as Completed
+                  </Button>
+                  <Button
+                    onClick={openDeclineModal}
+                    disabled={updatingStatus}
+                    variant="destructive"
+                    className="w-full bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    <XCircle className="w-4 h-4 mr-2" />
+                    Cancel Assignment
                   </Button>
                 </div>
               )}
@@ -878,13 +918,24 @@ export default function AssignmentsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Decline Assignment Modal */}
-      <Dialog open={showDeclineModal} onOpenChange={closeDeclineModal}>
+      {/* Decline/Cancel Assignment Modal */}
+      <Dialog open={showDeclineModal} onOpenChange={(open) => {
+        if (!updatingStatus) {
+          setShowDeclineModal(open);
+          if (!open) {
+            setDeclineReason('');
+          }
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Decline Assignment</DialogTitle>
+            <DialogTitle>
+              {selectedAssignment?.status === 'accepted' ? 'Cancel Assignment' : 'Decline Assignment'}
+            </DialogTitle>
             <DialogDescription>
-              Please provide a reason for declining this assignment (optional)
+              {selectedAssignment?.status === 'accepted' 
+                ? 'Please provide a reason for cancelling this assignment (optional)'
+                : 'Please provide a reason for declining this assignment (optional)'}
             </DialogDescription>
           </DialogHeader>
 
@@ -893,14 +944,22 @@ export default function AssignmentsPage() {
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  Declining this assignment will notify the hospital and release the time slot for other assignments.
+                  {selectedAssignment?.status === 'accepted'
+                    ? 'Cancelling this assignment will notify the hospital and release the time slot for other assignments.'
+                    : 'Declining this assignment will notify the hospital and release the time slot for other assignments.'}
                 </AlertDescription>
               </Alert>
 
               <div className="space-y-2">
-                <Label>Decline Reason (Optional)</Label>
+                <Label>
+                  {selectedAssignment?.status === 'accepted' ? 'Cancellation' : 'Decline'} Reason (Optional)
+                </Label>
                 <Textarea
-                  placeholder="e.g., Schedule conflict, Unable to accommodate on requested date..."
+                  placeholder={
+                    selectedAssignment?.status === 'accepted'
+                      ? "e.g., Emergency came up, Patient condition changed, Unable to proceed..."
+                      : "e.g., Schedule conflict, Unable to accommodate on requested date..."
+                  }
                   rows={4}
                   value={declineReason}
                   onChange={(e) => setDeclineReason(e.target.value)}
@@ -923,23 +982,29 @@ export default function AssignmentsPage() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={closeDeclineModal} disabled={updatingStatus}>
+            <Button variant="outline" onClick={() => {
+              if (!updatingStatus) {
+                setShowDeclineModal(false);
+                setDeclineReason('');
+              }
+            }} disabled={updatingStatus}>
               Cancel
             </Button>
             <Button
               variant="destructive"
+              className="bg-red-600 hover:bg-red-700 text-white"
               onClick={handleDeclineAssignment}
               disabled={updatingStatus}
             >
               {updatingStatus ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  Declining...
+                  {selectedAssignment?.status === 'accepted' ? 'Cancelling...' : 'Declining...'}
                 </>
               ) : (
                 <>
                   <XCircle className="w-4 h-4 mr-2" />
-                  Confirm Decline
+                  {selectedAssignment?.status === 'accepted' ? 'Confirm Cancellation' : 'Confirm Decline'}
                 </>
               )}
             </Button>

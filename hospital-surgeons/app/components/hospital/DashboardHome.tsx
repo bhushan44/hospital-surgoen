@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, ClipboardList, Calendar, TrendingUp, Plus, UserSearch, Eye, Clock, CheckCircle, AlertCircle, Loader2, LogOut } from 'lucide-react';
+import { Users, ClipboardList, Calendar, TrendingUp, Plus, UserSearch, Eye, Clock, CheckCircle, AlertCircle, Loader2, LogOut, XCircle } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -340,6 +340,16 @@ export function DashboardHome() {
                           ) : appointment.status === 'declined' ? (
                             <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100">
                               Declined
+                            </Badge>
+                          ) : appointment.status === 'cancelled' ? (
+                            <Badge variant="destructive" className="bg-orange-100 text-orange-800 hover:bg-orange-100">
+                              <XCircle className="w-3 h-3 mr-1" />
+                              Cancelled
+                            </Badge>
+                          ) : appointment.status === 'completed' ? (
+                            <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Completed
                             </Badge>
                           ) : (
                             <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
