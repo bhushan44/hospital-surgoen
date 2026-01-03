@@ -117,6 +117,47 @@ async function patchHandler(
       );
     }
 
+    // Check 72-hour cancellation window for assignments with booked slots
+    // Apply to both 'pending' and 'accepted' assignments that have an availabilitySlotId
+    if (status === 'cancelled' && assignmentData.availabilitySlotId && 
+        (assignmentData.status === 'pending' || assignmentData.status === 'accepted')) {
+      // Fetch the availability slot to get the scheduled start time
+      const slotInfo = await db
+        .select({
+          slotDate: doctorAvailability.slotDate,
+          startTime: doctorAvailability.startTime,
+        })
+        .from(doctorAvailability)
+        .where(eq(doctorAvailability.id, assignmentData.availabilitySlotId))
+        .limit(1);
+
+      if (slotInfo.length > 0) {
+        const slot = slotInfo[0];
+        // Combine slotDate and startTime to create the scheduled start datetime
+        const scheduledStartDateTime = new Date(`${slot.slotDate}T${slot.startTime}`);
+        const now = new Date();
+        
+        // Calculate the difference in milliseconds
+        const timeDifferenceMs = scheduledStartDateTime.getTime() - now.getTime();
+        // Convert to hours
+        const hoursUntilStart = timeDifferenceMs / (1000 * 60 * 60);
+        
+        // Check if less than 72 hours remain
+        if (hoursUntilStart < 72) {
+          const hoursRemaining = Math.floor(hoursUntilStart);
+          const minutesRemaining = Math.floor((hoursUntilStart - hoursRemaining) * 60);
+          
+          return NextResponse.json(
+            {
+              success: false,
+              message: `Assignment cannot be cancelled. It must be cancelled at least 72 hours before the scheduled start time. Only ${hoursRemaining} hours and ${minutesRemaining} minutes remaining.`,
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // Check if assignment has expired (only for pending assignments)
     if (status === 'accepted' && assignmentData.status === 'pending' && assignmentData.expiresAt) {
       const expiresAt = new Date(assignmentData.expiresAt);

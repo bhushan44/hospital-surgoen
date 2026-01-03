@@ -440,10 +440,11 @@ export class HospitalsService {
         };
       }
 
-      // hospitalFavoriteDoctors table doesn't exist - use hospitalPreferences instead
+      await this.hospitalsRepository.addFavoriteDoctor(favoriteDto, hospitalId);
+
       return {
-        success: false,
-        message: 'hospitalFavoriteDoctors table not found in database. Use hospitalPreferences instead.',
+        success: true,
+        message: 'Favorite doctor added successfully',
       };
     } catch (error) {
       return {

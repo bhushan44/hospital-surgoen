@@ -85,7 +85,8 @@ export async function fetchDoctorsInFixedRadius(
   radiusKm: number,
   baseWhereClause: any,
   limit: number,
-  offset: number
+  offset: number,
+  favoriteDoctorIds: string[] = []
 ): Promise<any[]> {
   const db = getDb();
   const hospitalPoint = getPostGISPoint(hospitalLat, hospitalLon);
@@ -99,44 +100,95 @@ export async function fetchDoctorsInFixedRadius(
     ) / 1000.0
   `;
   
-  const query = sql`
-    SELECT 
-      d.id,
-      d.first_name as "firstName",
-      d.last_name as "lastName",
-      d.years_of_experience as "yearsOfExperience",
-      d.average_rating as "averageRating",
-      d.total_ratings as "totalRatings",
-      d.completed_assignments as "completedAssignments",
-      d.license_verification_status as "licenseVerificationStatus",
-      d.latitude,
-      d.longitude,
-      (${distanceExpr}) as distance,
-      ARRAY(
-        SELECT s.name 
-        FROM specialties s 
-        INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
-        WHERE ds.doctor_id = d.id
-      ) as specialties
-    FROM doctors d
-    ${baseWhereClause}
-    AND d.latitude IS NOT NULL
-    AND d.longitude IS NOT NULL
-    AND ST_DWithin(
-      ST_SetSRID(ST_MakePoint(d.longitude::numeric, d.latitude::numeric), 4326)::geography,
-      ${sql.raw(hospitalPoint)}::geography,
-      ${radiusMeters}
-    )
-    ORDER BY distance ASC
-    LIMIT ${limit}
-    OFFSET ${offset}
-  `;
-  
-  try {
-    const result = await db.execute(query);
-    return result.rows || [];
-  } catch (error) {
-    console.error('Error fetching doctors in fixed radius:', error);
-    return [];
+  // Single optimized query with favorite prioritization using CASE in ORDER BY
+  if (favoriteDoctorIds.length > 0) {
+    // Build array literal for PostgreSQL ANY clause
+    const favoriteArrayLiteral = `ARRAY[${favoriteDoctorIds.map(id => `'${id}'::uuid`).join(', ')}]`;
+    
+    const query = sql`
+      SELECT 
+        d.id,
+        d.first_name as "firstName",
+        d.last_name as "lastName",
+        d.years_of_experience as "yearsOfExperience",
+        d.average_rating as "averageRating",
+        d.total_ratings as "totalRatings",
+        d.completed_assignments as "completedAssignments",
+        d.license_verification_status as "licenseVerificationStatus",
+        d.latitude,
+        d.longitude,
+        (${distanceExpr}) as distance,
+        ARRAY(
+          SELECT s.name 
+          FROM specialties s 
+          INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
+          WHERE ds.doctor_id = d.id
+        ) as specialties
+      FROM doctors d
+      ${baseWhereClause}
+      AND d.latitude IS NOT NULL
+      AND d.longitude IS NOT NULL
+      AND ST_DWithin(
+        ST_SetSRID(ST_MakePoint(d.longitude::numeric, d.latitude::numeric), 4326)::geography,
+        ${sql.raw(hospitalPoint)}::geography,
+        ${radiusMeters}
+      )
+      ORDER BY 
+        CASE WHEN d.id = ANY(${sql.raw(favoriteArrayLiteral)}) THEN 0 ELSE 1 END ASC,
+        distance ASC,
+        id ASC
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `;
+    
+    try {
+      const result = await db.execute(query);
+      return result.rows || [];
+    } catch (error) {
+      console.error('Error fetching doctors in fixed radius:', error);
+      return [];
+    }
+  } else {
+    // No favorites - just return all doctors sorted by distance
+    const query = sql`
+      SELECT 
+        d.id,
+        d.first_name as "firstName",
+        d.last_name as "lastName",
+        d.years_of_experience as "yearsOfExperience",
+        d.average_rating as "averageRating",
+        d.total_ratings as "totalRatings",
+        d.completed_assignments as "completedAssignments",
+        d.license_verification_status as "licenseVerificationStatus",
+        d.latitude,
+        d.longitude,
+        (${distanceExpr}) as distance,
+        ARRAY(
+          SELECT s.name 
+          FROM specialties s 
+          INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
+          WHERE ds.doctor_id = d.id
+        ) as specialties
+      FROM doctors d
+      ${baseWhereClause}
+      AND d.latitude IS NOT NULL
+      AND d.longitude IS NOT NULL
+      AND ST_DWithin(
+        ST_SetSRID(ST_MakePoint(d.longitude::numeric, d.latitude::numeric), 4326)::geography,
+        ${sql.raw(hospitalPoint)}::geography,
+        ${radiusMeters}
+      )
+      ORDER BY distance ASC, id ASC
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `;
+    
+      try {
+        const result = await db.execute(query);
+        return result.rows || [];
+      } catch (error) {
+      console.error('Error fetching doctors in fixed radius:', error);
+      return [];
+    }
   }
 }

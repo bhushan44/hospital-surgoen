@@ -11,7 +11,7 @@ import {
   assignments, // Use assignments instead of bookings
   files
 } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, desc, asc, count } from 'drizzle-orm';
+import { eq, and, desc, asc, count, inArray } from 'drizzle-orm';
 
 export interface CreateHospitalData {
   name: string;
@@ -49,7 +49,6 @@ export interface CreateHospitalStaffData {
 
 export interface CreateFavoriteDoctorData {
   doctorId: string;
-  notes?: string;
 }
 
 export interface HospitalQuery {
@@ -250,21 +249,124 @@ export class HospitalsRepository {
     throw new Error('hospitalStaff table not found in database. Use doctorHospitalAffiliations instead.');
   }
 
-  // Hospital Favorite Doctors - Table doesn't exist in database
-  // TODO: Implement using hospitalPreferences.preferredDoctorIds or create new table
+  // Hospital Favorite Doctors - Using hospitalPreferences.preferredDoctorIds array
   async addFavoriteDoctor(favoriteData: CreateFavoriteDoctorData, hospitalId: string) {
-    // Table doesn't exist in database
-    throw new Error('hospitalFavoriteDoctors table not found in database. Use hospitalPreferences instead.');
+    const db = getDb();
+    const { hospitalPreferences } = await import('@/src/db/drizzle/migrations/schema');
+    
+    // Get existing preferences or create new record
+    const existing = await db
+      .select()
+      .from(hospitalPreferences)
+      .where(eq(hospitalPreferences.hospitalId, hospitalId))
+      .limit(1);
+
+    const currentFavoriteIds = existing[0]?.preferredDoctorIds || [];
+    
+    // Check if doctor is already in favorites
+    if (currentFavoriteIds.includes(favoriteData.doctorId)) {
+      // Already exists, just return
+      return [];
+    }
+
+    // Add doctor ID to array
+    const updatedFavoriteIds = [...currentFavoriteIds, favoriteData.doctorId];
+
+    if (existing.length > 0) {
+      // Update existing record
+      return await db
+        .update(hospitalPreferences)
+        .set({ preferredDoctorIds: updatedFavoriteIds })
+        .where(eq(hospitalPreferences.hospitalId, hospitalId))
+        .returning();
+    } else {
+      // Create new record
+      return await db
+        .insert(hospitalPreferences)
+        .values({
+          hospitalId,
+          preferredDoctorIds: updatedFavoriteIds,
+        })
+        .returning();
+    }
   }
 
   async getHospitalFavoriteDoctors(hospitalId: string) {
-    // Table doesn't exist in database
-    throw new Error('hospitalFavoriteDoctors table not found in database. Use hospitalPreferences instead.');
+    const db = getDb();
+    const { hospitalPreferences, doctors, users } = await import('@/src/db/drizzle/migrations/schema');
+    
+    // Get hospital preferences
+    const preferences = await db
+      .select()
+      .from(hospitalPreferences)
+      .where(eq(hospitalPreferences.hospitalId, hospitalId))
+      .limit(1);
+
+    const favoriteDoctorIds = preferences[0]?.preferredDoctorIds || [];
+    
+    if (favoriteDoctorIds.length === 0) {
+      return [];
+    }
+
+    // Fetch favorite doctors with their user info
+    const favoriteDoctors = await db
+      .select({
+        id: doctors.id,
+        userId: doctors.userId,
+        firstName: doctors.firstName,
+        lastName: doctors.lastName,
+        medicalLicenseNumber: doctors.medicalLicenseNumber,
+        yearsOfExperience: doctors.yearsOfExperience,
+        bio: doctors.bio,
+        profilePhotoId: doctors.profilePhotoId,
+        averageRating: doctors.averageRating,
+        totalRatings: doctors.totalRatings,
+        completedAssignments: doctors.completedAssignments,
+        licenseVerificationStatus: doctors.licenseVerificationStatus,
+        primaryLocation: doctors.primaryLocation,
+        fullAddress: doctors.fullAddress,
+        city: doctors.city,
+        state: doctors.state,
+        pincode: doctors.pincode,
+        latitude: doctors.latitude,
+        longitude: doctors.longitude,
+        email: users.email,
+        phone: users.phone,
+      })
+      .from(doctors)
+      .innerJoin(users, eq(doctors.userId, users.id))
+      .where(inArray(doctors.id, favoriteDoctorIds));
+
+    return favoriteDoctors;
   }
 
   async removeFavoriteDoctor(hospitalId: string, doctorId: string) {
-    // Table doesn't exist in database
-    throw new Error('hospitalFavoriteDoctors table not found in database. Use hospitalPreferences instead.');
+    const db = getDb();
+    const { hospitalPreferences } = await import('@/src/db/drizzle/migrations/schema');
+    
+    // Get existing preferences
+    const existing = await db
+      .select()
+      .from(hospitalPreferences)
+      .where(eq(hospitalPreferences.hospitalId, hospitalId))
+      .limit(1);
+
+    if (existing.length === 0) {
+      // No preferences record, nothing to remove
+      return [];
+    }
+
+    const currentFavoriteIds = existing[0].preferredDoctorIds || [];
+    
+    // Remove doctor ID from array
+    const updatedFavoriteIds = currentFavoriteIds.filter((id: string) => id !== doctorId);
+
+    // Update record
+    return await db
+      .update(hospitalPreferences)
+      .set({ preferredDoctorIds: updatedFavoriteIds })
+      .where(eq(hospitalPreferences.hospitalId, hospitalId))
+      .returning();
   }
 
   // Hospital Documents

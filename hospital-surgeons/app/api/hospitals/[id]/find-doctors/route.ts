@@ -295,9 +295,20 @@ export async function GET(
      * Only includes doctors WITH location (excludes doctors without location)
      * Only works for hospitals WITH location (excludes hospitals without location)
      * Radius can be specified via query parameter, defaults to 50km
+     * Favorite doctors appear first, then others (all sorted by distance)
      */
     
-    // Step 1: Get total count of doctors within radius (with location)
+    // Step 1: Fetch hospital's favorite doctor IDs
+    const { hospitalPreferences } = await import('@/src/db/drizzle/migrations/schema');
+    const preferences = await db
+      .select({ preferredDoctorIds: hospitalPreferences.preferredDoctorIds })
+      .from(hospitalPreferences)
+      .where(eq(hospitalPreferences.hospitalId, hospitalId))
+      .limit(1);
+    
+    const favoriteDoctorIds = preferences[0]?.preferredDoctorIds || [];
+    
+    // Step 2: Get total count of doctors within radius (with location)
     const totalCount = await countDoctorsInFixedRadius(
       hospitalLat!,
       hospitalLon!,
@@ -312,14 +323,16 @@ export async function GET(
     if (totalCount === 0) {
       doctorsList = { rows: [] };
     } else {
-      // Step 2: Fetch doctors using OFFSET/LIMIT pagination
+      // Step 3: Fetch doctors using OFFSET/LIMIT pagination
+      // Favorites appear first, then others (all sorted by distance within each group)
       const doctors = await fetchDoctorsInFixedRadius(
         hospitalLat!,
         hospitalLon!,
         validRadiusKm,
         whereClause,
         limit,
-        offset
+        offset,
+        favoriteDoctorIds
       );
       
       // Convert to format expected by rest of code
@@ -475,8 +488,21 @@ export async function GET(
     });
     console.log(formattedDoctorsList,"formated",formattedDoctorsList.length)
 
-    // Sort doctors by score (highest first)
-    const sortedDoctors = sortDoctorsByScore(formattedDoctorsList);
+    // Preserve favorite-first ordering from fetchDoctorsInFixedRadius
+    // Split into favorites and non-favorites
+    const favoriteDoctors = formattedDoctorsList.filter((doc: any) => 
+      favoriteDoctorIds.includes(doc.id)
+    );
+    const nonFavoriteDoctors = formattedDoctorsList.filter((doc: any) => 
+      !favoriteDoctorIds.includes(doc.id)
+    );
+    
+    // Sort each group by score (highest first)
+    const sortedFavoriteDoctors = sortDoctorsByScore(favoriteDoctors);
+    const sortedNonFavoriteDoctors = sortDoctorsByScore(nonFavoriteDoctors);
+    
+    // Combine: favorites first, then non-favorites
+    const sortedDoctors = [...sortedFavoriteDoctors, ...sortedNonFavoriteDoctors];
     
     // Format doctors - use actual subscription tier from database
     const formattedDoctors = sortedDoctors.map((doctor: any) => {
@@ -530,6 +556,7 @@ export async function GET(
         score: doctor.score?.totalScore || 0, // Include score in response for sorting/ranking
         scoreBreakdown: doctor.score?.breakdown, // Include breakdown for transparency
         distance: (doctor as any).distance ?? null, // Distance in kilometers, or null if coordinates are missing
+        isFavorite: favoriteDoctorIds.includes(doctor.id), // Include favorite status to avoid separate API call
       };
     });
 
@@ -553,18 +580,25 @@ export async function GET(
        return true
     });
 
-    // Sort by distance first (nearest first), then by score (highest first)
-    // Note: All doctors in accessibleDoctors are already accessible after filtering
+    // Sort by favorite status first, then distance, then score
+    // This preserves the favorite-first ordering from the database query
     accessibleDoctors.sort((a, b) => {
-      const distanceA = a.distance ?? Infinity; // null distance = very far (sort last)
-      const distanceB = b.distance ?? Infinity;
+      const isFavoriteA = favoriteDoctorIds.includes(a.id);
+      const isFavoriteB = favoriteDoctorIds.includes(b.id);
       
-      // First sort by distance (nearest first)
+      // First: favorites come first
+      if (isFavoriteA !== isFavoriteB) {
+        return isFavoriteA ? -1 : 1;
+      }
+      
+      // Then: sort by distance (nearest first)
+      const distanceA = a.distance ?? Infinity;
+      const distanceB = b.distance ?? Infinity;
       if (distanceA !== distanceB) {
         return distanceA - distanceB;
       }
       
-      // If same distance, sort by score (highest first)
+      // Finally: sort by score (highest first)
       const scoreA = a.score || 0;
       const scoreB = b.score || 0;
       return scoreB - scoreA;

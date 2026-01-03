@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Calendar, Star, Award, Clock, Loader2, X, MapPin } from 'lucide-react';
+import { Search, Calendar, Star, Award, Clock, Loader2, X, MapPin, Heart } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -70,6 +70,7 @@ export function FindDoctors() {
     fetchSpecialties();
   }, []);
 
+
   const fetchHospitalProfile = async () => {
     try {
       const response = await apiClient.get('/api/hospitals/profile');
@@ -100,6 +101,34 @@ export function FindDoctors() {
       }
     } catch (error) {
       console.error('Error fetching specialties:', error);
+    }
+  };
+
+  const handleToggleFavorite = async (doctorId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    if (!hospitalId) return;
+
+    // Find the doctor in the current list
+    const doctor = doctors.find(d => d.id === doctorId);
+    const isFavorite = doctor?.isFavorite || false;
+
+    try {
+      if (isFavorite) {
+        // Remove from favorites
+        await apiClient.delete(`/api/hospitals/${hospitalId}/favorite-doctors/${doctorId}`);
+        // Update local state
+        setDoctors(prev => prev.map(d => d.id === doctorId ? { ...d, isFavorite: false } : d));
+      } else {
+        // Add to favorites
+        await apiClient.post(`/api/hospitals/${hospitalId}/favorite-doctors`, {
+          doctorId,
+        });
+        // Update local state
+        setDoctors(prev => prev.map(d => d.id === doctorId ? { ...d, isFavorite: true } : d));
+      }
+    } catch (error: any) {
+      console.error('Error toggling favorite:', error);
+      alert(error.response?.data?.message || 'Failed to update favorite doctor');
     }
   };
 
@@ -445,11 +474,26 @@ export function FindDoctors() {
                     </Avatar>
                     <div className="flex-1">
                       <div className="flex items-start justify-between mb-2">
-                        <div>
+                        <div className="flex-1">
                           <h3 className="text-gray-900">{doctor.name}</h3>
                           <p className="text-gray-500">{doctor.specialty}</p>
                         </div>
-                        {getTierBadge(doctor.tier)}
+                        <div className="flex items-center gap-2">
+                          {getTierBadge(doctor.tier)}
+                          <button
+                            onClick={(e) => handleToggleFavorite(doctor.id, e)}
+                            className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
+                            title={doctor.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                          >
+                            <Heart
+                              className={`w-5 h-5 transition-colors ${
+                                doctor.isFavorite
+                                  ? 'fill-red-500 text-red-500'
+                                  : 'text-gray-400 hover:text-red-500'
+                              }`}
+                            />
+                          </button>
+                        </div>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-gray-600">
                         <span>{doctor.experience} years exp</span>
