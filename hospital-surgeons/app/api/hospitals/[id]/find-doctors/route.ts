@@ -56,7 +56,7 @@ import { isPostGISInstalled, countDoctorsInFixedRadius, fetchDoctorsInFixedRadiu
  *           default: 50
  *           minimum: 1
  *           maximum: 100
- *         description: Search radius in kilometers (default 50km)
+ *         description: Search radius in kilometers (defaults to hospital's maxSearchDistanceKm preference, or 50km if not set)
  *     responses:
  *       200:
  *         description: List of available doctors
@@ -129,10 +129,27 @@ export async function GET(
     const limit = parseInt(searchParams.get('limit') || '20', 10); // Default 20 per page
     const offset = (page - 1) * limit;
     
-    // Radius parameter (in kilometers) - default to 50km if not provided
-    const radiusKm = parseFloat(searchParams.get('radius') || String(FIXED_RADIUS_KM));
+    // Fetch hospital preferences to get maxSearchDistanceKm and preferredDoctorIds
+    const { hospitalPreferences } = await import('@/src/db/drizzle/migrations/schema');
+    const hospitalPrefs = await db
+      .select({ 
+        maxSearchDistanceKm: hospitalPreferences.maxSearchDistanceKm,
+        preferredDoctorIds: hospitalPreferences.preferredDoctorIds
+      })
+      .from(hospitalPreferences)
+      .where(eq(hospitalPreferences.hospitalId, hospitalId))
+      .limit(1);
+    
+    // Get default radius from hospital preferences, fallback to FIXED_RADIUS_KM (50km)
+    const defaultRadiusKm = hospitalPrefs[0]?.maxSearchDistanceKm ?? FIXED_RADIUS_KM;
+    
+    // Radius parameter (in kilometers) - use hospital preference if not provided from frontend
+    const radiusFromQuery = searchParams.get('radius');
+    const radiusKm = radiusFromQuery 
+      ? parseFloat(radiusFromQuery) 
+      : defaultRadiusKm;
     // Validate radius (minimum 1km, maximum 100km)
-    const validRadiusKm = Math.max(1, Math.min(100, radiusKm)) || FIXED_RADIUS_KM;
+    const validRadiusKm = Math.max(1, Math.min(100, radiusKm)) || defaultRadiusKm;
 
     // Get hospital's subscription tier, premium doctor access, and location
     const hospitalResult = await db
@@ -294,19 +311,12 @@ export async function GET(
      * Uses standard OFFSET/LIMIT pagination
      * Only includes doctors WITH location (excludes doctors without location)
      * Only works for hospitals WITH location (excludes hospitals without location)
-     * Radius can be specified via query parameter, defaults to 50km
+     * Radius can be specified via query parameter, defaults to hospital's maxSearchDistanceKm or 50km
      * Favorite doctors appear first, then others (all sorted by distance)
      */
     
-    // Step 1: Fetch hospital's favorite doctor IDs
-    const { hospitalPreferences } = await import('@/src/db/drizzle/migrations/schema');
-    const preferences = await db
-      .select({ preferredDoctorIds: hospitalPreferences.preferredDoctorIds })
-      .from(hospitalPreferences)
-      .where(eq(hospitalPreferences.hospitalId, hospitalId))
-      .limit(1);
-    
-    const favoriteDoctorIds = preferences[0]?.preferredDoctorIds || [];
+    // Step 1: Get favorite doctor IDs (already fetched above with maxSearchDistanceKm)
+    const favoriteDoctorIds = hospitalPrefs[0]?.preferredDoctorIds || [];
     
     // Step 2: Get total count of doctors within radius (with location)
     const totalCount = await countDoctorsInFixedRadius(

@@ -117,10 +117,24 @@ async function patchHandler(
       );
     }
 
-    // Check 72-hour cancellation window for assignments with booked slots
+    // Check configurable cancellation notice period for assignments with booked slots
     // Apply to both 'pending' and 'accepted' assignments that have an availabilitySlotId
     if (status === 'cancelled' && assignmentData.availabilitySlotId && 
         (assignmentData.status === 'pending' || assignmentData.status === 'accepted')) {
+      // Fetch hospital preferences to get the cancellation notice period (in days)
+      const { hospitalPreferences } = await import('@/src/db/drizzle/migrations/schema');
+      const preferences = await db
+        .select({ 
+          assignmentCancellationNoticeDays: hospitalPreferences.assignmentCancellationNoticeDays 
+        })
+        .from(hospitalPreferences)
+        .where(eq(hospitalPreferences.hospitalId, assignmentData.hospitalId))
+        .limit(1);
+      
+      // Get cancellation notice period (default to 1 day if not set)
+      const cancellationNoticeDays = preferences[0]?.assignmentCancellationNoticeDays ?? 1;
+      const cancellationNoticeHours = cancellationNoticeDays * 24;
+      
       // Fetch the availability slot to get the scheduled start time
       const slotInfo = await db
         .select({
@@ -142,15 +156,22 @@ async function patchHandler(
         // Convert to hours
         const hoursUntilStart = timeDifferenceMs / (1000 * 60 * 60);
         
-        // Check if less than 72 hours remain
-        if (hoursUntilStart < 72) {
-          const hoursRemaining = Math.floor(hoursUntilStart);
-          const minutesRemaining = Math.floor((hoursUntilStart - hoursRemaining) * 60);
+        // Check if less than the required notice period remains
+        if (hoursUntilStart < cancellationNoticeHours) {
+          const daysRemaining = Math.floor(hoursUntilStart / 24);
+          const hoursRemaining = Math.floor(hoursUntilStart % 24);
+          const minutesRemaining = Math.floor((hoursUntilStart % 1) * 60);
+          
+          const timeRemainingText = daysRemaining > 0 
+            ? `${daysRemaining} day${daysRemaining > 1 ? 's' : ''}, ${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''} and ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`
+            : hoursRemaining > 0
+            ? `${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''} and ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`
+            : `${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`;
           
           return NextResponse.json(
             {
               success: false,
-              message: `Assignment cannot be cancelled. It must be cancelled at least 72 hours before the scheduled start time. Only ${hoursRemaining} hours and ${minutesRemaining} minutes remaining.`,
+              message: `Assignment cannot be cancelled. It must be cancelled at least ${cancellationNoticeDays} day${cancellationNoticeDays !== 1 ? 's' : ''} (${cancellationNoticeHours} hours) before the scheduled start time. Only ${timeRemainingText} remaining.`,
             },
             { status: 400 }
           );

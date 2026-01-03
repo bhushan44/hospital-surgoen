@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { subscriptionPlans, doctorPlanFeatures, patients, patientConsents, files, doctors, users, paymentTransactions, planPricing, subscriptions, doctorCredentials, doctorProfilePhotos, hospitals, doctorPreferences, doctorAvailability, doctorAvailabilityHistory, hospitalDocuments, hospitalPreferences, doctorHospitalAffiliations, availabilityTemplates, hospitalUsageTracking, hospitalDepartments, specialties, assignments, enumPriority, enumStatus, doctorAssignmentUsage, auditLogs, orders, assignmentRatings, assignmentPayments, hospitalCancellationFlags, notifications, enumChannel, analyticsEvents, supportTickets, userDevices, notificationPreferences, hospitalPlanFeatures, notificationRecipients, doctorSpecialties, webhookEvents, doctorLeaves } from "./schema";
+import { subscriptionPlans, doctorPlanFeatures, patients, patientConsents, files, doctors, users, paymentTransactions, planPricing, subscriptions, doctorCredentials, doctorProfilePhotos, hospitals, doctorPreferences, doctorAvailability, doctorAvailabilityHistory, hospitalPreferences, hospitalDocuments, doctorHospitalAffiliations, availabilityTemplates, hospitalUsageTracking, hospitalDepartments, specialties, assignments, enumPriority, enumStatus, doctorAssignmentUsage, auditLogs, orders, assignmentRatings, assignmentPayments, hospitalCancellationFlags, notifications, enumChannel, analyticsEvents, supportTickets, userDevices, notificationPreferences, hospitalPlanFeatures, notificationRecipients, doctorSpecialties, webhookEvents, doctorLeaves } from "./schema";
 
 export const doctorPlanFeaturesRelations = relations(doctorPlanFeatures, ({one}) => ({
 	subscriptionPlan: one(subscriptionPlans, {
@@ -202,8 +202,8 @@ export const hospitalsRelations = relations(hospitals, ({one, many}) => ({
 		fields: [hospitals.userId],
 		references: [users.id]
 	}),
-	hospitalDocuments: many(hospitalDocuments),
 	hospitalPreferences: many(hospitalPreferences),
+	hospitalDocuments: many(hospitalDocuments),
 	doctorHospitalAffiliations: many(doctorHospitalAffiliations),
 	hospitalUsageTrackings: many(hospitalUsageTracking),
 	hospitalDepartments: many(hospitalDepartments),
@@ -262,6 +262,13 @@ export const doctorAvailabilityRelations = relations(doctorAvailability, ({one, 
 	}),
 }));
 
+export const hospitalPreferencesRelations = relations(hospitalPreferences, ({one}) => ({
+	hospital: one(hospitals, {
+		fields: [hospitalPreferences.hospitalId],
+		references: [hospitals.id]
+	}),
+}));
+
 export const hospitalDocumentsRelations = relations(hospitalDocuments, ({one}) => ({
 	file: one(files, {
 		fields: [hospitalDocuments.fileId],
@@ -269,13 +276,6 @@ export const hospitalDocumentsRelations = relations(hospitalDocuments, ({one}) =
 	}),
 	hospital: one(hospitals, {
 		fields: [hospitalDocuments.hospitalId],
-		references: [hospitals.id]
-	}),
-}));
-
-export const hospitalPreferencesRelations = relations(hospitalPreferences, ({one}) => ({
-	hospital: one(hospitals, {
-		fields: [hospitalPreferences.hospitalId],
 		references: [hospitals.id]
 	}),
 }));
