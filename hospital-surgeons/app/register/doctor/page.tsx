@@ -16,6 +16,10 @@ export default function DoctorRegistrationPage() {
     email: '',
     password: '',
     phone: '',
+    fullAddress: '',
+    city: '',
+    state: '',
+    pincode: '',
     specialties: [] as string[],
   });
   const [loading, setLoading] = useState(false);
@@ -195,6 +199,10 @@ export default function DoctorRegistrationPage() {
           lastName: formData.lastName,
           medicalLicenseNumber: formData.dentalLicenseNumber, // Note: using dentalLicenseNumber from form
           yearsOfExperience: parseInt(formData.yearsOfPractice) || 0,
+          fullAddress: formData.fullAddress || undefined,
+          city: formData.city || undefined,
+          state: formData.state || undefined,
+          pincode: formData.pincode || undefined,
           specialties: specialtiesArray,
           device: {
             device_token: 'web-token-' + Date.now(),
@@ -472,6 +480,78 @@ export default function DoctorRegistrationPage() {
                       }`}
                     />
                     {errors.password && <p className="mt-1 text-sm text-red-500">{errors.password}</p>}
+                  </div>
+
+                  <div className="pt-4 border-t border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Location Details</h3>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Provide location information for better accuracy. More details = more accurate coordinates.
+                    </p>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="fullAddress" className="block text-sm font-medium text-gray-700 mb-2">
+                          Full Address
+                        </label>
+                        <input
+                          type="text"
+                          id="fullAddress"
+                          name="fullAddress"
+                          value={formData.fullAddress}
+                          onChange={handleInputChange}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="e.g., 123 Main Street, Building Name, Area"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Street address with building/area name (for high accuracy)</p>
+                      </div>
+
+                      <div>
+                        <label htmlFor="city" className="block text-sm font-medium text-gray-700 mb-2">
+                          City
+                        </label>
+                        <input
+                          type="text"
+                          id="city"
+                          name="city"
+                          value={formData.city}
+                          onChange={handleInputChange}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="e.g., Mumbai"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="state" className="block text-sm font-medium text-gray-700 mb-2">
+                            State
+                          </label>
+                          <input
+                            type="text"
+                            id="state"
+                            name="state"
+                            value={formData.state}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="e.g., Maharashtra"
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="pincode" className="block text-sm font-medium text-gray-700 mb-2">
+                            Pincode
+                          </label>
+                          <input
+                            type="text"
+                            id="pincode"
+                            name="pincode"
+                            value={formData.pincode}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="e.g., 400001"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

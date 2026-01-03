@@ -31,6 +31,8 @@ export const DoctorRegisterDtoSchema = z.object({
   city: z.string().optional(),
   state: z.string().optional(),
   pincode: z.string().max(10).optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
   specialties: z.array(DoctorSpecialtySchema).min(1, 'At least one specialty is required'),
   device: DeviceSchema.optional(),
 });

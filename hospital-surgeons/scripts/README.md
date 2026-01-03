@@ -89,3 +89,45 @@ npx tsx scripts/clear-database.ts && npx tsx scripts/seed-database.ts
 - All data is randomly generated but follows realistic patterns
 - Foreign key relationships are maintained
 
+## seed-hyderabad-test-data.ts
+
+This script seeds test data specifically for testing the progressive radius feature:
+- **30 hospitals** in Hyderabad with exact real-world locations
+- **200 doctors** distributed around those hospitals at different distances (0-50km)
+- Each doctor has a subscription plan (distributed evenly: 25% free, 25% basic, 25% premium, 25% enterprise)
+
+### Usage
+
+```bash
+# Make sure you have DATABASE_URL in your .env file
+# First, ensure specialties are seeded (run seed-database.ts or seed-admin-dashboard.ts first)
+npx tsx scripts/seed-hyderabad-test-data.ts
+```
+
+### What it does
+
+1. **Ensures subscription plans exist** (creates if not present)
+2. **Seeds 30 hospitals** in Hyderabad:
+   - Uses real hospital names and approximate locations
+   - All hospitals are verified
+   - Located in Hyderabad, Telangana
+3. **Seeds 200 doctors**:
+   - Distributed at distances: 0km, 1km, 2km, ..., 49km from hospitals
+   - Each doctor has a subscription plan (free, basic, premium, or enterprise)
+   - All doctors are verified
+   - Each doctor has 1-3 specialties
+4. **Creates subscriptions** for all doctors
+
+### Requirements
+
+- `DATABASE_URL` environment variable set
+- All database migrations applied
+- Specialties should be seeded (run `seed-database.ts` or `seed-admin-dashboard.ts` first)
+
+### Notes
+
+- This script creates new users for hospitals and doctors
+- Doctors are distributed evenly around hospitals for accurate distance testing
+- Perfect for testing progressive radius fetching functionality
+- All doctors have active subscriptions
+

@@ -61,6 +61,32 @@ import { SubscriptionsService } from '@/lib/services/subscriptions.service';
  *                 type: string
  *                 format: uuid
  *                 description: Optional file ID for profile photo
+ *               fullAddress:
+ *                 type: string
+ *                 description: Optional. Full address with building/area name for better geocoding accuracy
+ *                 example: "123 Medical Center, Building A, Area"
+ *               city:
+ *                 type: string
+ *                 description: Optional. City name
+ *                 example: "Mumbai"
+ *               state:
+ *                 type: string
+ *                 description: Optional. State/province name
+ *                 example: "Maharashtra"
+ *               pincode:
+ *                 type: string
+ *                 description: Optional. Postal/ZIP code
+ *                 example: "400001"
+ *               latitude:
+ *                 type: number
+ *                 format: float
+ *                 description: Optional. Latitude coordinate. If not provided, will be calculated via geocoding from address fields
+ *                 example: 19.0760
+ *               longitude:
+ *                 type: number
+ *                 format: float
+ *                 description: Optional. Longitude coordinate. If not provided, will be calculated via geocoding from address fields
+ *                 example: 72.8777
  *               specialties:
  *                 type: array
  *                 minItems: 1
@@ -168,6 +194,28 @@ export async function POST(req: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(body.password, 10);
 
+    // Use latitude/longitude from body if provided, otherwise geocode from address fields
+    let latitude = body.latitude;
+    let longitude = body.longitude;
+    
+    // Only geocode if lat/lng are not provided in the request body
+    if (!latitude || !longitude) {
+      if (body.fullAddress || body.city || body.state || body.pincode) {
+        const { geocodeLocation } = await import('@/lib/utils/geocoding');
+        const geo = await geocodeLocation({
+          fullAddress: body.fullAddress,
+          city: body.city,
+          state: body.state,
+          pincode: body.pincode,
+        });
+        
+        if (geo) {
+          latitude = geo.latitude;
+          longitude = geo.longitude;
+        }
+      }
+    }
+
     // Step 1: Create user
     const [newUser] = await db
       .insert(users)
@@ -191,6 +239,12 @@ export async function POST(req: NextRequest) {
         yearsOfExperience: body.yearsOfExperience,
         bio: body.bio || null,
         profilePhotoId: body.profilePhotoId || null,
+        fullAddress: body.fullAddress || null,
+        city: body.city || null,
+        state: body.state || null,
+        pincode: body.pincode || null,
+        latitude: latitude ? String(latitude) : null,
+        longitude: longitude ? String(longitude) : null,
         licenseVerificationStatus: 'pending',
       })
       .returning();

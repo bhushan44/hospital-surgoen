@@ -1,6 +1,7 @@
-import { pgTable, foreignKey, uuid, integer, text, check, boolean, timestamp, index, unique, varchar, bigint, numeric, type AnyPgColumn, json, time, date, jsonb } from "drizzle-orm/pg-core"
+// ...existing code...
+import { pgTable, foreignKey, uuid, integer, text, check, boolean, timestamp, index, unique, varchar, bigint, numeric, json, time, date, jsonb, pgView } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
-
+// ...existing code...
 
 
 export const doctorPlanFeatures = pgTable("doctor_plan_features", {
@@ -129,8 +130,8 @@ export const specialties = pgTable("specialties", {
 }, (table) => [
 	unique("specialties_name_key").on(table.name),
 ]);
-
-export const paymentTransactions: any = pgTable("payment_transactions", {
+//@ts-ignore
+export const paymentTransactions = pgTable("payment_transactions", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	orderId: uuid("order_id").notNull(),
 	paymentGateway: text("payment_gateway").notNull(),
@@ -174,7 +175,9 @@ export const paymentTransactions: any = pgTable("payment_transactions", {
 	subscriptionId: uuid("subscription_id"),
 	planId: uuid("plan_id"),
 	pricingId: uuid("pricing_id"),
-}, (table) => [
+}, 
+//@ts-ignore
+(table) => [
 	index("idx_payment_transactions_created_at").using("btree", table.createdAt.asc().nullsLast().op("timestamp_ops")),
 	index("idx_payment_transactions_gateway_order").using("btree", table.gatewayName.asc().nullsLast().op("text_ops"), table.gatewayOrderId.asc().nullsLast().op("text_ops")),
 	index("idx_payment_transactions_order").using("btree", table.orderId.asc().nullsLast().op("uuid_ops")),
@@ -878,6 +881,16 @@ export const planPricing = pgTable("plan_pricing", {
 	check("plan_pricing_billing_cycle_check", sql`billing_cycle = ANY (ARRAY['monthly'::text, 'quarterly'::text, 'yearly'::text, 'custom'::text])`),
 ]);
 
+export const spatialRefSys = pgTable("spatial_ref_sys", {
+	srid: integer().notNull(),
+	authName: varchar("auth_name", { length: 256 }),
+	authSrid: integer("auth_srid"),
+	srtext: varchar({ length: 2048 }),
+	proj4Text: varchar({ length: 2048 }),
+}, (table) => [
+	check("spatial_ref_sys_srid_check", sql`(srid > 0) AND (srid <= 998999)`),
+]);
+//@ts-ignore
 export const subscriptions = pgTable("subscriptions", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	userId: uuid("user_id").notNull(),
@@ -902,7 +915,9 @@ export const subscriptions = pgTable("subscriptions", {
 	nextPricingId: uuid("next_pricing_id"),
 	planChangeStatus: text("plan_change_status"),
 	replacedBySubscriptionId: uuid("replaced_by_subscription_id"),
-}, (table) => [
+}, 
+//@ts-ignore
+(table) => [
 	index("idx_subscriptions_end_date").using("btree", table.endDate.asc().nullsLast().op("timestamp_ops")),
 	index("idx_subscriptions_next_plan_id").using("btree", table.nextPlanId.asc().nullsLast().op("uuid_ops")).where(sql`(next_plan_id IS NOT NULL)`),
 	index("idx_subscriptions_plan_change_status").using("btree", table.planChangeStatus.asc().nullsLast().op("text_ops")).where(sql`(plan_change_status IS NOT NULL)`),

@@ -53,6 +53,28 @@ import { SubscriptionsService } from '@/lib/services/subscriptions.service';
  *               city:
  *                 type: string
  *                 example: "New York"
+ *               fullAddress:
+ *                 type: string
+ *                 description: Optional. Full address with building/area name for better geocoding accuracy
+ *                 example: "123 Main Street, Building Name, Area"
+ *               state:
+ *                 type: string
+ *                 description: Optional. State/province name
+ *                 example: "Maharashtra"
+ *               pincode:
+ *                 type: string
+ *                 description: Optional. Postal/ZIP code
+ *                 example: "400001"
+ *               latitude:
+ *                 type: number
+ *                 format: float
+ *                 description: Optional. Latitude coordinate. If not provided, will be calculated via geocoding from address fields
+ *                 example: 19.0760
+ *               longitude:
+ *                 type: number
+ *                 format: float
+ *                 description: Optional. Longitude coordinate. If not provided, will be calculated via geocoding from address fields
+ *                 example: 72.8777
  *               hospitalType:
  *                 type: string
  *                 enum: [general, specialty, clinic, trauma_center, teaching, other]
@@ -67,10 +89,6 @@ import { SubscriptionsService } from '@/lib/services/subscriptions.service';
  *                 type: string
  *               websiteUrl:
  *                 type: string
- *               latitude:
- *                 type: number
- *               longitude:
- *                 type: number
  *               departments:
  *                 type: array
  *                 minItems: 1
@@ -150,6 +168,28 @@ export async function POST(req: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(body.password, 10);
 
+    // Use latitude/longitude from body if provided, otherwise geocode from address fields
+    let latitude = body.latitude;
+    let longitude = body.longitude;
+    
+    // Only geocode if lat/lng are not provided in the request body
+    if (!latitude || !longitude) {
+      if (body.fullAddress || body.city || body.state || body.pincode) {
+        const { geocodeLocation } = await import('@/lib/utils/geocoding');
+        const geo = await geocodeLocation({
+          fullAddress: body.fullAddress,
+          city: body.city,
+          state: body.state,
+          pincode: body.pincode,
+        });
+        
+        if (geo) {
+          latitude = geo.latitude;
+          longitude = geo.longitude;
+        }
+      }
+    }
+
     let newUser;
     let newHospital;
     let insertedDepartments;
@@ -181,13 +221,16 @@ export async function POST(req: NextRequest) {
           registrationNumber: body.registrationNumber,
           address: body.address,
           city: body.city,
+          fullAddress: body.fullAddress || null,
+          state: body.state || null,
+          pincode: body.pincode || null,
           hospitalType: body.hospitalType || null,
           numberOfBeds: body.numberOfBeds ?? null,
           contactEmail: body.contactEmail || body.email,
           contactPhone: body.contactPhone || body.phone,
           websiteUrl: body.websiteUrl || null,
-          latitude: body.latitude ? String(body.latitude) : null,
-          longitude: body.longitude ? String(body.longitude) : null,
+          latitude: latitude ? String(latitude) : null,
+          longitude: longitude ? String(longitude) : null,
           licenseVerificationStatus: 'pending',
         })
         .returning();

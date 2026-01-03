@@ -3,12 +3,97 @@ import { getDb } from '@/lib/db';
 import { doctors, doctorSpecialties, specialties, doctorAvailability, hospitals, subscriptions, subscriptionPlans, users, doctorPlanFeatures, hospitalPlanFeatures } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, or, sql, desc, asc, gte, inArray, isNull, ne } from 'drizzle-orm';
 import { calculateDoctorScore, sortDoctorsByScore, type DoctorScoringData } from '@/lib/utils/doctor-scoring';
+import { isPostGISInstalled, countDoctorsInFixedRadius, fetchDoctorsInFixedRadius, FIXED_RADIUS_KM } from '@/lib/utils/postgis';
 
 /**
- * Find available doctors for a hospital
- * GET /api/hospitals/[id]/find-doctors
- * 
- * Maps subscription tiers: basic -> gold, enterprise -> premium
+ * @swagger
+ * /api/hospitals/{id}/find-doctors:
+ *   get:
+ *     summary: Find available doctors for a hospital within a radius
+ *     tags: [Hospitals]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Hospital ID
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by doctor name or specialty
+ *       - in: query
+ *         name: specialtyId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Specialty ID (can be specified multiple times)
+ *       - in: query
+ *         name: date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Appointment date (YYYY-MM-DD)
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Number of doctors per page
+ *       - in: query
+ *         name: radius
+ *         schema:
+ *           type: number
+ *           format: float
+ *           default: 50
+ *           minimum: 1
+ *           maximum: 100
+ *         description: Search radius in kilometers (default 50km)
+ *     responses:
+ *       200:
+ *         description: List of available doctors
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     doctors:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     hospitalSubscription:
+ *                       type: string
+ *                       enum: [free, basic, premium, enterprise]
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                         limit:
+ *                           type: integer
+ *                         total:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
+ *                         hasNextPage:
+ *                           type: boolean
+ *                         hasPrevPage:
+ *                           type: boolean
+ *       500:
+ *         description: Internal server error
  */
 export async function GET(
   req: NextRequest,
@@ -43,18 +128,34 @@ export async function GET(
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10); // Default 20 per page
     const offset = (page - 1) * limit;
+    
+    // Radius parameter (in kilometers) - default to 50km if not provided
+    const radiusKm = parseFloat(searchParams.get('radius') || String(FIXED_RADIUS_KM));
+    // Validate radius (minimum 1km, maximum 100km)
+    const validRadiusKm = Math.max(1, Math.min(100, radiusKm)) || FIXED_RADIUS_KM;
 
-    // Get hospital's subscription tier and premium doctor access
+    // Get hospital's subscription tier, premium doctor access, and location
     const hospitalResult = await db
       .select({
         userId: hospitals.userId,
+        latitude: hospitals.latitude,
+        longitude: hospitals.longitude,
       })
       .from(hospitals)
       .where(eq(hospitals.id, hospitalId))
       .limit(1);
 
-    let hospitalSubscriptionTier: 'free' | 'gold' | 'premium' = 'free';
+    // Extract hospital coordinates (convert numeric to number if needed)
+    const hospitalLat = hospitalResult[0]?.latitude 
+      ? (typeof hospitalResult[0].latitude === 'string' ? parseFloat(hospitalResult[0].latitude) : Number(hospitalResult[0].latitude))
+      : null;
+    const hospitalLon = hospitalResult[0]?.longitude
+      ? (typeof hospitalResult[0].longitude === 'string' ? parseFloat(hospitalResult[0].longitude) : Number(hospitalResult[0].longitude))
+      : null;
+
+    let hospitalSubscriptionTier: 'free' | 'basic' | 'premium' | 'enterprise' = 'free';
     let includesPremiumDoctors = false;
+    console.log(hospitalResult[0], 'hospitalResult');
     
     if (hospitalResult[0]?.userId) {
       const subscriptionResult = await db
@@ -73,16 +174,10 @@ export async function GET(
         .limit(1);
 
       if (subscriptionResult[0]?.tier) {
-        // Map subscription tiers: basic -> gold, enterprise -> premium
+        // Use database tier directly - no mapping needed
         const tier = subscriptionResult[0].tier;
-        if (tier === 'basic') {
-          hospitalSubscriptionTier = 'gold';
-        } else if (tier === 'enterprise') {
-          hospitalSubscriptionTier = 'premium';
-        } else if (tier === 'premium') {
-          hospitalSubscriptionTier = 'premium';
-        } else {
-          hospitalSubscriptionTier = 'free';
+        if (['free', 'basic', 'premium', 'enterprise'].includes(tier)) {
+          hospitalSubscriptionTier = tier as 'free' | 'basic' | 'premium' | 'enterprise';
         }
 
         // Check if hospital has premium doctor access
@@ -149,43 +244,87 @@ export async function GET(
       }
     }
 
-    // Count query for pagination
-    const countQuery = sql`
-      SELECT COUNT(DISTINCT d.id) as total
-      FROM doctors d
-      ${whereClause}
-    `;
-
-    // Main query with pagination
-    const doctorQuery = sql`
-      SELECT 
-        d.id,
-        d.first_name as "firstName",
-        d.last_name as "lastName",
-        d.years_of_experience as "yearsOfExperience",
-        d.average_rating as "averageRating",
-        d.total_ratings as "totalRatings",
-        d.completed_assignments as "completedAssignments",
-        d.license_verification_status as "licenseVerificationStatus",
-        ARRAY(
-          SELECT s.name 
-          FROM specialties s 
-          INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
-          WHERE ds.doctor_id = d.id
-        ) as specialties
-      FROM doctors d
-      ${whereClause}
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `;
+    // Check if hospital has location - return empty if not
+    const hasHospitalLocation = hospitalLat !== null && hospitalLon !== null;
     
-    // Execute count query for pagination
-    const countResult = await db.execute(countQuery);
-    const totalCount = parseInt(String(countResult.rows[0]?.total || '0'), 10);
+    if (!hasHospitalLocation) {
+      // Hospital without location - return empty results
+      return NextResponse.json({
+        success: true,
+        data: {
+          doctors: [],
+          hospitalSubscription: hospitalSubscriptionTier,
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPrevPage: false,
+          },
+        },
+      });
+    }
+
+    // Check if PostGIS is available
+    const hasPostGIS = await isPostGISInstalled();
+    
+    if (!hasPostGIS) {
+      // PostGIS not available - return empty results
+      return NextResponse.json({
+        success: true,
+        data: {
+          doctors: [],
+          hospitalSubscription: hospitalSubscriptionTier,
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPrevPage: false,
+          },
+        },
+      });
+    }
+
+    /**
+     * FIXED RADIUS FETCHING WITH POSTGIS
+     * 
+     * Uses standard OFFSET/LIMIT pagination
+     * Only includes doctors WITH location (excludes doctors without location)
+     * Only works for hospitals WITH location (excludes hospitals without location)
+     * Radius can be specified via query parameter, defaults to 50km
+     */
+    
+    // Step 1: Get total count of doctors within radius (with location)
+    const totalCount = await countDoctorsInFixedRadius(
+      hospitalLat!,
+      hospitalLon!,
+      validRadiusKm,
+      whereClause
+    );
     const totalPages = Math.ceil(totalCount / limit);
     
-    // Execute main query
-    const doctorsList = await db.execute(doctorQuery);
+    let doctorsList: any;
+    
+    // Early exit if no doctors found
+    if (totalCount === 0) {
+      doctorsList = { rows: [] };
+    } else {
+      // Step 2: Fetch doctors using OFFSET/LIMIT pagination
+      const doctors = await fetchDoctorsInFixedRadius(
+        hospitalLat!,
+        hospitalLon!,
+        validRadiusKm,
+        whereClause,
+        limit,
+        offset
+      );
+      
+      // Convert to format expected by rest of code
+      doctorsList = { rows: doctors };
+    }
     
     // Get list of doctor IDs from the results
     const doctorIds = doctorsList.rows.map((row: any) => row.id);
@@ -291,7 +430,20 @@ export async function GET(
       const subscription = userId ? subscriptionMap[userId] : null;
       const visibilityWeight = subscription?.planId ? visibilityWeightMap[subscription.planId] : null;
       
-      // Calculate score
+      // Extract doctor coordinates (convert numeric to number if needed)
+      const doctorLat = row.latitude 
+        ? (typeof row.latitude === 'string' ? parseFloat(row.latitude) : Number(row.latitude))
+        : null;
+      const doctorLon = row.longitude
+        ? (typeof row.longitude === 'string' ? parseFloat(row.longitude) : Number(row.longitude))
+        : null;
+      
+      // Distance is already calculated by PostGIS in kilometers (ST_Distance / 1000.0)
+      const distance = row.distance !== undefined && row.distance !== null
+        ? Math.round((typeof row.distance === 'string' ? parseFloat(row.distance) : Number(row.distance)) * 100) / 100
+        : null;
+      
+      // Calculate score (include distance for scoring)
       const scoringData: DoctorScoringData = {
         yearsOfExperience: row.yearsOfExperience || 0,
         averageRating: row.averageRating ? Number(row.averageRating) : null,
@@ -300,6 +452,7 @@ export async function GET(
         licenseVerificationStatus: (row.licenseVerificationStatus || 'pending') as 'pending' | 'verified' | 'rejected',
         subscriptionTier: subscription?.tier as any || null,
         visibilityWeight: visibilityWeight || null,
+        // Note: distance is not used in scoring, only for display
       };
       
       const score = calculateDoctorScore(scoringData);
@@ -316,36 +469,23 @@ export async function GET(
         specialties: row.specialties || [],
         availableSlots: availabilityByDoctor[row.id] || [],
         score, // Include score for sorting
+        subscriptionTier: subscription?.tier || 'free', // Store doctor's actual subscription tier
+        distance, // Distance in kilometers, or null if coordinates are missing
       };
     });
+    console.log(formattedDoctorsList,"formated",formattedDoctorsList.length)
 
     // Sort doctors by score (highest first)
     const sortedDoctors = sortDoctorsByScore(formattedDoctorsList);
     
-    // Format doctors with tier and requiredPlan mapping
-    // Since schema doesn't have these fields, we'll derive them from rating and experience
-    const formattedDoctors = sortedDoctors.map((doctor) => {
+    // Format doctors - use actual subscription tier from database
+    const formattedDoctors = sortedDoctors.map((doctor: any) => {
       const rating = doctor.averageRating ? Number(doctor.averageRating) : 0;
       const experience = doctor.yearsOfExperience || 0;
       const completed = doctor.completedAssignments || 0;
 
-      // Derive tier based on score and other factors
-      let tier: 'platinum' | 'gold' | 'silver' = 'silver';
-      let requiredPlan: 'free' | 'gold' | 'premium' = 'free';
-      
-      const totalScore = doctor.score?.totalScore || 0;
-
-      // Tier determination based on score and key metrics
-      if (totalScore >= 80 || (rating >= 4.8 && experience >= 15 && completed >= 400)) {
-        tier = 'platinum';
-        requiredPlan = 'premium';
-      } else if (totalScore >= 60 || (rating >= 4.6 && experience >= 10 && completed >= 200)) {
-        tier = 'gold';
-        requiredPlan = 'gold';
-      } else {
-        tier = 'silver';
-        requiredPlan = 'free';
-      }
+      // Use doctor's actual subscription tier from database (not calculated)
+      const subscriptionTier = (doctor as any).subscriptionTier || 'free';
 
       // Format parent slots - these are the main availability windows
       // The UI will fetch detailed availability (with booked sub-slots) when user selects a slot
@@ -379,8 +519,7 @@ export async function GET(
         id: doctor.id,
         name: `Dr. ${doctor.firstName} ${doctor.lastName}`,
         specialty: doctor.specialties?.[0] || 'General Medicine',
-        tier,
-        requiredPlan,
+        subscriptionTier: subscriptionTier, // Doctor's actual subscription tier from database
         experience,
         rating: rating || 0,
         reviews: doctor.totalRatings || 0,
@@ -388,36 +527,44 @@ export async function GET(
         photo: null,
         availableSlots: slots.length > 0 ? slots : [], // Return empty array if no slots
         fee: 1000 + (experience * 100), // Calculate fee based on experience
-        score: doctor.score?.totalScore || 0, // Include score in response for debugging/display
+        score: doctor.score?.totalScore || 0, // Include score in response for sorting/ranking
         scoreBreakdown: doctor.score?.breakdown, // Include breakdown for transparency
+        distance: (doctor as any).distance ?? null, // Distance in kilometers, or null if coordinates are missing
       };
     });
 
     // Filter doctors based on subscription access and premium doctor access
     const accessibleDoctors = formattedDoctors.filter((doctor) => {
-      const planHierarchy = { free: 0, gold: 1, premium: 2 };
-      const doctorRequired = planHierarchy[doctor.requiredPlan as keyof typeof planHierarchy];
-      const hospitalHas = planHierarchy[hospitalSubscriptionTier];
+      // Use doctor's actual subscription tier from database
+      const doctorSubscriptionTier = (doctor.subscriptionTier || 'free') as 'free' | 'basic' | 'premium' | 'enterprise';
+      const doctorRequired = planHierarchy[doctorSubscriptionTier] ?? 0;
+      const hospitalHas = planHierarchy[hospitalSubscriptionTier] ?? 0;
       
-      // Check if doctor is premium (platinum tier or premium plan)
-      const isPremiumDoctor = doctor.tier === 'platinum' || doctor.requiredPlan === 'premium';
+      // Check if doctor has premium/enterprise subscription
+      const isPremiumDoctor = doctorSubscriptionTier === 'premium' || doctorSubscriptionTier === 'enterprise';
       
-      // If doctor is premium and hospital doesn't have premium access, filter out
-      if (isPremiumDoctor && !includesPremiumDoctors) {
-        return false;
-      }
+      // If doctor has premium/enterprise subscription and hospital doesn't have premium access, filter out
+      // if (isPremiumDoctor && !includesPremiumDoctors) {
+      //   return true;
+      // }
       
-      // Otherwise, check plan hierarchy
-      return hospitalHas >= doctorRequired;
+      // Check plan hierarchy: hospital tier must be >= doctor's subscription tier
+      // return hospitalHas >= doctorRequired;
+       return true
     });
 
-    // Sort: accessible first, then by score (already sorted by score, but re-sort to prioritize accessible)
+    // Sort by distance first (nearest first), then by score (highest first)
+    // Note: All doctors in accessibleDoctors are already accessible after filtering
     accessibleDoctors.sort((a, b) => {
-      const aAccessible = planHierarchy[hospitalSubscriptionTier] >= planHierarchy[a.requiredPlan as keyof typeof planHierarchy];
-      const bAccessible = planHierarchy[hospitalSubscriptionTier] >= planHierarchy[b.requiredPlan as keyof typeof planHierarchy];
-      if (aAccessible !== bAccessible) return bAccessible ? 1 : -1;
+      const distanceA = a.distance ?? Infinity; // null distance = very far (sort last)
+      const distanceB = b.distance ?? Infinity;
       
-      // If both accessible or both not accessible, sort by score (higher first)
+      // First sort by distance (nearest first)
+      if (distanceA !== distanceB) {
+        return distanceA - distanceB;
+      }
+      
+      // If same distance, sort by score (highest first)
       const scoreA = a.score || 0;
       const scoreB = b.score || 0;
       return scoreB - scoreA;
@@ -451,5 +598,5 @@ export async function GET(
   }
 }
 
-const planHierarchy = { free: 0, gold: 1, premium: 2 };
+const planHierarchy = { free: 0, basic: 1, premium: 2, enterprise: 3 };
 

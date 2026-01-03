@@ -22,8 +22,9 @@ export default function HospitalRegistrationPage() {
     phone: '',
     address: '',
     city: '',
+    fullAddress: '',
     state: '',
-    zipCode: '',
+    pincode: '',
     registrationNumber: '',
     numberOfBeds: '',
     hospitalType: '',
@@ -203,6 +204,9 @@ export default function HospitalRegistrationPage() {
           registrationNumber: formData.registrationNumber,
           address: formData.address,
           city: formData.city,
+          fullAddress: formData.fullAddress || undefined,
+          state: formData.state || undefined,
+          pincode: formData.pincode || undefined,
           hospitalType: formData.hospitalType || null,
           numberOfBeds: formData.numberOfBeds ? parseInt(formData.numberOfBeds) : null,
           departments: departmentsArray,
@@ -417,6 +421,17 @@ export default function HospitalRegistrationPage() {
                   {errors.city && <p className="mt-1 text-sm text-red-500">{errors.city}</p>}
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Address</label>
+                  <input
+                    type="text"
+                    value={formData.fullAddress}
+                    onChange={(e) => handleInputChange('fullAddress', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter full address (building name, street, area)"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Street address with building/area name (for better accuracy)</p>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">State</label>
@@ -429,13 +444,13 @@ export default function HospitalRegistrationPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">ZIP Code</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Pincode</label>
                     <input
                       type="text"
-                      value={formData.zipCode}
-                      onChange={(e) => handleInputChange('zipCode', e.target.value)}
+                      value={formData.pincode}
+                      onChange={(e) => handleInputChange('pincode', e.target.value)}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter ZIP code"
+                      placeholder="Enter pincode"
                     />
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Calendar, Star, Award, Crown, Medal, Clock, CheckCircle2, Lock, Loader2, X } from 'lucide-react';
+import { Search, Calendar, Star, Award, Clock, Loader2, X, MapPin } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -15,15 +15,6 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '../../components/ui/dialog';
-import { Alert, AlertDescription } from '../../components/ui/alert';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
 import apiClient from '@/lib/api/httpClient';
@@ -39,7 +30,6 @@ export function FindDoctors() {
   });
   const [showResults, setShowResults] = useState(false);
   const [showPatientModal, setShowPatientModal] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
   const [selectedSlot, setSelectedSlot] = useState<{ 
     parentSlot?: { id: string; start: string; end: string; slotDate?: string };
@@ -62,7 +52,7 @@ export function FindDoctors() {
     'Endocrinology',
     'Gastroenterology',
   ]);
-  const [hospitalSubscription, setHospitalSubscription] = useState<'free' | 'gold' | 'premium'>('free');
+  const [hospitalSubscription, setHospitalSubscription] = useState<'free' | 'basic' | 'premium' | 'enterprise'>('free');
   const [loading, setLoading] = useState(false);
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,27 +103,9 @@ export function FindDoctors() {
     }
   };
 
-  // Check if hospital has access to a doctor based on subscription
-  const hasAccessToDoctor = (doctorRequiredPlan: string) => {
-    const planHierarchy = { free: 0, gold: 1, premium: 2 };
-    return planHierarchy[hospitalSubscription as keyof typeof planHierarchy] >= 
-           planHierarchy[doctorRequiredPlan as keyof typeof planHierarchy];
-  };
-
-  // Filter doctors based on subscription and specialty
+  // Filter doctors based on specialty
   const getFilteredDoctors = () => {
-    return doctors
-      .filter(d => !searchParams.specialty || d.specialty === searchParams.specialty)
-      .sort((a, b) => {
-        // Sort by accessibility first (accessible doctors first)
-        const aAccessible = hasAccessToDoctor(a.requiredPlan);
-        const bAccessible = hasAccessToDoctor(b.requiredPlan);
-        if (aAccessible !== bAccessible) return bAccessible ? 1 : -1;
-        
-        // Then by tier
-        const tierOrder = { platinum: 0, gold: 1, silver: 2 };
-        return tierOrder[a.tier as keyof typeof tierOrder] - tierOrder[b.tier as keyof typeof tierOrder];
-      });
+    return doctors.filter(d => !searchParams.specialty || d.specialty === searchParams.specialty);
   };
 
   // Show loading or empty state
@@ -153,32 +125,28 @@ export function FindDoctors() {
     );
   }
 
-  const getTierBadge = (tier: string) => {
-    switch (tier) {
-      case 'platinum':
-        return (
-          <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 gap-1">
-            <Crown className="w-3 h-3" />
-            Platinum
-          </Badge>
-        );
-      case 'gold':
-        return (
-          <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100 gap-1">
-            <Award className="w-3 h-3" />
-            Gold
-          </Badge>
-        );
-      case 'silver':
-        return (
-          <Badge className="bg-slate-100 text-slate-800 hover:bg-slate-100 gap-1">
-            <Medal className="w-3 h-3" />
-            Silver
-          </Badge>
-        );
-      default:
-        return null;
-    }
+  const getTierBadge = (tier: string | undefined | null) => {
+    if (!tier) return null;
+    
+    // Just show whatever backend sends, capitalize first letter
+    const displayName = tier.charAt(0).toUpperCase() + tier.slice(1);
+    
+    // Use different colors based on tier
+    const getBadgeColor = (t: string) => {
+      const lower = t.toLowerCase();
+      if (lower === 'enterprise') return 'bg-purple-100 text-purple-800 hover:bg-purple-100';
+      if (lower === 'premium') return 'bg-blue-100 text-blue-800 hover:bg-blue-100';
+      if (lower === 'basic') return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100';
+      if (lower === 'free') return 'bg-slate-100 text-slate-800 hover:bg-slate-100';
+      return 'bg-gray-100 text-gray-800 hover:bg-gray-100';
+    };
+    
+    return (
+      <Badge className={`${getBadgeColor(tier)} gap-1`}>
+        <Award className="w-3 h-3" />
+        {displayName}
+      </Badge>
+    );
   };
 
   const getPriorityTimeout = (priority: string) => {
@@ -281,11 +249,6 @@ export function FindDoctors() {
   };
 
   const handleSlotSelect = async (doctor: any, parentSlot: any) => {
-    if (!hasAccessToDoctor(doctor.requiredPlan)) {
-      setShowUpgradeModal(true);
-      return;
-    }
-
     // Fetch full availability details including booked sub-slots
     try {
       const date = parentSlot.slotDate || searchParams.date || new Date().toISOString().split('T')[0];
@@ -321,10 +284,6 @@ export function FindDoctors() {
     if (searchParams.date) {
       handleSearch(1); // Refresh search results
     }
-  };
-
-  const getRequiredPlanName = (requiredPlan: string) => {
-    return requiredPlan.charAt(0).toUpperCase() + requiredPlan.slice(1);
   };
 
   return (
@@ -474,24 +433,8 @@ export function FindDoctors() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {getFilteredDoctors().map((doctor) => {
-              const hasAccess = hasAccessToDoctor(doctor.requiredPlan);
               return (
-              <div key={doctor.id} className={`bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow ${!hasAccess ? 'relative border border-slate-300' : ''}`}>
-                {!hasAccess && (
-                  <div className="absolute inset-0 bg-slate-100/80 backdrop-blur-sm rounded-lg z-10 flex items-center justify-center">
-                    <div className="text-center p-6">
-                      <Lock className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                      <h3 className="text-gray-900 mb-2">Upgrade to {getRequiredPlanName(doctor.requiredPlan)}</h3>
-                      <p className="text-sm text-gray-600 mb-4">Unlock access to this premium doctor</p>
-                      <Button size="sm" onClick={() => {
-                        setSelectedDoctor(doctor);
-                        setShowUpgradeModal(true);
-                      }}>
-                        View Upgrade Options
-                      </Button>
-                    </div>
-                  </div>
-                )}
+              <div key={doctor.id} className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
                 <div className="p-6">
                   <div className="flex items-start gap-4 mb-4">
                     <Avatar className="w-16 h-16">
@@ -503,10 +446,7 @@ export function FindDoctors() {
                     <div className="flex-1">
                       <div className="flex items-start justify-between mb-2">
                         <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-gray-900">{doctor.name}</h3>
-                            {!hasAccess && <Lock className="w-4 h-4 text-gray-400" />}
-                          </div>
+                          <h3 className="text-gray-900">{doctor.name}</h3>
                           <p className="text-gray-500">{doctor.specialty}</p>
                         </div>
                         {getTierBadge(doctor.tier)}
@@ -517,6 +457,16 @@ export function FindDoctors() {
                           <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                           {doctor.rating} ({doctor.reviews})
                         </span>
+                        {doctor.distance !== null && doctor.distance !== undefined && (
+                          <span className="flex items-center gap-1 text-blue-600">
+                            <MapPin className="w-4 h-4" />
+                            {typeof doctor.distance === 'number' 
+                              ? doctor.distance < 1 
+                                ? `${Math.round(doctor.distance * 1000)}m`
+                                : `${doctor.distance.toFixed(1)} km`
+                              : doctor.distance}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -530,6 +480,19 @@ export function FindDoctors() {
                       <p className="text-sm text-gray-500">Consultation Fee</p>
                       <p className="text-gray-900">₹{doctor.fee}</p>
                     </div>
+                    {doctor.distance !== null && doctor.distance !== undefined && (
+                      <div>
+                        <p className="text-sm text-gray-500">Distance</p>
+                        <p className="text-gray-900 flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-blue-600" />
+                          {typeof doctor.distance === 'number' 
+                            ? doctor.distance < 1 
+                              ? `${Math.round(doctor.distance * 1000)}m`
+                              : `${doctor.distance.toFixed(1)} km`
+                            : doctor.distance}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -542,7 +505,6 @@ export function FindDoctors() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleSlotSelect(doctor, slot)}
-                            disabled={!hasAccess}
                             className="gap-1"
                           >
                             <Clock className="w-3 h-3" />
@@ -623,135 +585,6 @@ export function FindDoctors() {
           )}
         </div>
       )}
-
-      {/* Patient Selection Modal */}
-      <PatientSelectionModal
-        open={showPatientModal}
-        onClose={() => {
-          setShowPatientModal(false);
-          setSelectedDoctor(null);
-          setSelectedSlot(null);
-        }}
-        selectedDoctor={selectedDoctor}
-        selectedSlot={selectedSlot}
-        hospitalId={hospitalId}
-        onSuccess={handleAssignmentSuccess}
-      />
-
-      {/* Upgrade Modal */}
-      <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Upgrade Required</DialogTitle>
-            <DialogDescription>
-              Unlock access to premium doctors with a subscription upgrade
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-6">
-            <Alert>
-              <Lock className="h-4 w-4" />
-              <AlertDescription>
-                This doctor requires a <strong>{selectedDoctor ? getRequiredPlanName(selectedDoctor.requiredPlan) : 'Premium'}</strong> subscription to access.
-              </AlertDescription>
-            </Alert>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Gold Plan */}
-              <div className={`bg-white rounded-lg shadow p-6 ${hospitalSubscription === 'free' ? 'border-2 border-teal-600' : ''}`}>
-                <div className="mb-4">
-                  <h3 className="text-slate-900 font-semibold flex items-center gap-2">
-                    <Award className="w-5 h-5 text-yellow-600" />
-                    Gold Plan
-                  </h3>
-                </div>
-                <div>
-                  <div className="mb-4">
-                    <span className="text-3xl text-gray-900">₹4,999</span>
-                    <span className="text-gray-500">/month</span>
-                  </div>
-                  <ul className="space-y-2 text-sm mb-4">
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      Unlimited patients
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      Access to Gold tier doctors
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      Priority search results
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      Email & phone support
-                    </li>
-                  </ul>
-                  <Button 
-                    className="w-full" 
-                    disabled={hospitalSubscription === 'gold' || hospitalSubscription === 'premium'}
-                  >
-                    {hospitalSubscription === 'gold' ? 'Current Plan' : 'Upgrade to Gold'}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Premium Plan */}
-              <div className="bg-white rounded-lg shadow p-6 border-2 border-teal-600">
-                <div className="mb-4">
-                  <h3 className="text-slate-900 font-semibold flex items-center gap-2">
-                    <Crown className="w-5 h-5 text-teal-600" />
-                    Premium Plan
-                  </h3>
-                </div>
-                <div>
-                  <div className="mb-4">
-                    <span className="text-3xl text-gray-900">₹9,999</span>
-                    <span className="text-gray-500">/month</span>
-                  </div>
-                  <ul className="space-y-2 text-sm mb-4">
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      All Gold features
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      Access to Platinum doctors
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      24/7 priority support
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      Dedicated account manager
-                    </li>
-                  </ul>
-                  <Button 
-                    className="w-full" 
-                    disabled={hospitalSubscription === 'premium'}
-                  >
-                    {hospitalSubscription === 'premium' ? 'Current Plan' : 'Upgrade to Premium'}
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-600">
-                After upgrading, you'll have immediate access to all doctors in your subscription tier.
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUpgradeModal(false)}>
-              Maybe Later
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Patient Selection Modal */}
       <PatientSelectionModal
