@@ -18,6 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  Calendar,
+  CalendarX,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -86,6 +88,8 @@ export function Sidebar() {
     { id: "affiliations", label: "Affiliations", icon: Building2, href: "/admin/affiliations" },
     { id: "subscriptions", label: "Subscriptions", icon: Wallet, href: "/admin/subscriptions" },
     { id: "analytics", label: "Analytics", icon: BarChart3, href: "/admin/analytics" },
+    { id: "schedule-updates", label: "Schedule Updates", icon: Calendar, href: "/admin/schedule-updates" },
+    { id: "vacation-updates", label: "Vacation Updates", icon: CalendarX, href: "/admin/vacation-updates" },
     { id: "audit-logs", label: "Audit Logs", icon: FileText, href: "/admin/audit-logs" },
     { id: "settings", label: "Settings", icon: Settings, href: "/admin/settings" },
     { id: "support", label: "Support", icon: Headphones, href: "/admin/support" },

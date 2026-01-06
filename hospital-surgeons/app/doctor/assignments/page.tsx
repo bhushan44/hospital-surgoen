@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Clock, CheckCircle, XCircle, AlertCircle, Calendar as CalendarIcon, Building2, User, Loader2 } from 'lucide-react';
+import { Search, Clock, CheckCircle, XCircle, AlertCircle, Calendar as CalendarIcon, Building2, User, Loader2, DollarSign } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
@@ -76,6 +76,7 @@ export default function AssignmentsPage() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [usage, setUsage] = useState<any>(null);
+  const [paymentInfo, setPaymentInfo] = useState<any>(null);
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -257,6 +258,13 @@ export default function AssignmentsPage() {
     setShowDetails(true);
     setDeclineReason('');
     setTreatmentNotes('');
+    
+    // Fetch payment info if assignment is completed
+    if (assignment.status === 'completed') {
+      fetchPaymentInfo(assignment.id);
+    } else {
+      setPaymentInfo(null);
+    }
   };
 
   const handleAcceptAssignment = async () => {
@@ -360,6 +368,26 @@ export default function AssignmentsPage() {
   const closeCompleteModal = () => {
     setShowCompleteModal(false);
     setTreatmentNotes('');
+  };
+
+  const fetchPaymentInfo = async (assignmentId: string) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`/api/assignments/${assignmentId}/payment`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const result = await response.json();
+      if (result.success && result.data) {
+        setPaymentInfo(result.data);
+      } else {
+        setPaymentInfo(null);
+      }
+    } catch (error) {
+      console.error('Error fetching payment info:', error);
+      setPaymentInfo(null);
+    }
   };
 
   const handleCompleteAssignment = async () => {
@@ -681,7 +709,12 @@ export default function AssignmentsPage() {
       </div>
 
       {/* Assignment Details Modal */}
-      <Dialog open={showDetails} onOpenChange={setShowDetails}>
+      <Dialog open={showDetails} onOpenChange={(open) => {
+        setShowDetails(open);
+        if (!open) {
+          setPaymentInfo(null);
+        }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Assignment Details</DialogTitle>
@@ -900,6 +933,50 @@ export default function AssignmentsPage() {
                     <div className="p-4 bg-blue-50 rounded-lg">
                       <h4 className="font-medium text-blue-900 mb-2">Treatment Notes</h4>
                       <p className="text-sm text-blue-800 whitespace-pre-wrap">{selectedAssignment.treatmentNotes}</p>
+                    </div>
+                  )}
+                  
+                  {/* Payment Information for Completed Assignments */}
+                  {paymentInfo ? (
+                    <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                      <h3 className="text-gray-900 mb-3 font-medium flex items-center gap-2">
+                        <DollarSign className="w-4 h-4" />
+                        Payment Information
+                      </h3>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600">Consultation Fee:</span>
+                          <span className="font-medium text-gray-900">₹{parseFloat(paymentInfo.consultationFee?.toString() || '0')}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600">Your Payout:</span>
+                          <span className="font-medium text-green-600">₹{parseFloat(paymentInfo.doctorPayout?.toString() || '0')}</span>
+                        </div>
+                        <div className="flex justify-between items-center pt-2 border-t border-green-200">
+                          <span className="text-gray-900 font-medium">Payment Status:</span>
+                          <Badge className={
+                            paymentInfo.paymentStatus === 'completed' 
+                              ? 'bg-green-100 text-green-800'
+                              : paymentInfo.paymentStatus === 'pending'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }>
+                            {paymentInfo.paymentStatus === 'completed' ? 'Completed' : paymentInfo.paymentStatus === 'pending' ? 'Pending' : 'Processing'}
+                          </Badge>
+                        </div>
+                        {paymentInfo.paidToDoctorAt && (
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-600">Paid on:</span>
+                            <span className="text-gray-900">{new Date(paymentInfo.paidToDoctorAt).toLocaleString()}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                      <p className="text-sm text-yellow-800">
+                        Payment record is being created. Please refresh to see payment details.
+                      </p>
                     </div>
                   )}
                 </div>

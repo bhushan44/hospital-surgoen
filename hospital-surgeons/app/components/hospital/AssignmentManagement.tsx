@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Filter, Clock, CheckCircle, XCircle, AlertCircle, MessageSquare, Phone, Calendar as CalendarIcon, Loader2, X } from 'lucide-react';
+import { Search, Filter, Clock, CheckCircle, XCircle, AlertCircle, MessageSquare, Phone, Calendar as CalendarIcon, Loader2, X, DollarSign } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -56,6 +56,8 @@ export function AssignmentManagement() {
   const [tempSelectedDate, setTempSelectedDate] = useState<string>('');
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [usage, setUsage] = useState<any>(null);
+  const [paymentInfo, setPaymentInfo] = useState<any>(null);
+  const [completingPayment, setCompletingPayment] = useState(false);
 
   useEffect(() => {
     fetchHospitalProfile();
@@ -242,9 +244,53 @@ export function AssignmentManagement() {
     );
   };
 
-  const handleViewDetails = (assignment: any) => {
+  const handleViewDetails = async (assignment: any) => {
     setSelectedAssignment(assignment);
     setShowDetails(true);
+    
+    // Fetch payment info if assignment is completed
+    if (assignment.status === 'completed') {
+      try {
+        const response = await apiClient.get(`/api/assignments/${assignment.id}/payment`);
+        if (response.data.success && response.data.data) {
+          setPaymentInfo(response.data.data);
+        } else {
+          setPaymentInfo(null);
+        }
+      } catch (error) {
+        console.error('Error fetching payment info:', error);
+        setPaymentInfo(null);
+      }
+    } else {
+      setPaymentInfo(null);
+    }
+  };
+
+  const handleCompletePayment = async () => {
+    if (!selectedAssignment || completingPayment) return;
+
+    try {
+      setCompletingPayment(true);
+      const response = await apiClient.patch(`/api/assignments/${selectedAssignment.id}/payment`);
+      
+      if (response.data.success) {
+        // Refresh payment info
+        const paymentResponse = await apiClient.get(`/api/assignments/${selectedAssignment.id}/payment`);
+        if (paymentResponse.data.success && paymentResponse.data.data) {
+          setPaymentInfo(paymentResponse.data.data);
+        }
+        // Refresh assignments list
+        fetchAssignments();
+        alert('Payment marked as completed successfully');
+      } else {
+        alert(response.data.message || 'Failed to complete payment');
+      }
+    } catch (error: any) {
+      console.error('Error completing payment:', error);
+      alert(error.response?.data?.message || 'Failed to complete payment');
+    } finally {
+      setCompletingPayment(false);
+    }
   };
 
   const handleCancelAssignment = (assignment: any) => {
@@ -691,12 +737,67 @@ export function AssignmentManagement() {
                 </div>
               )}
 
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <span className="text-blue-900">Consultation Fee</span>
-                  <span className="text-blue-900">₹{selectedAssignment.fee}</span>
+              {/* Payment Information for Completed Assignments */}
+              {selectedAssignment.status === 'completed' && (
+                <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                  <h3 className="text-gray-900 mb-3 font-medium flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" />
+                    Payment Information
+                  </h3>
+                  {paymentInfo ? (
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Consultation Fee:</span>
+                        <span className="font-medium text-gray-900">₹{parseFloat(paymentInfo.consultationFee?.toString() || '0')}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Doctor Payout:</span>
+                        <span className="font-medium text-gray-900">₹{parseFloat(paymentInfo.doctorPayout?.toString() || '0')}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t border-green-200">
+                        <span className="text-gray-900 font-medium">Payment Status:</span>
+                        <Badge className={
+                          paymentInfo.paymentStatus === 'completed' 
+                            ? 'bg-green-100 text-green-800'
+                            : paymentInfo.paymentStatus === 'pending'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-blue-100 text-blue-800'
+                        }>
+                          {paymentInfo.paymentStatus === 'completed' ? 'Completed' : paymentInfo.paymentStatus === 'pending' ? 'Pending' : 'Processing'}
+                        </Badge>
+                      </div>
+                      {paymentInfo.paidToDoctorAt && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-600">Paid to Doctor:</span>
+                          <span className="text-gray-900">{new Date(paymentInfo.paidToDoctorAt).toLocaleString()}</span>
+                        </div>
+                      )}
+                      {paymentInfo.paymentStatus === 'pending' && (
+                        <Button 
+                          onClick={handleCompletePayment}
+                          disabled={completingPayment}
+                          className="w-full mt-3 bg-green-600 hover:bg-green-700 text-white"
+                        >
+                          {completingPayment ? 'Completing...' : 'Mark Payment as Completed'}
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-600">
+                      <p>Payment record is being created...</p>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
+
+              {selectedAssignment.status !== 'completed' && (
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-blue-900">Consultation Fee</span>
+                    <span className="text-blue-900">₹{selectedAssignment.fee}</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

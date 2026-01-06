@@ -243,6 +243,43 @@ async function patchHandler(
       .where(eq(assignments.id, assignmentId))
       .returning();
 
+    // Automatically create payment record when assignment is completed
+    if (status === 'completed' && assignmentData.consultationFee) {
+      const { assignmentPayments } = await import('@/src/db/drizzle/migrations/schema');
+      
+      // Check if payment already exists (prevent duplicates)
+      const existingPayment = await db
+        .select()
+        .from(assignmentPayments)
+        .where(eq(assignmentPayments.assignmentId, assignmentId))
+        .limit(1);
+
+      if (existingPayment.length === 0) {
+        // Create payment record (no commission: doctorPayout = consultationFee)
+        const consultationFee = parseFloat(assignmentData.consultationFee.toString());
+        const platformCommission = 0; // No commission for now
+        const doctorPayout = consultationFee; // Full amount to doctor
+        
+        try {
+          await db.insert(assignmentPayments).values({
+            assignmentId: assignmentId,
+            hospitalId: assignmentData.hospitalId,
+            doctorId: assignmentData.doctorId,
+            consultationFee: consultationFee.toString(),
+            platformCommission: platformCommission.toString(),
+            doctorPayout: doctorPayout.toString(),
+            paymentStatus: 'pending',
+          });
+        } catch (error: any) {
+          // Ignore duplicate key errors (payment already exists)
+          // This can happen if the assignment was completed multiple times
+          if (error?.code !== '23505') { // PostgreSQL unique violation
+            throw error;
+          }
+        }
+      }
+    }
+
     // Release or delete availability slot for declined or cancelled assignments
     if ((status === 'declined' || status === 'cancelled') && assignmentData.availabilitySlotId) {
       // Check if this is a sub-slot (has parentSlotId) or a parent slot

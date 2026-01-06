@@ -190,7 +190,7 @@ export default function SetAvailabilityPage() {
   };
 
   const handleConfirmGenerate = async (startDate: string, endDate: string) => {
-    if (!doctorId) return;
+    if (!doctorId || generating) return; // Prevent double-clicks
     setGenerationMessage(null);
     try {
       setGenerating(true);
@@ -224,13 +224,13 @@ export default function SetAvailabilityPage() {
   };
 
   const handleGenerateFromTemplate = (templateId: string, templateName: string) => {
-    if (!doctorId || generatingTemplateId === templateId) return;
+    if (!doctorId || generatingTemplateId === templateId || generating) return;
     setSelectedTemplate({ id: templateId, name: templateName });
     setShowTemplateGenerateModal(true);
   };
 
   const handleConfirmTemplateGenerate = async (startDate: string, endDate: string) => {
-    if (!doctorId || !selectedTemplate) return;
+    if (!doctorId || !selectedTemplate || generatingTemplateId === selectedTemplate.id || generating) return; // Prevent double-clicks
     try {
       setGeneratingTemplateId(selectedTemplate.id);
       setShowTemplateGenerateModal(false);

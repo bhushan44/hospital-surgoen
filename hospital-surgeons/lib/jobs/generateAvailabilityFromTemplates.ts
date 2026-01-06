@@ -182,9 +182,21 @@ export async function generateAvailabilityFromTemplates(
         parentSlotId: null, // Parent slots have NULL parentSlotId
       };
 
-      await doctorsRepository.createAvailability(availabilityPayload, template.doctorId);
-      templateSummary.created += 1;
-      summary.slotsCreated += 1;
+      try {
+        await doctorsRepository.createAvailability(availabilityPayload, template.doctorId);
+        templateSummary.created += 1;
+        summary.slotsCreated += 1;
+      } catch (error: any) {
+        // Handle race condition: if slot was created by another request between check and insert
+        // PostgreSQL unique constraint violation (23505) or other duplicate errors
+        if (error?.code === '23505' || error?.message?.includes('duplicate') || error?.message?.includes('unique')) {
+          // Slot already exists (likely created by concurrent request), skip it
+          templateSummary.skippedExisting += 1;
+        } else {
+          // Re-throw other errors
+          throw error;
+        }
+      }
     }
 
     summary.templates.push(templateSummary);

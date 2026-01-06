@@ -3,8 +3,8 @@ import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
 import { getDb } from '@/lib/db';
-import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, sql, count } from 'drizzle-orm';
+import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, doctorAvailability } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, sql, count, isNull, gte } from 'drizzle-orm';
 import { getMaxAssignmentsForDoctor } from '@/lib/config/subscription-limits';
 
 /**
@@ -119,15 +119,36 @@ async function getHandler(req: NextRequest) {
       );
     const todayAssignments = Number(todayAssignmentsResult[0]?.count || 0);
 
-    // Get upcoming availability
-    const availabilityResult = await doctorsService.getDoctorAvailability(doctorId);
-    const availability = availabilityResult.success ? availabilityResult.data : [];
+    // Get upcoming availability - count only parent slots with available time
     const todayStr = new Date().toISOString().split('T')[0];
-    const upcomingSlots = Array.isArray(availability) 
-      ? availability.filter((slot: any) => 
-          slot.slotDate >= todayStr && slot.status === 'available'
-        ).length
-      : 0;
+    
+    // Get only parent slots (parentSlotId IS NULL) that are upcoming
+    const parentSlotsResult = await db
+      .select()
+      .from(doctorAvailability)
+      .where(
+        and(
+          eq(doctorAvailability.doctorId, doctorId),
+          isNull(doctorAvailability.parentSlotId), // Only parent slots
+          gte(doctorAvailability.slotDate, todayStr), // Upcoming dates
+          eq(doctorAvailability.status, 'available')
+        )
+      );
+    
+    // Count parent slots that have at least one available time range
+    // (i.e., not fully booked)
+    const { DoctorsRepository } = await import('@/lib/repositories/doctors.repository');
+    const doctorsRepository = new DoctorsRepository();
+    
+    let upcomingSlots = 0;
+    for (const parentSlot of parentSlotsResult) {
+      // Check if this parent slot has any available time
+      const availableRanges = await doctorsRepository.getAvailableRanges(parentSlot.id);
+      if (availableRanges.length > 0) {
+        // This parent slot has at least one available time range
+        upcomingSlots++;
+      }
+    }
 
     // Get earnings (will be fetched separately by earnings endpoint)
     const totalEarnings = 0;

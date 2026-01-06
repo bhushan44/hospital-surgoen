@@ -457,6 +457,7 @@ export class DoctorsRepository {
     let condition = and(
       eq(doctorAvailability.doctorId, doctorId),
       eq(doctorAvailability.slotDate, slotDate),
+      isNull(doctorAvailability.parentSlotId), // Only check parent slots (not sub-slots)
       lt(doctorAvailability.startTime, endTime),
       gt(doctorAvailability.endTime, startTime)
     );
@@ -490,7 +491,8 @@ export class DoctorsRepository {
           eq(doctorAvailability.slotDate, slotDate),
           eq(doctorAvailability.startTime, startTime),
           eq(doctorAvailability.endTime, endTime),
-          eq(doctorAvailability.templateId, templateId)
+          eq(doctorAvailability.templateId, templateId),
+          isNull(doctorAvailability.parentSlotId) // Only check parent slots (not sub-slots)
         )
       )
       .limit(1);
