@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { subscriptionPlans, doctorPlanFeatures, patients, patientConsents, files, doctors, users, paymentTransactions, planPricing, subscriptions, doctorCredentials, doctorProfilePhotos, hospitals, doctorPreferences, doctorAvailability, doctorAvailabilityHistory, hospitalPreferences, hospitalDocuments, doctorHospitalAffiliations, availabilityTemplates, hospitalUsageTracking, hospitalDepartments, specialties, assignments, enumPriority, enumStatus, doctorAssignmentUsage, auditLogs, orders, assignmentRatings, assignmentPayments, hospitalCancellationFlags, notifications, enumChannel, analyticsEvents, supportTickets, userDevices, notificationPreferences, hospitalPlanFeatures, notificationRecipients, doctorSpecialties, webhookEvents, doctorLeaves } from "./schema";
+import { subscriptionPlans, doctorPlanFeatures, patients, patientConsents, users, otps, files, doctors, paymentTransactions, planPricing, subscriptions, doctorCredentials, doctorProfilePhotos, hospitals, doctorPreferences, doctorAvailability, doctorAvailabilityHistory, hospitalPreferences, hospitalDocuments, doctorHospitalAffiliations, availabilityTemplates, hospitalUsageTracking, hospitalDepartments, specialties, assignments, enumPriority, enumStatus, doctorAssignmentUsage, auditLogs, orders, assignmentRatings, assignmentPayments, hospitalCancellationFlags, notifications, enumChannel, analyticsEvents, supportTickets, userDevices, notificationPreferences, hospitalPlanFeatures, notificationRecipients, doctorSpecialties, webhookEvents, doctorLeaves } from "./schema";
 
 export const doctorPlanFeaturesRelations = relations(doctorPlanFeatures, ({one}) => ({
 	subscriptionPlan: one(subscriptionPlans, {
@@ -38,6 +38,34 @@ export const patientsRelations = relations(patients, ({one, many}) => ({
 	assignments: many(assignments),
 }));
 
+export const otpsRelations = relations(otps, ({one}) => ({
+	user: one(users, {
+		fields: [otps.userId],
+		references: [users.id]
+	}),
+}));
+
+export const usersRelations = relations(users, ({many}) => ({
+	otps: many(otps),
+	doctors: many(doctors),
+	paymentTransactions: many(paymentTransactions),
+	hospitals: many(hospitals),
+	doctorAvailabilityHistories: many(doctorAvailabilityHistory),
+	auditLogs: many(auditLogs),
+	orders: many(orders),
+	analyticsEvents: many(analyticsEvents),
+	supportTickets_assignedTo: many(supportTickets, {
+		relationName: "supportTickets_assignedTo_users_id"
+	}),
+	supportTickets_userId: many(supportTickets, {
+		relationName: "supportTickets_userId_users_id"
+	}),
+	userDevices: many(userDevices),
+	notificationPreferences: many(notificationPreferences),
+	subscriptions: many(subscriptions),
+	notificationRecipients: many(notificationRecipients),
+}));
+
 export const doctorsRelations = relations(doctors, ({one, many}) => ({
 	file: one(files, {
 		fields: [doctors.profilePhotoId],
@@ -67,26 +95,6 @@ export const filesRelations = relations(files, ({many}) => ({
 	doctorProfilePhotos: many(doctorProfilePhotos),
 	hospitals: many(hospitals),
 	hospitalDocuments: many(hospitalDocuments),
-}));
-
-export const usersRelations = relations(users, ({many}) => ({
-	doctors: many(doctors),
-	paymentTransactions: many(paymentTransactions),
-	hospitals: many(hospitals),
-	doctorAvailabilityHistories: many(doctorAvailabilityHistory),
-	auditLogs: many(auditLogs),
-	orders: many(orders),
-	analyticsEvents: many(analyticsEvents),
-	supportTickets_assignedTo: many(supportTickets, {
-		relationName: "supportTickets_assignedTo_users_id"
-	}),
-	supportTickets_userId: many(supportTickets, {
-		relationName: "supportTickets_userId_users_id"
-	}),
-	userDevices: many(userDevices),
-	notificationPreferences: many(notificationPreferences),
-	subscriptions: many(subscriptions),
-	notificationRecipients: many(notificationRecipients),
 }));
 
 export const paymentTransactionsRelations = relations(paymentTransactions, ({one, many}) => ({

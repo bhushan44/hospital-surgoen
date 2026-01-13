@@ -382,6 +382,70 @@ export async function POST(
       },
     });
 
+    // Send push notification to doctor about new assignment
+    try {
+      console.log('📬 [ASSIGNMENT CREATE] Attempting to send push notification to doctor');
+      console.log(`📬 [ASSIGNMENT CREATE] Assignment ID: ${newAssignment[0].id}`);
+      console.log(`📬 [ASSIGNMENT CREATE] Doctor ID: ${doctorId}`);
+      
+      // Get doctor's userId
+      const doctor = await db
+        .select({ userId: doctors.userId })
+        .from(doctors)
+        .where(eq(doctors.id, doctorId))
+        .limit(1);
+
+      if (doctor.length > 0 && doctor[0].userId) {
+        console.log(`📬 [ASSIGNMENT CREATE] Doctor User ID: ${doctor[0].userId}`);
+        
+        const { NotificationsService } = await import('@/lib/services/notifications.service');
+        const notificationsService = new NotificationsService();
+
+        const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || 'http://localhost:3000';
+        const deepLink = 'hospitalapp://view_assignment';
+
+        console.log(`📬 [ASSIGNMENT CREATE] Sending notification: New Assignment Request`);
+        console.log(`📬 [ASSIGNMENT CREATE] Hospital: ${hospitalName}, Patient: ${patientName}`);
+
+        await notificationsService.sendPushNotification(doctor[0].userId, {
+          userId: doctor[0].userId,
+          recipientType: 'user',
+          notificationType: 'booking',
+          title: 'New Assignment Request',
+          message: `You have a new assignment from ${hospitalName} - ${patientName}`,
+          channel: 'push',
+          priority: priority === 'emergency' ? 'urgent' : priority === 'urgent' ? 'high' : 'medium',
+          assignmentId: newAssignment[0].id,
+          payload: {
+            notificationType: 'assignment_created',
+            assignmentId: newAssignment[0].id,
+            hospitalId: hospitalId,
+            hospitalName: hospitalName,
+            doctorId: doctorId,
+            patientId: patientId,
+            patientName: patientName,
+            priority: priority,
+            scheduledTime: startTime || endTime || new Date().toISOString(),
+            consultationFee: consultationFee || null,
+            deepLink: deepLink,
+          },
+        });
+
+        console.log(`✅ [ASSIGNMENT CREATE] Push notification process completed for doctor ${doctorId}`);
+        console.log(`✅ [ASSIGNMENT CREATE] Assignment ID: ${newAssignment[0].id}`);
+      } else {
+        console.warn(`⚠️  [ASSIGNMENT CREATE] Doctor User ID not found for doctor ${doctorId}`);
+        console.warn(`⚠️  [ASSIGNMENT CREATE] Push notification skipped`);
+      }
+    } catch (notificationError) {
+      // Don't fail assignment creation if notification fails
+      console.error('❌ [ASSIGNMENT CREATE] FAILURE: Exception while sending push notification to doctor');
+      console.error(`❌ [ASSIGNMENT CREATE] Assignment ID: ${newAssignment[0].id}`);
+      console.error(`❌ [ASSIGNMENT CREATE] Doctor ID: ${doctorId}`);
+      console.error('❌ [ASSIGNMENT CREATE] Error:', notificationError instanceof Error ? notificationError.message : String(notificationError));
+      console.error('❌ [ASSIGNMENT CREATE] Stack:', notificationError instanceof Error ? notificationError.stack : 'No stack trace');
+    }
+
     return NextResponse.json({
       success: true,
       data: newAssignment[0],

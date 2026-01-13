@@ -216,7 +216,7 @@ export async function GET(
     const whereConditions: any[] = [];
 
     // Only show verified doctors
-    whereConditions.push(sql`d.license_verification_status = 'verified'`);
+    // whereConditions.push(sql`d.license_verification_status = 'verified'`);
 
     // Search text condition - improved to search first name, last name, full name, and specialty
     if (searchText) {

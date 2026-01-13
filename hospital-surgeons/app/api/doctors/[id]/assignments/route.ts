@@ -60,6 +60,10 @@ import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware'
  *                         type: string
  *                       hospital:
  *                         type: string
+ *                       hospitalAddress:
+ *                         type: string
+ *                         nullable: true
+ *                         description: Full address of the hospital
  *                       date:
  *                         type: string
  *                         format: date
@@ -154,6 +158,7 @@ async function getHandler(
         patientCondition: sql<string>`(SELECT medical_condition FROM patients WHERE id = ${assignments.patientId})`,
         // Hospital info
         hospitalName: sql<string>`(SELECT name FROM hospitals WHERE id = ${assignments.hospitalId})`,
+        hospitalAddress: sql<string | null>`(SELECT COALESCE(full_address, address) FROM hospitals WHERE id = ${assignments.hospitalId})`,
         // Slot info
         slotDate: sql<string>`(SELECT slot_date::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
         slotTime: sql<string>`(SELECT start_time::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
@@ -202,6 +207,7 @@ async function getHandler(
         patient: assignment.patientName || 'Unknown',
         condition: assignment.patientCondition || 'N/A',
         hospital: assignment.hospitalName || 'Unknown',
+        hospitalAddress: assignment.hospitalAddress || null,
         date,
         time: formattedTime,
         endTime: endTime ? (() => {

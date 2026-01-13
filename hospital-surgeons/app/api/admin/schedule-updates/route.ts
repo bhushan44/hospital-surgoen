@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
     const offset = (page - 1) * limit;
 
     // Filters
-    const doctorId = searchParams.get('doctorId') || undefined;
-    const slotType = searchParams.get('slotType') || undefined; // 'parent' | 'sub'
+    const doctorSearch = searchParams.get('doctorSearch') || undefined; // Search by doctor name
+    const slotType = searchParams.get('slotType') || undefined; // 'parent' | 'sub' (default: only parent)
     const status = searchParams.get('status') || undefined;
     const startDate = searchParams.get('startDate') || undefined; // Filter by slotDate
     const endDate = searchParams.get('endDate') || undefined;
@@ -23,14 +23,24 @@ export async function GET(req: NextRequest) {
     // Build where conditions
     const conditions: any[] = [];
     
-    if (doctorId) {
-      conditions.push(eq(doctorAvailability.doctorId, doctorId));
+    // Only show parent slots by default (unless explicitly filtering for sub-slots)
+    if (slotType === 'sub') {
+      conditions.push(isNotNull(doctorAvailability.parentSlotId));
+    } else {
+      // Default: only parent slots
+      conditions.push(isNull(doctorAvailability.parentSlotId));
     }
     
-    if (slotType === 'parent') {
-      conditions.push(isNull(doctorAvailability.parentSlotId));
-    } else if (slotType === 'sub') {
-      conditions.push(isNotNull(doctorAvailability.parentSlotId));
+    // Doctor search by name
+    if (doctorSearch) {
+      const searchPattern = `%${doctorSearch}%`;
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM doctors d 
+          WHERE d.id = ${doctorAvailability.doctorId} 
+          AND (d.first_name || ' ' || d.last_name) ILIKE ${searchPattern}
+        )`
+      );
     }
     
     if (status) {

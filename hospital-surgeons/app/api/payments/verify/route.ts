@@ -78,8 +78,8 @@ import { SubscriptionsService } from '@/lib/services/subscriptions.service';
  *                       type: string
  *                       example: "pay_XYZ789abc"
  *       400:
- *         description: Bad request - missing payment details or invalid signature
- *         content:
+ *          description: "Bad request - missing payment details or invalid signature"
+ *          content:
  *           application/json:
  *             schema:
  *               type: object

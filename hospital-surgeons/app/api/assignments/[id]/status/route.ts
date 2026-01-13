@@ -314,6 +314,146 @@ async function patchHandler(
       }
     }
 
+    // Send push notifications for all assignment status changes
+    // Accepted/Declined/Completed: Doctor → Hospital
+    // Cancelled: Notify the other party (Doctor cancels → Hospital, Hospital cancels → Doctor)
+    if (status === 'accepted' || status === 'declined' || status === 'completed' || status === 'cancelled') {
+      try {
+        console.log(`📬 [ASSIGNMENT STATUS] Attempting to send push notification`);
+        console.log(`📬 [ASSIGNMENT STATUS] Assignment ID: ${assignmentId}`);
+        console.log(`📬 [ASSIGNMENT STATUS] New Status: ${status}`);
+        console.log(`📬 [ASSIGNMENT STATUS] Changed By: ${user.userRole}`);
+        
+        const { hospitals, doctors, patients } = await import('@/src/db/drizzle/migrations/schema');
+        const { NotificationsService } = await import('@/lib/services/notifications.service');
+        const notificationsService = new NotificationsService();
+
+        const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || 'http://localhost:3000';
+        const deepLink = 'hospitalapp://view_assignment';
+
+        // Get doctor and patient names
+        const [doctorInfo, patientInfo, hospitalInfo] = await Promise.all([
+          db
+            .select({
+              userId: doctors.userId,
+              firstName: doctors.firstName,
+              lastName: doctors.lastName,
+            })
+            .from(doctors)
+            .where(eq(doctors.id, assignmentData.doctorId))
+            .limit(1),
+          db
+            .select({
+              fullName: patients.fullName,
+            })
+            .from(patients)
+            .where(eq(patients.id, assignmentData.patientId))
+            .limit(1),
+          db
+            .select({
+              userId: hospitals.userId,
+              name: hospitals.name,
+            })
+            .from(hospitals)
+            .where(eq(hospitals.id, assignmentData.hospitalId))
+            .limit(1),
+        ]);
+
+        const doctorName = doctorInfo[0] ? `Dr. ${doctorInfo[0].firstName} ${doctorInfo[0].lastName}` : 'Doctor';
+        const patientName = patientInfo[0]?.fullName || 'Patient';
+        const hospitalName = hospitalInfo[0]?.name || 'Hospital';
+        const doctorUserId = doctorInfo[0]?.userId;
+        const hospitalUserId = hospitalInfo[0]?.userId;
+
+        // Determine recipient and notification content based on status and who changed it
+        let recipientUserId: string | null = null;
+        let notificationTitle = '';
+        let notificationMessage = '';
+        let notificationType = '';
+
+        if (status === 'accepted') {
+          // Doctor accepted → notify hospital
+          recipientUserId = hospitalUserId;
+          notificationTitle = 'Assignment Accepted';
+          notificationMessage = `${doctorName} has accepted the assignment for ${patientName}`;
+          notificationType = 'assignment_accepted';
+        } else if (status === 'declined') {
+          // Doctor declined → notify hospital
+          recipientUserId = hospitalUserId;
+          notificationTitle = 'Assignment Declined';
+          notificationMessage = `${doctorName} has declined the assignment for ${patientName}`;
+          notificationType = 'assignment_declined';
+        } else if (status === 'completed') {
+          // Doctor completed → notify hospital
+          recipientUserId = hospitalUserId;
+          notificationTitle = 'Assignment Completed';
+          notificationMessage = `${doctorName} has completed the assignment for ${patientName}`;
+          notificationType = 'assignment_completed';
+        } else if (status === 'cancelled') {
+          // Cancelled → notify the other party
+          if (user.userRole === 'doctor') {
+            // Doctor cancelled → notify hospital
+            recipientUserId = hospitalUserId;
+            notificationTitle = 'Assignment Cancelled';
+            notificationMessage = `${doctorName} has cancelled the assignment for ${patientName}`;
+            notificationType = 'assignment_cancelled';
+          } else if (user.userRole === 'hospital') {
+            // Hospital cancelled → notify doctor
+            recipientUserId = doctorUserId;
+            notificationTitle = 'Assignment Cancelled';
+            notificationMessage = `${hospitalName} has cancelled the assignment for ${patientName}`;
+            notificationType = 'assignment_cancelled';
+          }
+        }
+
+        // Send notification if we have a recipient
+        if (recipientUserId) {
+          console.log(`📬 [ASSIGNMENT STATUS] Sending notification to ${user.userRole === 'doctor' && status === 'cancelled' ? 'hospital' : user.userRole === 'hospital' && status === 'cancelled' ? 'doctor' : 'hospital'}`);
+          console.log(`📬 [ASSIGNMENT STATUS] Recipient User ID: ${recipientUserId}`);
+          console.log(`📬 [ASSIGNMENT STATUS] Notification Title: ${notificationTitle}`);
+          console.log(`📬 [ASSIGNMENT STATUS] Notification Message: ${notificationMessage}`);
+
+          await notificationsService.sendPushNotification(recipientUserId, {
+            userId: recipientUserId,
+            recipientType: 'user',
+            notificationType: 'booking',
+            title: notificationTitle,
+            message: notificationMessage,
+            channel: 'push',
+            priority: status === 'completed' || status === 'accepted' ? 'high' : 'medium',
+            assignmentId: assignmentId,
+            payload: {
+              notificationType: notificationType,
+              assignmentId: assignmentId,
+              hospitalId: assignmentData.hospitalId,
+              hospitalName: hospitalName,
+              doctorId: assignmentData.doctorId,
+              doctorName: doctorName,
+              patientId: assignmentData.patientId,
+              patientName: patientName,
+              status: status,
+              cancellationReason: (status === 'declined' || status === 'cancelled') ? cancellationReason : undefined,
+              deepLink: deepLink,
+            },
+          });
+
+          console.log(`✅ [ASSIGNMENT STATUS] Push notification process completed`);
+          console.log(`✅ [ASSIGNMENT STATUS] Assignment ID: ${assignmentId}, Status: ${status}`);
+        } else {
+          console.warn(`⚠️  [ASSIGNMENT STATUS] Recipient User ID not found`);
+          console.warn(`⚠️  [ASSIGNMENT STATUS] Push notification skipped`);
+        }
+      } catch (notificationError) {
+        // Don't fail status update if notification fails
+        console.error('❌ [ASSIGNMENT STATUS] FAILURE: Exception while sending push notification');
+        console.error(`❌ [ASSIGNMENT STATUS] Assignment ID: ${assignmentId}`);
+        console.error(`❌ [ASSIGNMENT STATUS] Status: ${status}`);
+        console.error(`❌ [ASSIGNMENT STATUS] Changed By: ${user.userRole}`);
+        console.error('❌ [ASSIGNMENT STATUS] Error:', notificationError instanceof Error ? notificationError.message : String(notificationError));
+        console.error('❌ [ASSIGNMENT STATUS] Stack:', notificationError instanceof Error ? notificationError.stack : 'No stack trace');
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: updatedAssignment[0],

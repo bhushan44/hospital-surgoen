@@ -53,7 +53,7 @@ const CRON_SECRET = process.env.CRON_SECRET;
  *               days:
  *                 type: number
  *                 default: 7
- *                 description: Optional - Number of days to generate slots for (default: 7). Only used if startDate/endDate not provided.
+ *                 description: "Optional - Number of days to generate slots for (default: 7). Only used if startDate/endDate not provided."
  *     responses:
  *       200:
  *         description: Availability slots generated successfully

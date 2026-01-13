@@ -5,7 +5,7 @@ import { PageHeader } from '../PageHeader';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Loader2, Eye, Filter } from 'lucide-react';
+import { Loader2, Eye, Filter, Search } from 'lucide-react';
 import { StatusBadge } from '../StatusBadge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { toast } from 'sonner';
@@ -58,11 +58,6 @@ interface ParentSlotDetail {
   totalSubSlots: number;
 }
 
-interface Doctor {
-  id: string;
-  name: string;
-}
-
 export function ScheduleUpdates() {
   const [updates, setUpdates] = useState<ScheduleUpdate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,23 +65,18 @@ export function ScheduleUpdates() {
   const [totalPages, setTotalPages] = useState(1);
   
   // Filters
-  const [doctorId, setDoctorId] = useState<string>('all');
-  const [slotType, setSlotType] = useState<string>('all');
+  const [doctorSearch, setDoctorSearch] = useState<string>('');
   const [status, setStatus] = useState<string>('all');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   
   // Applied filters (for display)
   const [appliedFilters, setAppliedFilters] = useState({
-    doctorId: 'all',
-    slotType: 'all',
+    doctorSearch: '',
     status: 'all',
     startDate: '',
     endDate: '',
   });
-  
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [loadingDoctors, setLoadingDoctors] = useState(true);
   
   // Modal state
   const [selectedParentSlotId, setSelectedParentSlotId] = useState<string | null>(null);
@@ -95,27 +85,8 @@ export function ScheduleUpdates() {
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    fetchDoctors();
-  }, []);
-
-  useEffect(() => {
     fetchUpdates();
   }, [page, appliedFilters]);
-
-  const fetchDoctors = async () => {
-    try {
-      setLoadingDoctors(true);
-      const res = await fetch('/api/admin/doctors/list');
-      const data = await res.json();
-      if (data.success) {
-        setDoctors(data.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching doctors:', error);
-    } finally {
-      setLoadingDoctors(false);
-    }
-  };
 
   const fetchUpdates = async () => {
     try {
@@ -125,11 +96,8 @@ export function ScheduleUpdates() {
         limit: '20',
       });
 
-      if (appliedFilters.doctorId !== 'all') {
-        params.append('doctorId', appliedFilters.doctorId);
-      }
-      if (appliedFilters.slotType !== 'all') {
-        params.append('slotType', appliedFilters.slotType);
+      if (appliedFilters.doctorSearch) {
+        params.append('doctorSearch', appliedFilters.doctorSearch);
       }
       if (appliedFilters.status !== 'all') {
         params.append('status', appliedFilters.status);
@@ -160,8 +128,7 @@ export function ScheduleUpdates() {
 
   const handleApplyFilters = () => {
     setAppliedFilters({
-      doctorId,
-      slotType,
+      doctorSearch,
       status,
       startDate,
       endDate,
@@ -170,14 +137,12 @@ export function ScheduleUpdates() {
   };
 
   const handleClearFilters = () => {
-    setDoctorId('all');
-    setSlotType('all');
+    setDoctorSearch('');
     setStatus('all');
     setStartDate('');
     setEndDate('');
     setAppliedFilters({
-      doctorId: 'all',
-      slotType: 'all',
+      doctorSearch: '',
       status: 'all',
       startDate: '',
       endDate: '',
@@ -249,38 +214,25 @@ export function ScheduleUpdates() {
             <h3 className="text-lg font-semibold text-slate-900">Filters</h3>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {/* Doctor Filter */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Doctor Search */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Doctor</label>
-              <Select value={doctorId} onValueChange={setDoctorId} disabled={loadingDoctors}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Doctors" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Doctors</SelectItem>
-                  {doctors.map((doctor) => (
-                    <SelectItem key={doctor.id} value={doctor.id}>
-                      {doctor.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Slot Type Filter */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Slot Type</label>
-              <Select value={slotType} onValueChange={setSlotType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="parent">Parent Slots</SelectItem>
-                  <SelectItem value="sub">Sub-slots</SelectItem>
-                </SelectContent>
-              </Select>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Doctor Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  type="text"
+                  placeholder="Search by doctor name..."
+                  value={doctorSearch}
+                  onChange={(e) => setDoctorSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleApplyFilters();
+                    }
+                  }}
+                  className="pl-10"
+                />
+              </div>
             </div>
 
             {/* Status Filter */}
@@ -349,12 +301,9 @@ export function ScheduleUpdates() {
                   <tr>
                     <th className="px-6 py-3 text-left text-slate-600">Updated At</th>
                     <th className="px-6 py-3 text-left text-slate-600">Doctor</th>
-                    <th className="px-6 py-3 text-left text-slate-600">Type</th>
                     <th className="px-6 py-3 text-left text-slate-600">Date</th>
                     <th className="px-6 py-3 text-left text-slate-600">Time Range</th>
                     <th className="px-6 py-3 text-left text-slate-600">Status</th>
-                    <th className="px-6 py-3 text-left text-slate-600">Hospital</th>
-                    <th className="px-6 py-3 text-left text-slate-600">Assignment</th>
                     <th className="px-6 py-3 text-left text-slate-600">Source</th>
                     <th className="px-6 py-3 text-left text-slate-600">Actions</th>
                   </tr>
@@ -362,7 +311,7 @@ export function ScheduleUpdates() {
                 <tbody className="divide-y divide-slate-200">
                   {updates.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-6 py-12 text-center text-slate-500">
+                      <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
                         No schedule updates found
                       </td>
                     </tr>
@@ -373,15 +322,6 @@ export function ScheduleUpdates() {
                           {formatDateTime(update.updatedAt)}
                         </td>
                         <td className="px-6 py-4 text-slate-900">{update.doctorName}</td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            update.slotType === 'parent' 
-                              ? 'bg-blue-100 text-blue-700' 
-                              : 'bg-purple-100 text-purple-700'
-                          }`}>
-                            {update.slotType === 'parent' ? 'Parent' : 'Sub-slot'}
-                          </span>
-                        </td>
                         <td className="px-6 py-4 text-slate-600">{formatDate(update.slotDate)}</td>
                         <td className="px-6 py-4 text-slate-600">
                           {formatTime(update.startTime)} - {formatTime(update.endTime)}
@@ -389,36 +329,19 @@ export function ScheduleUpdates() {
                         <td className="px-6 py-4">
                           <StatusBadge status={update.status} />
                         </td>
-                        <td className="px-6 py-4 text-slate-600">
-                          {update.hospitalName || '-'}
-                        </td>
-                        <td className="px-6 py-4">
-                          {update.assignmentId ? (
-                            <Link 
-                              href={`/admin/assignments?search=${update.assignmentId}`}
-                              className="text-teal-600 hover:text-teal-700 underline text-sm"
-                            >
-                              {update.assignmentId.substring(0, 8)}...
-                            </Link>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
                         <td className="px-6 py-4 text-slate-600 text-sm">
                           {update.isManual ? 'Manual' : 'Template'}
                         </td>
                         <td className="px-6 py-4">
-                          {update.slotType === 'parent' && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleViewParentSlot(update.id)}
-                              className="text-teal-600 hover:text-teal-700"
-                            >
-                              <Eye className="w-4 h-4 mr-1" />
-                              View
-                            </Button>
-                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewParentSlot(update.id)}
+                            className="text-teal-600 hover:text-teal-700"
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            View Sub-slots
+                          </Button>
                         </td>
                       </tr>
                     ))

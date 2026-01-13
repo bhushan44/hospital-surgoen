@@ -1,4 +1,4 @@
-import { pgTable, foreignKey, uuid, integer, text, check, boolean, timestamp, index, unique, varchar, bigint, numeric, type AnyPgColumn, json, time, date, jsonb, pgView } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, uuid, integer, text, check, boolean, timestamp, index, varchar, unique, bigint, numeric, type AnyPgColumn, json, time, date, jsonb, pgView } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -34,6 +34,28 @@ export const patientConsents = pgTable("patient_consents", {
 			name: "patient_consents_patient_id_fkey"
 		}).onDelete("cascade"),
 	check("patient_consents_consent_type_check", sql`consent_type = ANY (ARRAY['treatment'::text, 'data_sharing'::text, 'research'::text, 'photography'::text, 'other'::text])`),
+]);
+
+export const otps = pgTable("otps", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	email: varchar({ length: 255 }).notNull(),
+	otpCode: varchar("otp_code", { length: 6 }).notNull(),
+	otpType: varchar("otp_type", { length: 20 }).default('email_verification').notNull(),
+	isUsed: boolean("is_used").default(false).notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	verifiedAt: timestamp("verified_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("idx_otps_code").using("btree", table.otpCode.asc().nullsLast().op("text_ops")),
+	index("idx_otps_email").using("btree", table.email.asc().nullsLast().op("text_ops")),
+	index("idx_otps_expires_at").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
+	index("idx_otps_user_id").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "otps_user_id_fkey"
+		}).onDelete("cascade"),
 ]);
 
 export const users = pgTable("users", {
@@ -341,7 +363,7 @@ export const hospitalPreferences = pgTable("hospital_preferences", {
 	preferAffiliatedOnly: boolean("prefer_affiliated_only").default(false),
 	preferredDoctorIds: text("preferred_doctor_ids").array(),
 	blockedDoctorIds: text("blocked_doctor_ids").array(),
-	assignmentCancellationNoticeDays: integer("assignment_cancellation_notice_days").default(1), // Nullable, defaults to 1 day
+	assignmentCancellationNoticeDays: integer("assignment_cancellation_notice_days").default(1),
 }, (table) => [
 	foreignKey({
 			columns: [table.hospitalId],

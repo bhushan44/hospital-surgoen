@@ -108,6 +108,16 @@ export class UsersRepository {
       .returning();
   }
 
+  async updatePassword(id: string, passwordHash: string) {
+    return await this.db
+      .update(users)
+      .set({
+        passwordHash: passwordHash,
+      })
+      .where(eq(users.id, id))
+      .returning();
+  }
+
   async getUserById(id: string) {
     const user = await this.db
       .select()
