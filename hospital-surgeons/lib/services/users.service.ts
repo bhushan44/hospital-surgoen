@@ -356,7 +356,10 @@ export class UsersService {
       console.log('📧 [USERS SERVICE] Reset token generated (length):', resetToken.length);
 
       // Create reset password URL (link that will trigger OTP send)
-      const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || 'http://localhost:3000';
+      const baseUrl = process.env.FRONTEND_URL;
+      if (!baseUrl) {
+        throw new Error('FRONTEND_URL environment variable is not set');
+      }
       const resetPasswordUrl = `${baseUrl}/reset-password-otp?token=${resetToken}`;
       console.log('📧 [USERS SERVICE] Reset password URL:', resetPasswordUrl);
 
@@ -587,7 +590,10 @@ export class UsersService {
       // Send OTP via email
       try {
         const currentYear = new Date().getFullYear();
-        const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || 'http://localhost:3000';
+        const baseUrl = process.env.FRONTEND_URL;
+        if (!baseUrl) {
+          throw new Error('FRONTEND_URL environment variable is not set');
+        }
         const resetPasswordUrl = `${baseUrl}/reset-password`;
         const mailServiceType = (process.env.MAIL_SERVICE_TYPE || 'SENDGRID').toUpperCase().trim();
         
@@ -867,7 +873,10 @@ export class UsersService {
       // Send OTP via email
       try {
         const currentYear = new Date().getFullYear();
-        const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || 'http://localhost:3000';
+        const baseUrl = process.env.FRONTEND_URL;
+        if (!baseUrl) {
+          throw new Error('FRONTEND_URL environment variable is not set');
+        }
         const resetPasswordUrl = `${baseUrl}/reset-password-otp`;
         const mailServiceType = (process.env.MAIL_SERVICE_TYPE || 'SENDGRID').toUpperCase().trim();
         

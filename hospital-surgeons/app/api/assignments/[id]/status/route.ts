@@ -328,7 +328,10 @@ async function patchHandler(
         const { NotificationsService } = await import('@/lib/services/notifications.service');
         const notificationsService = new NotificationsService();
 
-        const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || 'http://localhost:3000';
+        const baseUrl = process.env.FRONTEND_URL;
+        if (!baseUrl) {
+          throw new Error('FRONTEND_URL environment variable is not set');
+        }
         const deepLink = 'hospitalapp://view_assignment';
 
         // Get doctor and patient names

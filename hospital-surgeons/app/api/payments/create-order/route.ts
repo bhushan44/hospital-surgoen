@@ -249,8 +249,8 @@ async function postHandler(req: AuthenticatedRequest) {
       amount: amount,
       currency: finalCurrency,
       planId: planId,
-      successUrl: `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/checkout/success`,
-      cancelUrl: `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/checkout`,
+      successUrl: `${process.env.FRONTEND_URL}/checkout/success`,
+      cancelUrl: `${process.env.FRONTEND_URL}/checkout`,
       metadata: {
         orderId: order.id, // Include DB order ID in metadata
         planId,
