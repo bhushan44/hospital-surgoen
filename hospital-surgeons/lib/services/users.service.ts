@@ -3,7 +3,7 @@ import { UsersRepository } from '@/lib/repositories/users.repository';
 import { OtpRepository } from '@/lib/repositories/otp.repository';
 import { signToken } from '@/lib/auth/jwt';
 import { verifyToken } from '@/lib/auth/jwt';
-import { MailService } from '@/lib/services/mail.service';
+import { getMailService } from '@/lib/services/unified-mail.service';
 
 export interface CreateUserDto {
   email: string;
@@ -55,7 +55,7 @@ export interface UpdateUserDto {
 export class UsersService {
   private userRepository = new UsersRepository();
   private otpRepository = new OtpRepository();
-  private mailService = new MailService();
+  private mailService = getMailService();
 
   async create(createUserDto: CreateUserDto, role: 'doctor' | 'hospital' | 'admin' = 'doctor') {
     try {
@@ -363,25 +363,32 @@ export class UsersService {
       // Send password reset email
       try {
         const currentYear = new Date().getFullYear();
-        // Check both template ID env vars (for link-based and OTP-based)
-        const templateId = process.env.SENDGRID_PASSWORD_RESET_TEMPLATE_ID 
-          || process.env.SENDGRID_PASSWORD_RESET_OTP_TEMPLATE_ID 
-          || 'd-password-reset-template-id';
-        const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'no-reply@yourapp.com';
+        const mailServiceType = (process.env.MAIL_SERVICE_TYPE || 'SENDGRID').toUpperCase().trim();
+        
+        // Determine template ID based on mail service type
+        let templateId: string;
+        let fromEmail: string;
+        
+        if (mailServiceType === 'NODEMAILER') {
+          // For Nodemailer, use HTML template file name (without .html extension)
+          templateId = 'password-reset'; // Uses email-templates/password-reset.html
+          // IMPORTANT: For Gmail OAuth2, "from" email MUST match the authorized Gmail account
+          // Don't use no-reply@yourapp.com - use the Gmail account (pavanforu511@gmail.com)
+          fromEmail = process.env.SMTP_USER || process.env.SMTP_EMAIL || 'pavanforu511@gmail.com';
+        } else {
+          // For SendGrid, use template ID from env or fallback
+          templateId = process.env.SENDGRID_PASSWORD_RESET_TEMPLATE_ID 
+            || process.env.SENDGRID_PASSWORD_RESET_OTP_TEMPLATE_ID 
+            || 'd-password-reset-template-id';
+          fromEmail = process.env.SENDGRID_FROM_EMAIL || 'no-reply@yourapp.com';
+        }
         
         console.log('📧 [USERS SERVICE] Attempting to send email...');
-        console.log('📧 [USERS SERVICE] Environment variables check:');
-        console.log('  - SENDGRID_PASSWORD_RESET_TEMPLATE_ID:', process.env.SENDGRID_PASSWORD_RESET_TEMPLATE_ID || 'NOT SET');
-        console.log('  - SENDGRID_PASSWORD_RESET_OTP_TEMPLATE_ID:', process.env.SENDGRID_PASSWORD_RESET_OTP_TEMPLATE_ID || 'NOT SET');
-        console.log('  - SENDGRID_FROM_EMAIL:', process.env.SENDGRID_FROM_EMAIL || 'NOT SET');
-        console.log('📧 [USERS SERVICE] Email config:', {
-          to: normalizedEmail,
-          from: fromEmail,
-          templateId: templateId,
-          subject: 'Password Reset Request',
-        });
-        console.log('⚠️ [USERS SERVICE] WARNING: Using template ID:', templateId);
-        if (templateId === 'd-password-reset-template-id') {
+        console.log('📧 [USERS SERVICE] Mail service type:', mailServiceType);
+        console.log('📧 [USERS SERVICE] Template ID:', templateId);
+        console.log('📧 [USERS SERVICE] From email:', fromEmail);
+        
+        if (mailServiceType === 'SENDGRID' && templateId === 'd-password-reset-template-id') {
           console.error('❌ [USERS SERVICE] ERROR: Using default/fallback template ID. Please set SENDGRID_PASSWORD_RESET_TEMPLATE_ID in .env file!');
         }
 
@@ -582,12 +589,28 @@ export class UsersService {
         const currentYear = new Date().getFullYear();
         const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || 'http://localhost:3000';
         const resetPasswordUrl = `${baseUrl}/reset-password`;
+        const mailServiceType = (process.env.MAIL_SERVICE_TYPE || 'SENDGRID').toUpperCase().trim();
+        
+        // Determine template ID and from email based on mail service type
+        let templateId: string;
+        let fromEmail: string;
+        
+        if (mailServiceType === 'NODEMAILER') {
+          // For Nodemailer, use HTML template file name (without .html extension)
+          templateId = 'password-reset-otp'; // Uses email-templates/password-reset-otp.html
+          // IMPORTANT: For Gmail OAuth2, "from" email MUST match the authorized Gmail account
+          fromEmail = process.env.SMTP_USER || process.env.SMTP_EMAIL || 'pavanforu511@gmail.com';
+        } else {
+          // For SendGrid, use template ID from env or fallback
+          templateId = process.env.SENDGRID_PASSWORD_RESET_OTP_TEMPLATE_ID || 'd-password-reset-otp-template-id';
+          fromEmail = process.env.SENDGRID_FROM_EMAIL || 'no-reply@yourapp.com';
+        }
 
         await this.mailService.sendTemplateMail({
           to: normalizedEmail,
-          from: process.env.SENDGRID_FROM_EMAIL || 'no-reply@yourapp.com',
+          from: fromEmail,
           subject: 'Password Reset - Verification Code',
-          templateId: process.env.SENDGRID_PASSWORD_RESET_OTP_TEMPLATE_ID || 'd-password-reset-otp-template-id', // TODO: Replace with your SendGrid template ID
+          templateId: templateId,
           dynamicData: {
             username: user.email, // Use email as username
             email: normalizedEmail,
@@ -846,12 +869,28 @@ export class UsersService {
         const currentYear = new Date().getFullYear();
         const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || 'http://localhost:3000';
         const resetPasswordUrl = `${baseUrl}/reset-password-otp`;
+        const mailServiceType = (process.env.MAIL_SERVICE_TYPE || 'SENDGRID').toUpperCase().trim();
+        
+        // Determine template ID and from email based on mail service type
+        let templateId: string;
+        let fromEmail: string;
+        
+        if (mailServiceType === 'NODEMAILER') {
+          // For Nodemailer, use HTML template file name (without .html extension)
+          templateId = 'password-reset-otp'; // Uses email-templates/password-reset-otp.html
+          // IMPORTANT: For Gmail OAuth2, "from" email MUST match the authorized Gmail account
+          fromEmail = process.env.SMTP_USER || process.env.SMTP_EMAIL || 'pavanforu511@gmail.com';
+        } else {
+          // For SendGrid, use template ID from env or fallback
+          templateId = process.env.SENDGRID_PASSWORD_RESET_OTP_TEMPLATE_ID || 'd-password-reset-otp-template-id';
+          fromEmail = process.env.SENDGRID_FROM_EMAIL || 'no-reply@yourapp.com';
+        }
 
         await this.mailService.sendTemplateMail({
           to: normalizedEmail,
-          from: process.env.SENDGRID_FROM_EMAIL || 'no-reply@yourapp.com',
+          from: fromEmail,
           subject: 'Password Reset - Verification Code',
-          templateId: process.env.SENDGRID_PASSWORD_RESET_OTP_TEMPLATE_ID || 'd-password-reset-otp-template-id',
+          templateId: templateId,
           dynamicData: {
             username: user.email,
             email: normalizedEmail,
