@@ -89,7 +89,7 @@ import { SubscriptionsService } from '@/lib/services/subscriptions.service';
  *                   example: false
  *                 error:
  *                   type: string
- *                   example: "Missing payment details" or "Invalid payment signature"
+ *                   example: "Missing payment details or invalid payment signature"
  *       404:
  *         description: Associated order not found in database
  *       500:
