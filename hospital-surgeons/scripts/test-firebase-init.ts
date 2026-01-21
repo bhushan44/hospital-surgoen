@@ -121,12 +121,15 @@ async function testFirebaseInit() {
 
   // Check if Firebase is already initialized
   if (admin.apps.length > 0) {
-    console.log('⚠️  [FIREBASE TEST] Firebase app already exists, deleting it first...');
-    try {
-      await admin.apps[0].delete();
-      console.log('✅ [FIREBASE TEST] Deleted existing app\n');
-    } catch (deleteError: any) {
-      console.log('⚠️  [FIREBASE TEST] Could not delete existing app:', deleteError.message);
+    const existingApp = admin.apps[0];
+    if (existingApp) {
+      console.log('⚠️  [FIREBASE TEST] Firebase app already exists, deleting it first...');
+      try {
+        await existingApp.delete();
+        console.log('✅ [FIREBASE TEST] Deleted existing app\n');
+      } catch (deleteError: any) {
+        console.log('⚠️  [FIREBASE TEST] Could not delete existing app:', deleteError.message);
+      }
     }
   }
 
