@@ -2,6 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { HospitalsService } from '@/lib/services/hospitals.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
+/**
+ * @swagger
+ * /api/hospitals/{id}/documents/{documentId}:
+ *   delete:
+ *     summary: Delete a hospital document (Hospital/Admin only)
+ *     tags: [Hospitals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Hospital ID
+ *       - in: path
+ *         name: documentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Document ID
+ *     responses:
+ *       200:
+ *         description: Document deleted successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
 async function deleteHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string; documentId: string }> }) {
   try {
     const params = await context.params;

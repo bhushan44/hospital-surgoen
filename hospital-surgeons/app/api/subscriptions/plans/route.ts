@@ -2,6 +2,54 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SubscriptionsService } from '@/lib/services/subscriptions.service';
 import { withAuth } from '@/lib/auth/middleware';
 
+/**
+ * @swagger
+ * /api/subscriptions/plans:
+ *   get:
+ *     summary: Get all available subscription plans
+ *     tags: [Subscriptions]
+ *     responses:
+ *       200:
+ *         description: List of subscription plans
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *   post:
+ *     summary: Create a new subscription plan (Admin only)
+ *     tags: [Subscriptions]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               tier:
+ *                 type: string
+ *               userRole:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Plan created successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
 async function getHandler(req: NextRequest) {
   try {
     const subscriptionsService = new SubscriptionsService();

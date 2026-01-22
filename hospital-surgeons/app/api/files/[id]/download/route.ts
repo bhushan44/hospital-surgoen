@@ -4,7 +4,32 @@ import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware'
 import { getSupabaseClient } from '@/lib/services/supabase';
 
 /**
- * Download file endpoint - forces browser download instead of opening
+ * @swagger
+ * /api/files/{id}/download:
+ *   get:
+ *     summary: Download a file by ID (forces browser download)
+ *     tags: [Files]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: File ID
+ *     responses:
+ *       200:
+ *         description: File downloaded successfully
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: File not found
+ *       401:
+ *         description: Unauthorized
  */
 async function getHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string }> }) {
   try {

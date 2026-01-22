@@ -10,6 +10,46 @@ import {
 } from '@/src/db/drizzle/migrations/schema';
 import { eq, desc, sql, inArray } from 'drizzle-orm';
 
+/**
+ * @swagger
+ * /api/subscriptions/history:
+ *   get:
+ *     summary: Get subscription history for authenticated user
+ *     tags: [Subscriptions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Items per page
+ *     responses:
+ *       200:
+ *         description: Subscription history retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 pagination:
+ *                   type: object
+ *       401:
+ *         description: Unauthorized
+ */
 async function getHandler(req: AuthenticatedRequest) {
   try {
     const userId = req.user?.userId;

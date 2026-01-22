@@ -4,8 +4,37 @@ import { patients, assignments, hospitals, subscriptions, subscriptionPlans, hos
 import { eq, and, gte, sql, count, desc, or, isNull, ne, asc } from 'drizzle-orm';
 
 /**
- * Get hospital dashboard metrics
- * GET /api/hospitals/[id]/dashboard
+ * @swagger
+ * /api/hospitals/{id}/dashboard:
+ *   get:
+ *     summary: Get hospital dashboard metrics and data
+ *     tags: [Hospitals]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Hospital ID
+ *     responses:
+ *       200:
+ *         description: Dashboard data retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     metrics:
+ *                       type: object
+ *                     todaysSchedule:
+ *                       type: array
+ *                     recentAssignments:
+ *                       type: array
  */
 export async function GET(
   req: NextRequest,

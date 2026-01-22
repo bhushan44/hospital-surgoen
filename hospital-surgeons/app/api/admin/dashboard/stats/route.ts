@@ -10,6 +10,38 @@ import {
 } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, count, sql } from 'drizzle-orm';
 
+/**
+ * @swagger
+ * /api/admin/dashboard/stats:
+ *   get:
+ *     summary: Get admin dashboard statistics (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Dashboard statistics retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     activeDoctors:
+ *                       type: integer
+ *                     activeHospitals:
+ *                       type: integer
+ *                     totalAssignments:
+ *                       type: integer
+ *                     activeSubscriptions:
+ *                       type: integer
+ *       401:
+ *         description: Unauthorized
+ */
 export async function GET(req: NextRequest) {
   try {
     const db = getDb();

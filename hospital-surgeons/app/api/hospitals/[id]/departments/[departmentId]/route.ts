@@ -2,6 +2,71 @@ import { NextRequest, NextResponse } from 'next/server';
 import { HospitalsService } from '@/lib/services/hospitals.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
+/**
+ * @swagger
+ * /api/hospitals/{id}/departments/{departmentId}:
+ *   patch:
+ *     summary: Update a department (Hospital/Admin only)
+ *     tags: [Hospitals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Hospital ID
+ *       - in: path
+ *         name: departmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Department ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Department updated successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *   delete:
+ *     summary: Delete a department (Hospital/Admin only)
+ *     tags: [Hospitals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Hospital ID
+ *       - in: path
+ *         name: departmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Department ID
+ *     responses:
+ *       200:
+ *         description: Department deleted successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
 async function patchHandler(
   req: AuthenticatedRequest,
   context: { params: Promise<{ id: string; departmentId: string }> }

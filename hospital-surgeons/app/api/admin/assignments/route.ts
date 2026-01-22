@@ -3,6 +3,87 @@ import { getDb } from '@/lib/db';
 import { assignments, doctors, hospitals, patients, users, assignmentRatings, assignmentPayments } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, or, like, sql, desc, asc, gte, lte } from 'drizzle-orm';
 
+/**
+ * @swagger
+ * /api/admin/assignments:
+ *   get:
+ *     summary: Get all assignments with filters (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, accepted, declined, completed, cancelled]
+ *       - in: query
+ *         name: priority
+ *         schema:
+ *           type: string
+ *           enum: [low, medium, high, urgent, emergency]
+ *       - in: query
+ *         name: doctorId
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: hospitalId
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           default: requestedAt
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *     responses:
+ *       200:
+ *         description: Assignments retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 pagination:
+ *                   type: object
+ *       401:
+ *         description: Unauthorized
+ */
 export async function GET(req: NextRequest) {
   try {
     const db = getDb();

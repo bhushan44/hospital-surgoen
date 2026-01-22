@@ -2,6 +2,68 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SubscriptionsService } from '@/lib/services/subscriptions.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
+/**
+ * @swagger
+ * /api/subscriptions/{id}:
+ *   get:
+ *     summary: Get a specific subscription by ID
+ *     tags: [Subscriptions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Subscription ID
+ *     responses:
+ *       200:
+ *         description: Subscription retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *       404:
+ *         description: Subscription not found
+ *       401:
+ *         description: Unauthorized
+ *   patch:
+ *     summary: Update a subscription (cancel, renew, etc.)
+ *     tags: [Subscriptions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Subscription ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               autoRenew:
+ *                 type: boolean
+ *               cancellationReason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Subscription updated successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
 async function getHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const params = await context.params;

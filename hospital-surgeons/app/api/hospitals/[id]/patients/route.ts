@@ -5,8 +5,92 @@ import { eq, and, or, like, sql, desc, asc, max } from 'drizzle-orm';
 import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 /**
- * Get all patients for a hospital
- * GET /api/hospitals/[id]/patients
+ * @swagger
+ * /api/hospitals/{id}/patients:
+ *   get:
+ *     summary: Get all patients for a hospital
+ *     tags: [Hospitals]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Hospital ID
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search term for patient name, condition, or specialty
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [assigned, unassigned, declined, pending, completed]
+ *         description: Filter by assignment status
+ *     responses:
+ *       200:
+ *         description: List of patients retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *   post:
+ *     summary: Create a new patient for a hospital
+ *     tags: [Hospitals]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Hospital ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - fullName
+ *               - dateOfBirth
+ *               - gender
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *               dateOfBirth:
+ *                 type: string
+ *                 format: date
+ *               gender:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               emergencyContact:
+ *                 type: string
+ *               address:
+ *                 type: string
+ *               condition:
+ *                 type: string
+ *               roomType:
+ *                 type: string
+ *               costPerDay:
+ *                 type: number
+ *               medicalNotes:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Patient created successfully
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Patient limit reached
  */
 export async function GET(
   req: NextRequest,

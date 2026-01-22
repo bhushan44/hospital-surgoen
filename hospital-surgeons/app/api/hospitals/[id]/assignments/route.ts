@@ -5,8 +5,48 @@ import { eq, and, or, sql, desc, asc } from 'drizzle-orm';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
 /**
- * Get all assignments for a hospital
- * GET /api/hospitals/[id]/assignments
+ * @swagger
+ * /api/hospitals/{id}/assignments:
+ *   get:
+ *     summary: Get all assignments for a hospital
+ *     tags: [Hospitals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Hospital ID
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, accepted, declined, completed, cancelled]
+ *         description: Filter by assignment status
+ *       - in: query
+ *         name: priority
+ *         schema:
+ *           type: string
+ *           enum: [low, medium, high, urgent, emergency]
+ *         description: Filter by priority
+ *     responses:
+ *       200:
+ *         description: Assignments retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       401:
+ *         description: Unauthorized
  */
 async function getHandler(
   req: AuthenticatedRequest,

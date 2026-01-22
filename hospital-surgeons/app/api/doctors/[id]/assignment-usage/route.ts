@@ -4,6 +4,39 @@ import { doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAs
 import { eq, and } from 'drizzle-orm';
 import { getMaxAssignmentsForDoctor, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
 
+/**
+ * @swagger
+ * /api/doctors/{id}/assignment-usage:
+ *   get:
+ *     summary: Get assignment usage statistics for a doctor
+ *     tags: [Doctors]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Doctor ID
+ *     responses:
+ *       200:
+ *         description: Assignment usage retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     used:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *       404:
+ *         description: Doctor not found
+ */
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }

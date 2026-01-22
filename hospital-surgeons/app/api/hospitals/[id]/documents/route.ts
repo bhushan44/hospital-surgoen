@@ -4,6 +4,61 @@ import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware'
 
 const ALLOWED_DOCUMENT_TYPES = ['license', 'accreditation', 'insurance', 'other'];
 
+/**
+ * @swagger
+ * /api/hospitals/{id}/documents:
+ *   get:
+ *     summary: Get all documents for a hospital
+ *     tags: [Hospitals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Hospital ID
+ *     responses:
+ *       200:
+ *         description: Documents retrieved successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *   post:
+ *     summary: Upload a document for a hospital (Hospital/Admin only)
+ *     tags: [Hospitals]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Hospital ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *               documentType:
+ *                 type: string
+ *                 enum: [license, accreditation, insurance, other]
+ *     responses:
+ *       201:
+ *         description: Document uploaded successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
 async function getHandler(req: AuthenticatedRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const params = await context.params;

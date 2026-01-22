@@ -2,6 +2,85 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SubscriptionsService } from '@/lib/services/subscriptions.service';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
+/**
+ * @swagger
+ * /api/subscriptions/plans/{id}:
+ *   get:
+ *     summary: Get a specific subscription plan by ID
+ *     tags: [Subscriptions]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Plan ID
+ *     responses:
+ *       200:
+ *         description: Plan retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request
+ *       404:
+ *         description: Plan not found
+ *   patch:
+ *     summary: Update a subscription plan (Admin only)
+ *     tags: [Subscriptions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Plan ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Plan updated successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ *   delete:
+ *     summary: Delete a subscription plan (Admin only)
+ *     tags: [Subscriptions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Plan ID
+ *     responses:
+ *       200:
+ *         description: Plan deleted successfully
+ *       400:
+ *         description: Bad request
+ *       401:
+ *         description: Unauthorized
+ */
 async function getHandler(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }

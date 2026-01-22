@@ -2,6 +2,49 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 
+/**
+ * @swagger
+ * /api/admin/analytics/overview:
+ *   get:
+ *     summary: Get analytics overview (Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: months
+ *         schema:
+ *           type: integer
+ *           default: 12
+ *         description: Number of months to analyze
+ *     responses:
+ *       200:
+ *         description: Analytics overview retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalUsers:
+ *                       type: integer
+ *                     newUsers:
+ *                       type: integer
+ *                     totalAssignments:
+ *                       type: integer
+ *                     newAssignments:
+ *                       type: integer
+ *                     activeSubscriptions:
+ *                       type: integer
+ *                     totalRevenue:
+ *                       type: number
+ *       401:
+ *         description: Unauthorized
+ */
 export async function GET(req: NextRequest) {
   try {
     const db = getDb();
