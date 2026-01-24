@@ -3,8 +3,8 @@ import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
 import { getDb } from '@/lib/db';
-import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, doctorAvailability, assignmentPayments } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, sql, count, isNull, gte } from 'drizzle-orm';
+import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, assignmentPayments } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, sql, count, gte } from 'drizzle-orm';
 import { getMaxAssignmentsForDoctor } from '@/lib/config/subscription-limits';
 
 /**
@@ -53,8 +53,12 @@ import { getMaxAssignmentsForDoctor } from '@/lib/config/subscription-limits';
  *                       type: number
  *                     thisMonthAssignments:
  *                       type: number
+ *                     upcomingAssignments:
+ *                       type: number
+ *                       description: Count of upcoming assignments (accepted or pending with future dates)
  *                     upcomingSlots:
  *                       type: number
+ *                       description: Fallback field with same value as upcomingAssignments
  *                     profileCompletion:
  *                       type: number
  *                       description: Profile completion percentage (0-100)
@@ -166,36 +170,23 @@ async function getHandler(req: NextRequest) {
       );
     const todayAssignments = Number(todayAssignmentsResult[0]?.count || 0);
 
-    // Get upcoming availability - count only parent slots with available time
-    const todayStr = new Date().toISOString().split('T')[0];
-    
-    // Get only parent slots (parentSlotId IS NULL) that are upcoming
-    const parentSlotsResult = await db
-      .select()
-      .from(doctorAvailability)
+    // Get upcoming assignments count (accepted or pending assignments with future dates)
+    const now = new Date();
+    const upcomingAssignmentsResult = await db
+      .select({ count: count() })
+      .from(assignments)
       .where(
         and(
-          eq(doctorAvailability.doctorId, doctorId),
-          isNull(doctorAvailability.parentSlotId), // Only parent slots
-          gte(doctorAvailability.slotDate, todayStr), // Upcoming dates
-          eq(doctorAvailability.status, 'available')
+          eq(assignments.doctorId, doctorId),
+          sql`${assignments.status} IN ('accepted', 'pending')`,
+          sql`(
+            (${assignments.actualStartTime} IS NOT NULL AND ${assignments.actualStartTime} > ${now.toISOString()})
+            OR
+            (${assignments.actualStartTime} IS NULL AND ${assignments.requestedAt} > ${now.toISOString()})
+          )`
         )
       );
-    
-    // Count parent slots that have at least one available time range
-    // (i.e., not fully booked)
-    const { DoctorsRepository } = await import('@/lib/repositories/doctors.repository');
-    const doctorsRepository = new DoctorsRepository();
-    
-    let upcomingSlots = 0;
-    for (const parentSlot of parentSlotsResult) {
-      // Check if this parent slot has any available time
-      const availableRanges = await doctorsRepository.getAvailableRanges(parentSlot.id);
-      if (availableRanges.length > 0) {
-        // This parent slot has at least one available time range
-        upcomingSlots++;
-      }
-    }
+    const upcomingSlots = Number(upcomingAssignmentsResult[0]?.count || 0);
 
     // Get total earnings (all time)
     const totalEarningsResult = await db
@@ -351,6 +342,7 @@ async function getHandler(req: NextRequest) {
         totalEarnings,
         thisMonthEarnings,
         thisMonthAssignments,
+        upcomingAssignments: upcomingSlots,
         upcomingSlots,
         profileCompletion,
         credentials: credentialsStats,
