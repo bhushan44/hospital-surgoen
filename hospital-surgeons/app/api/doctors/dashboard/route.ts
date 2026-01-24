@@ -3,7 +3,7 @@ import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
 import { getDb } from '@/lib/db';
-import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, doctorAvailability } from '@/src/db/drizzle/migrations/schema';
+import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, doctorAvailability, assignmentPayments } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql, count, isNull, gte } from 'drizzle-orm';
 import { getMaxAssignmentsForDoctor } from '@/lib/config/subscription-limits';
 
@@ -30,10 +30,19 @@ import { getMaxAssignmentsForDoctor } from '@/lib/config/subscription-limits';
  *                   properties:
  *                     totalAssignments:
  *                       type: number
+ *                       description: Total assignments across all statuses
  *                     pendingAssignments:
  *                       type: number
+ *                       description: Count of pending assignments
+ *                     acceptedAssignments:
+ *                       type: number
+ *                       description: Count of accepted assignments
  *                     completedAssignments:
  *                       type: number
+ *                       description: Count of completed assignments
+ *                     acceptanceRate:
+ *                       type: number
+ *                       description: Acceptance rate percentage (accepted + completed) / total * 100
  *                     averageRating:
  *                       type: number
  *                     totalRatings:
@@ -86,23 +95,61 @@ async function getHandler(req: NextRequest) {
     const doctor = doctorResult.data;
     const doctorId = doctor.id;
 
+    const db = getDb();
+
     // Get stats
     const statsResult = await doctorsService.getDoctorStats(doctorId);
     const stats = statsResult.success ? statsResult.data : null;
 
+    // Get total assignments count (all statuses)
+    const totalAssignmentsResult = await db
+      .select({ count: count() })
+      .from(assignments)
+      .where(eq(assignments.doctorId, doctorId));
+    const totalAssignments = Number(totalAssignmentsResult[0]?.count || 0);
+
     // Get pending assignments count
-    const pendingBookings = await bookingsService.findBookings({
-      doctorId,
-      status: 'pending',
-      page: 1,
-      limit: 10,
-    });
-    const pendingAssignments = pendingBookings.success && pendingBookings.data 
-      ? (Array.isArray(pendingBookings.data) ? pendingBookings.data.length : 0)
+    const pendingAssignmentsResult = await db
+      .select({ count: count() })
+      .from(assignments)
+      .where(
+        and(
+          eq(assignments.doctorId, doctorId),
+          eq(assignments.status, 'pending')
+        )
+      );
+    const pendingAssignments = Number(pendingAssignmentsResult[0]?.count || 0);
+
+    // Get accepted assignments count
+    const acceptedAssignmentsResult = await db
+      .select({ count: count() })
+      .from(assignments)
+      .where(
+        and(
+          eq(assignments.doctorId, doctorId),
+          eq(assignments.status, 'accepted')
+        )
+      );
+    const acceptedAssignments = Number(acceptedAssignmentsResult[0]?.count || 0);
+
+    // Get completed assignments count
+    const completedAssignmentsResult = await db
+      .select({ count: count() })
+      .from(assignments)
+      .where(
+        and(
+          eq(assignments.doctorId, doctorId),
+          eq(assignments.status, 'completed')
+        )
+      );
+    const completedAssignments = Number(completedAssignmentsResult[0]?.count || 0);
+
+    // Calculate acceptance rate: (accepted + completed) / total * 100
+    const acceptanceRate = totalAssignments > 0
+      ? Math.round(((acceptedAssignments + completedAssignments) / totalAssignments) * 100)
       : 0;
 
     // Get today's assignments count
-    const db = getDb();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -150,10 +197,40 @@ async function getHandler(req: NextRequest) {
       }
     }
 
-    // Get earnings (will be fetched separately by earnings endpoint)
-    const totalEarnings = 0;
-    const thisMonthEarnings = 0;
-    const thisMonthAssignments = 0;
+    // Get total earnings (all time)
+    const totalEarningsResult = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(${assignmentPayments.doctorPayout}), 0)`,
+      })
+      .from(assignmentPayments)
+      .where(
+        and(
+          eq(assignmentPayments.doctorId, doctorId),
+          eq(assignmentPayments.paymentStatus, 'completed')
+        )
+      );
+    const totalEarnings = Number(totalEarningsResult[0]?.total || 0);
+
+    // Get this month earnings
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const thisMonthEarningsResult = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(${assignmentPayments.doctorPayout}), 0)`,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(assignmentPayments)
+      .where(
+        and(
+          eq(assignmentPayments.doctorId, doctorId),
+          eq(assignmentPayments.paymentStatus, 'completed'),
+          gte(assignmentPayments.paidToDoctorAt, startOfMonth.toISOString())
+        )
+      );
+    const thisMonthEarnings = Number(thisMonthEarningsResult[0]?.total || 0);
+    const thisMonthAssignments = Number(thisMonthEarningsResult[0]?.count || 0);
 
     // Get credentials count
     const credentialsResult = await doctorsService.getDoctorCredentials(doctorId);
@@ -264,9 +341,11 @@ async function getHandler(req: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        totalAssignments: stats?.totalBookings || doctor.completedAssignments || 0,
+        totalAssignments,
         pendingAssignments,
-        completedAssignments: stats?.totalBookings || doctor.completedAssignments || 0,
+        acceptedAssignments,
+        completedAssignments,
+        acceptanceRate,
         averageRating: Number(doctor.averageRating || 0),
         totalRatings: doctor.totalRatings || 0,
         totalEarnings,
