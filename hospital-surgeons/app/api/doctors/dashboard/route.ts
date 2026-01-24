@@ -3,8 +3,8 @@ import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
 import { getDb } from '@/lib/db';
-import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, assignmentPayments } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, sql, count, gte } from 'drizzle-orm';
+import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, assignmentPayments, doctorAvailability } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, sql, count, gte, asc } from 'drizzle-orm';
 import { getMaxAssignmentsForDoctor } from '@/lib/config/subscription-limits';
 
 /**
@@ -170,23 +170,49 @@ async function getHandler(req: NextRequest) {
       );
     const todayAssignments = Number(todayAssignmentsResult[0]?.count || 0);
 
-    // Get upcoming assignments count (accepted or pending assignments with future dates)
-    const now = new Date();
-    const upcomingAssignmentsResult = await db
+  // Get upcoming assignments count (accepted or pending assignments with future scheduled times)
+  // Use availability slot datetime (slot_date + start_time) as canonical scheduled time.
+    const upcomingAssignmentsCountResult = await db
       .select({ count: count() })
       .from(assignments)
+      .leftJoin(doctorAvailability, eq(assignments.availabilitySlotId, doctorAvailability.id))
       .where(
         and(
           eq(assignments.doctorId, doctorId),
           sql`${assignments.status} IN ('accepted', 'pending')`,
-          sql`(
-            (${assignments.actualStartTime} IS NOT NULL AND ${assignments.actualStartTime} > ${now.toISOString()})
-            OR
-            (${assignments.actualStartTime} IS NULL AND ${assignments.requestedAt} > ${now.toISOString()})
-          )`
+          // (slot_date + start_time) > now()
+          sql`(doctor_availability.slot_date + doctor_availability.start_time) > now()`
         )
       );
-    const upcomingSlots = Number(upcomingAssignmentsResult[0]?.count || 0);
+    const upcomingSlots = Number(upcomingAssignmentsCountResult[0]?.count || 0);
+
+    // Fetch a small bounded list of upcoming assignments with date/start/end/status (limit 5)
+    const upcomingLimit = 5;
+    const upcomingRows = await db
+      .select({
+        slotDate: doctorAvailability.slotDate,
+        startTime: doctorAvailability.startTime,
+        endTime: doctorAvailability.endTime,
+        status: assignments.status,
+      })
+      .from(assignments)
+      .leftJoin(doctorAvailability, eq(assignments.availabilitySlotId, doctorAvailability.id))
+      .where(
+        and(
+          eq(assignments.doctorId, doctorId),
+          sql`${assignments.status} IN ('accepted', 'pending')`,
+          sql`(doctor_availability.slot_date + doctor_availability.start_time) > now()`
+        )
+      )
+      .orderBy(asc(doctorAvailability.slotDate), asc(doctorAvailability.startTime))
+      .limit(upcomingLimit);
+
+    const upcomingAssignments = (upcomingRows || []).map((r: any) => ({
+      date: r.slotDate ?? null,
+      startTime: r.startTime ?? null,
+      endTime: r.endTime ?? null,
+      status: r.status,
+    }));
 
     // Get total earnings (all time)
     const totalEarningsResult = await db
@@ -342,8 +368,9 @@ async function getHandler(req: NextRequest) {
         totalEarnings,
         thisMonthEarnings,
         thisMonthAssignments,
-        upcomingAssignments: upcomingSlots,
-        upcomingSlots,
+  upcomingAssignments: upcomingSlots,
+  upcomingSlots,
+  upcomingAssignmentsList: upcomingAssignments,
         profileCompletion,
         credentials: credentialsStats,
         activeAffiliations,
