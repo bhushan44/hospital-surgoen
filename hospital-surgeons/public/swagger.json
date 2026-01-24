@@ -3147,13 +3147,24 @@
                       "type": "object",
                       "properties": {
                         "totalAssignments": {
-                          "type": "number"
+                          "type": "number",
+                          "description": "Total assignments across all statuses"
                         },
                         "pendingAssignments": {
-                          "type": "number"
+                          "type": "number",
+                          "description": "Count of pending assignments"
+                        },
+                        "acceptedAssignments": {
+                          "type": "number",
+                          "description": "Count of accepted assignments"
                         },
                         "completedAssignments": {
-                          "type": "number"
+                          "type": "number",
+                          "description": "Count of completed assignments"
+                        },
+                        "acceptanceRate": {
+                          "type": "number",
+                          "description": "Acceptance rate percentage (accepted + completed) / total * 100"
                         },
                         "averageRating": {
                           "type": "number"
@@ -3170,8 +3181,13 @@
                         "thisMonthAssignments": {
                           "type": "number"
                         },
+                        "upcomingAssignments": {
+                          "type": "number",
+                          "description": "Count of upcoming assignments (accepted or pending with future dates)"
+                        },
                         "upcomingSlots": {
-                          "type": "number"
+                          "type": "number",
+                          "description": "Fallback field with same value as upcomingAssignments"
                         },
                         "profileCompletion": {
                           "type": "number",
@@ -5057,6 +5073,24 @@
               "maximum": 100
             },
             "description": "Search radius in kilometers (defaults to hospital's maxSearchDistanceKm preference, or 50km if not set)"
+          },
+          {
+            "in": "query",
+            "name": "lat",
+            "schema": {
+              "type": "number",
+              "format": "float"
+            },
+            "description": "Optional latitude to override hospital location for this search (both lat & lon must be provided)"
+          },
+          {
+            "in": "query",
+            "name": "lon",
+            "schema": {
+              "type": "number",
+              "format": "float"
+            },
+            "description": "Optional longitude to override hospital location for this search (both lat & lon must be provided)"
           }
         ],
         "responses": {
@@ -5107,6 +5141,22 @@
                               "type": "boolean"
                             },
                             "hasPrevPage": {
+                              "type": "boolean"
+                            }
+                          }
+                        },
+                        "searchCenter": {
+                          "type": "object",
+                          "properties": {
+                            "lat": {
+                              "type": "number",
+                              "format": "float"
+                            },
+                            "lon": {
+                              "type": "number",
+                              "format": "float"
+                            },
+                            "overrideUsed": {
                               "type": "boolean"
                             }
                           }

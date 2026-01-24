@@ -57,6 +57,18 @@ import { isPostGISInstalled, countDoctorsInFixedRadius, fetchDoctorsInFixedRadiu
  *           minimum: 1
  *           maximum: 100
  *         description: Search radius in kilometers (defaults to hospital's maxSearchDistanceKm preference, or 50km if not set)
+ *       - in: query
+ *         name: lat
+ *         schema:
+ *           type: number
+ *           format: float
+ *         description: Optional latitude to override hospital location for this search (both lat & lon must be provided)
+ *       - in: query
+ *         name: lon
+ *         schema:
+ *           type: number
+ *           format: float
+ *         description: Optional longitude to override hospital location for this search (both lat & lon must be provided)
  *     responses:
  *       200:
  *         description: List of available doctors
@@ -91,6 +103,17 @@ import { isPostGISInstalled, countDoctorsInFixedRadius, fetchDoctorsInFixedRadiu
  *                         hasNextPage:
  *                           type: boolean
  *                         hasPrevPage:
+ *                           type: boolean
+ *                     searchCenter:
+ *                       type: object
+ *                       properties:
+ *                         lat:
+ *                           type: number
+ *                           format: float
+ *                         lon:
+ *                           type: number
+ *                           format: float
+ *                         overrideUsed:
  *                           type: boolean
  *       500:
  *         description: Internal server error
@@ -163,12 +186,36 @@ export async function GET(
       .limit(1);
 
     // Extract hospital coordinates (convert numeric to number if needed)
-    const hospitalLat = hospitalResult[0]?.latitude 
+    let hospitalLat = hospitalResult[0]?.latitude 
       ? (typeof hospitalResult[0].latitude === 'string' ? parseFloat(hospitalResult[0].latitude) : Number(hospitalResult[0].latitude))
       : null;
-    const hospitalLon = hospitalResult[0]?.longitude
+    let hospitalLon = hospitalResult[0]?.longitude
       ? (typeof hospitalResult[0].longitude === 'string' ? parseFloat(hospitalResult[0].longitude) : Number(hospitalResult[0].longitude))
       : null;
+
+    // Optional override: allow frontend to pass lat/lon query params to search around a point
+    const latParam = searchParams.get('lat');
+    const lonParam = searchParams.get('lon');
+    let overrideUsed = false;
+    if (latParam != null || lonParam != null) {
+      // require both to be present
+      if (latParam && lonParam) {
+        const parsedLat = Number(latParam);
+        const parsedLon = Number(lonParam);
+        const isValidLat = Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90;
+        const isValidLon = Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180;
+        if (isValidLat && isValidLon) {
+          // round to 6 decimals to reduce cardinality and for safety
+          hospitalLat = Math.round(parsedLat * 1e6) / 1e6;
+          hospitalLon = Math.round(parsedLon * 1e6) / 1e6;
+          overrideUsed = true;
+        } else {
+          console.warn('Invalid lat/lon override provided, ignoring:', latParam, lonParam);
+        }
+      } else {
+        console.warn('Incomplete lat/lon override provided, ignoring. Both lat and lon required.');
+      }
+    }
 
     let hospitalSubscriptionTier: 'free' | 'basic' | 'premium' | 'enterprise' = 'free';
     let includesPremiumDoctors = false;
@@ -619,6 +666,11 @@ export async function GET(
       data: {
         doctors: accessibleDoctors,
         hospitalSubscription: hospitalSubscriptionTier,
+        searchCenter: {
+          lat: hospitalLat,
+          lon: hospitalLon,
+          overrideUsed,
+        },
         pagination: {
           page,
           limit,
