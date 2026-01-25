@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '../../hospital/_components/PageHeader';
 import apiClient from '@/lib/api/httpClient';
 import { PatientSelectionModal } from './PatientSelectionModal';
+import { Switch } from '../../components/ui/switch';
 
 export function FindDoctors() {
   const router = useRouter();
@@ -56,6 +57,7 @@ export function FindDoctors() {
   const [loading, setLoading] = useState(false);
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -241,6 +243,11 @@ export function FindDoctors() {
         params.date = searchParams.date;
       }
 
+      // Add onlyFavorites flag if toggled
+      if (onlyFavorites) {
+        params.onlyFavorites = 'true';
+      }
+
       // Build query string with multiple specialtyId params
       const queryParams = new URLSearchParams();
       Object.keys(params).forEach(key => {
@@ -399,6 +406,17 @@ export function FindDoctors() {
                       onChange={(e) => setSearchParams({ ...searchParams, date: e.target.value })}
                       className="h-11"
                     />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        id="onlyFavorites"
+                        checked={onlyFavorites}
+                        onCheckedChange={(val: any) => setOnlyFavorites(!!val)}
+                      />
+                      <Label htmlFor="onlyFavorites" className="text-sm text-slate-700">Only favorite doctors</Label>
+                    </div>
+                    <div className="text-sm text-slate-500">Toggle to show only doctors you've favorited</div>
                   </div>
                   
                   <Button

@@ -69,6 +69,11 @@ import { isPostGISInstalled, countDoctorsInFixedRadius, fetchDoctorsInFixedRadiu
  *           type: number
  *           format: float
  *         description: Optional longitude to override hospital location for this search (both lat & lon must be provided)
+ *       - in: query
+ *         name: onlyFavorites
+ *         schema:
+ *           type: boolean
+ *         description: When true, return only doctors favorited by the requesting hospital (requires auth)
  *     responses:
  *       200:
  *         description: List of available doctors
@@ -165,7 +170,7 @@ export async function GET(
     
     // Get default radius from hospital preferences, fallback to FIXED_RADIUS_KM (50km)
     const defaultRadiusKm = hospitalPrefs[0]?.maxSearchDistanceKm ?? FIXED_RADIUS_KM;
-    
+
     // Radius parameter (in kilometers) - use hospital preference if not provided from frontend
     const radiusFromQuery = searchParams.get('radius');
     const radiusKm = radiusFromQuery 
@@ -278,9 +283,8 @@ export async function GET(
           INNER JOIN specialties s ON ds.specialty_id = s.id
           WHERE ds.doctor_id = d.id AND LOWER(s.name) LIKE ${searchPattern}
         )
-      )`);
+  `);
     }
-
     // Multiple specialty IDs condition - use proper SQL array syntax
     if (specialtyIds.length > 0) {
       // Use EXISTS with ANY clause for multiple specialty IDs
@@ -293,41 +297,21 @@ export async function GET(
       )`));
     }
 
-    // Build WHERE clause - combine conditions manually
-    let whereClause: any = sql``;
+    // Build base WHERE clause by combining conditions and prefixing with
+    // `AND` so helpers that emit `WHERE 1=1 ${baseWhereClause}` remain valid.
+    // baseWhereClause will be either empty (sql``) or a fragment starting
+    // with `AND ...`.
+    let baseWhereClause: any = sql``;
     if (whereConditions.length > 0) {
       if (whereConditions.length === 1) {
-        whereClause = sql`WHERE ${whereConditions[0]}`;
+        baseWhereClause = sql`AND ${whereConditions[0]}`;
       } else {
-        // Combine multiple conditions with AND
         let combined = whereConditions[0];
         for (let i = 1; i < whereConditions.length; i++) {
           combined = sql`${combined} AND ${whereConditions[i]}`;
         }
-        whereClause = sql`WHERE ${combined}`;
+        baseWhereClause = sql`AND ${combined}`;
       }
-    }
-
-    // Check if hospital has location - return empty if not
-    const hasHospitalLocation = hospitalLat !== null && hospitalLon !== null;
-    
-    if (!hasHospitalLocation) {
-      // Hospital without location - return empty results
-      return NextResponse.json({
-        success: true,
-        data: {
-          doctors: [],
-          hospitalSubscription: hospitalSubscriptionTier,
-          pagination: {
-            page,
-            limit,
-            total: 0,
-            totalPages: 0,
-            hasNextPage: false,
-            hasPrevPage: false,
-          },
-        },
-      });
     }
 
     // Check if PostGIS is available
@@ -362,15 +346,65 @@ export async function GET(
      * Favorite doctors appear first, then others (all sorted by distance)
      */
     
-    // Step 1: Get favorite doctor IDs (already fetched above with maxSearchDistanceKm)
-    const favoriteDoctorIds = hospitalPrefs[0]?.preferredDoctorIds || [];
-    
+  // Step 1: Get favorite doctor IDs (from hospital preferences)
+  const favoriteDoctorIds = hospitalPrefs[0]?.preferredDoctorIds || [];
+
+  // Track whether the base whereClause already has conditions (built above)
+  const whereHasConditions = whereConditions.length > 0;
+
+    // Respect the onlyFavorites query parameter. When onlyFavorites is true
+    // we must return only favorite doctors (or an empty result if none exist).
+    // When onlyFavorites is not provided/false, fall back to the default
+    // behavior (do not restrict the DB query to favorites; pass favorites to
+    // the helper so it can prioritize them if implemented).
+    const onlyFavoritesParam = searchParams.get('onlyFavorites');
+    const onlyFavorites = onlyFavoritesParam === 'true' || onlyFavoritesParam === '1';
+
+    let onlyFavoritesApplied = false;
+    console.log('onlyFavorites requested:', onlyFavorites);
+
+    if (onlyFavorites) {
+      // If the caller explicitly asked for only favorites but the hospital has
+      // none, return an empty result set with meta indicating the rule was
+      // applied.
+      if (!favoriteDoctorIds || favoriteDoctorIds.length === 0) {
+        return NextResponse.json({
+          success: true,
+          data: {
+            doctors: [],
+            hospitalSubscription: hospitalSubscriptionTier,
+            searchCenter: { lat: hospitalLat, lon: hospitalLon, overrideUsed },
+            pagination: {
+              page,
+              limit,
+              total: 0,
+              totalPages: 0,
+              hasNextPage: false,
+              hasPrevPage: false,
+            },
+            meta: { onlyFavoritesApplied: true }
+          }
+        });
+      }
+
+      // Hospital has favorites and caller requested onlyFavorites -> restrict
+      // the WHERE clause to those favorite IDs.
+      const favArrayLiteral = `ARRAY[${favoriteDoctorIds.map(id => `'${id}'::uuid`).join(', ')}]`;
+      if (!whereHasConditions) {
+        baseWhereClause = sql`AND d.id = ANY(${sql.raw(favArrayLiteral)})`;
+      } else {
+        baseWhereClause = sql`${baseWhereClause} AND d.id = ANY(${sql.raw(favArrayLiteral)})`;
+      }
+
+      onlyFavoritesApplied = true;
+    }
+
     // Step 2: Get total count of doctors within radius (with location)
     const totalCount = await countDoctorsInFixedRadius(
       hospitalLat!,
       hospitalLon!,
       validRadiusKm,
-      whereClause
+      baseWhereClause
     );
     const totalPages = Math.ceil(totalCount / limit);
     
@@ -380,18 +414,21 @@ export async function GET(
     if (totalCount === 0) {
       doctorsList = { rows: [] };
     } else {
-      // Step 3: Fetch doctors using OFFSET/LIMIT pagination
-      // Favorites appear first, then others (all sorted by distance within each group)
+      // Step 3: Fetch doctors using OFFSET/LIMIT pagination.
+      // If onlyFavorites was requested and applied we already restricted the
+      // DB query to favorites above, so we don't need favorite prioritization
+      // in the helper (pass empty array). Otherwise pass favorite IDs so the
+      // helper may prioritize them when building ORDER BY.
       const doctors = await fetchDoctorsInFixedRadius(
         hospitalLat!,
         hospitalLon!,
         validRadiusKm,
-        whereClause,
+        baseWhereClause,
         limit,
         offset,
-        favoriteDoctorIds
+        onlyFavoritesApplied ? [] : favoriteDoctorIds
       );
-      
+
       // Convert to format expected by rest of code
       doctorsList = { rows: doctors };
     }
@@ -545,21 +582,12 @@ export async function GET(
     });
     console.log(formattedDoctorsList,"formated",formattedDoctorsList.length)
 
-    // Preserve favorite-first ordering from fetchDoctorsInFixedRadius
-    // Split into favorites and non-favorites
-    const favoriteDoctors = formattedDoctorsList.filter((doc: any) => 
-      favoriteDoctorIds.includes(doc.id)
-    );
-    const nonFavoriteDoctors = formattedDoctorsList.filter((doc: any) => 
-      !favoriteDoctorIds.includes(doc.id)
-    );
-    
-    // Sort each group by score (highest first)
-    const sortedFavoriteDoctors = sortDoctorsByScore(favoriteDoctors);
-    const sortedNonFavoriteDoctors = sortDoctorsByScore(nonFavoriteDoctors);
-    
-    // Combine: favorites first, then non-favorites
-    const sortedDoctors = [...sortedFavoriteDoctors, ...sortedNonFavoriteDoctors];
+    // If we applied an only-favorites restriction, sort the returned
+    // favorites by score (highest first). Otherwise keep the list as-is and
+    // allow downstream sorting by distance/score.
+    const sortedDoctors = onlyFavoritesApplied
+      ? sortDoctorsByScore(formattedDoctorsList)
+      : formattedDoctorsList;
     
     // Format doctors - use actual subscription tier from database
     const formattedDoctors = sortedDoctors.map((doctor: any) => {
@@ -637,29 +665,22 @@ export async function GET(
        return true
     });
 
-    // Sort by favorite status first, then distance, then score
-    // This preserves the favorite-first ordering from the database query
-    accessibleDoctors.sort((a, b) => {
-      const isFavoriteA = favoriteDoctorIds.includes(a.id);
-      const isFavoriteB = favoriteDoctorIds.includes(b.id);
-      
-      // First: favorites come first
-      if (isFavoriteA !== isFavoriteB) {
-        return isFavoriteA ? -1 : 1;
-      }
-      
-      // Then: sort by distance (nearest first)
-      const distanceA = a.distance ?? Infinity;
-      const distanceB = b.distance ?? Infinity;
-      if (distanceA !== distanceB) {
-        return distanceA - distanceB;
-      }
-      
-      // Finally: sort by score (highest first)
-      const scoreA = a.score || 0;
-      const scoreB = b.score || 0;
-      return scoreB - scoreA;
-    });
+    // Sort results. If onlyFavoritesApplied, sort by score only (favorites
+    // should be ranked by score). Otherwise sort by distance then score.
+    if (onlyFavoritesApplied) {
+      accessibleDoctors.sort((a, b) => (b.score || 0) - (a.score || 0));
+    } else {
+      accessibleDoctors.sort((a, b) => {
+        const distanceA = a.distance ?? Infinity;
+        const distanceB = b.distance ?? Infinity;
+        if (distanceA !== distanceB) {
+          return distanceA - distanceB;
+        }
+        const scoreA = a.score || 0;
+        const scoreB = b.score || 0;
+        return scoreB - scoreA;
+      });
+    }
 
     return NextResponse.json({
       success: true,
@@ -671,6 +692,7 @@ export async function GET(
           lon: hospitalLon,
           overrideUsed,
         },
+  meta: { onlyFavoritesApplied },
         pagination: {
           page,
           limit,

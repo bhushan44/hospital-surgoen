@@ -55,7 +55,7 @@ export async function countDoctorsInFixedRadius(
   const countQuery = sql`
     SELECT COUNT(DISTINCT d.id) as total
     FROM doctors d
-    ${baseWhereClause}
+      WHERE 1=1 ${baseWhereClause}
     AND d.latitude IS NOT NULL
     AND d.longitude IS NOT NULL
     AND ST_DWithin(
@@ -102,6 +102,7 @@ export async function fetchDoctorsInFixedRadius(
   
   // Single optimized query with favorite prioritization using CASE in ORDER BY
   if (favoriteDoctorIds.length > 0) {
+    console.log('Fetching doctors with favorite prioritization');
     // Build array literal for PostgreSQL ANY clause
     const favoriteArrayLiteral = `ARRAY[${favoriteDoctorIds.map(id => `'${id}'::uuid`).join(', ')}]`;
     
@@ -125,7 +126,7 @@ export async function fetchDoctorsInFixedRadius(
           WHERE ds.doctor_id = d.id
         ) as specialties
       FROM doctors d
-      ${baseWhereClause}
+        WHERE 1=1 ${baseWhereClause}
       AND d.latitude IS NOT NULL
       AND d.longitude IS NOT NULL
       AND ST_DWithin(
@@ -170,7 +171,7 @@ export async function fetchDoctorsInFixedRadius(
           WHERE ds.doctor_id = d.id
         ) as specialties
       FROM doctors d
-      ${baseWhereClause}
+        WHERE 1=1 ${baseWhereClause}
       AND d.latitude IS NOT NULL
       AND d.longitude IS NOT NULL
       AND ST_DWithin(
@@ -185,6 +186,7 @@ export async function fetchDoctorsInFixedRadius(
     
       try {
         const result = await db.execute(query);
+    console.log('Fetched doctors count:', result.rows.length);
         return result.rows || [];
       } catch (error) {
       console.error('Error fetching doctors in fixed radius:', error);
