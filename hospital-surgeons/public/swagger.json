@@ -5091,6 +5091,14 @@
               "format": "float"
             },
             "description": "Optional longitude to override hospital location for this search (both lat & lon must be provided)"
+          },
+          {
+            "in": "query",
+            "name": "onlyFavorites",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "When true, return only doctors favorited by the requesting hospital (requires auth)"
           }
         ],
         "responses": {
