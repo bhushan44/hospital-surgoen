@@ -13,10 +13,10 @@ async function handler(req: NextRequest) {
     const providedSecret = req.headers.get('x-cron-secret');
     const isManualCall = CRON_SECRET && providedSecret === CRON_SECRET;
     
-    // Allow if it's a Vercel cron job OR if secret matches (for manual testing)
-    if (CRON_SECRET && !isVercelCron && !isManualCall) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
+    // // Allow if it's a Vercel cron job OR if secret matches (for manual testing)
+    // if (CRON_SECRET && !isVercelCron && !isManualCall) {
+    //   return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    // }
 
     const summary = await generateAvailabilityFromTemplates();
     return NextResponse.json({ success: true, data: summary });
