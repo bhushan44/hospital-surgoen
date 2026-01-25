@@ -646,7 +646,7 @@ export async function GET(
     });
 
     // Filter doctors based on subscription access and premium doctor access
-    const accessibleDoctors = formattedDoctors.filter((doctor) => {
+    const accessibleDoctors = formattedDoctors.filter((doctor: any) => {
       // Use doctor's actual subscription tier from database
       const doctorSubscriptionTier = (doctor.subscriptionTier || 'free') as 'free' | 'basic' | 'premium' | 'enterprise';
       const doctorRequired = planHierarchy[doctorSubscriptionTier] ?? 0;
