@@ -358,47 +358,9 @@ export async function GET(
       );
     const expiringCount = Number(expiringAssignmentsResult[0]?.count || 0);
 
-    // Get available time slots from verified doctors for today and next 7 days
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const nextWeek = new Date(today);
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    
-    const availableSlotsResult = await db
-      .select({
-        slotId: doctorAvailability.id,
-        doctorId: doctorAvailability.doctorId,
-        slotDate: doctorAvailability.slotDate,
-        startTime: doctorAvailability.startTime,
-        endTime: doctorAvailability.endTime,
-        doctorFirstName: doctors.firstName,
-        doctorLastName: doctors.lastName,
-      })
-      .from(doctorAvailability)
-      .innerJoin(doctors, eq(doctorAvailability.doctorId, doctors.id))
-      .where(
-        and(
-          eq(doctors.licenseVerificationStatus, 'verified'),
-          eq(doctorAvailability.status, 'available'),
-          gte(doctorAvailability.slotDate, today.toISOString().split('T')[0]),
-          sql`${doctorAvailability.slotDate} <= ${nextWeek.toISOString().split('T')[0]}`,
-          or(
-            sql`${doctorAvailability.bookedByHospitalId} IS NULL`,
-            ne(doctorAvailability.bookedByHospitalId, hospitalId)
-          )
-        )
-      )
-      .orderBy(asc(doctorAvailability.slotDate), asc(doctorAvailability.startTime))
-      .limit(20);
-
-    const availableSlots = availableSlotsResult.map((slot) => ({
-      id: slot.slotId,
-      doctorId: slot.doctorId,
-      doctorName: `Dr. ${slot.doctorFirstName || ''} ${slot.doctorLastName || ''}`.trim(),
-      date: slot.slotDate,
-      time: formatTime(slot.startTime),
-      endTime: formatTime(slot.endTime),
-    }));
+    // Note: availableSlots removed per request — this endpoint no longer
+    // returns availableSlots. If needed in future, we can reintroduce a
+    // dedicated endpoint for available slots with proper pagination/timezone handling.
 
     return NextResponse.json({
       success: true,
@@ -457,8 +419,7 @@ export async function GET(
             message: 'Assignments expiring soon',
             action: 'Send Reminder',
           },
-        ],
-        availableSlots,
+  ],
       },
     });
   } catch (error) {
