@@ -668,9 +668,9 @@ export async function GET(
     // Sort results. If onlyFavoritesApplied, sort by score only (favorites
     // should be ranked by score). Otherwise sort by distance then score.
     if (onlyFavoritesApplied) {
-      accessibleDoctors.sort((a, b) => (b.score || 0) - (a.score || 0));
+      accessibleDoctors.sort((a:any, b: any) => (b.score || 0) - (a.score || 0));
     } else {
-      accessibleDoctors.sort((a, b) => {
+      accessibleDoctors.sort((a:any, b: any) => {
         const distanceA = a.distance ?? Infinity;
         const distanceB = b.distance ?? Infinity;
         if (distanceA !== distanceB) {
