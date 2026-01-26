@@ -3,7 +3,7 @@ import { withAuth } from '@/lib/auth/middleware';
 import { DoctorsService } from '@/lib/services/doctors.service';
 import { BookingsService } from '@/lib/services/bookings.service';
 import { getDb } from '@/lib/db';
-import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, assignmentPayments, doctorAvailability } from '@/src/db/drizzle/migrations/schema';
+import { assignments, doctorHospitalAffiliations, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, assignmentPayments, doctorAvailability, patients, hospitals } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql, count, gte, asc } from 'drizzle-orm';
 import { getMaxAssignmentsForDoctor } from '@/lib/config/subscription-limits';
 
@@ -170,7 +170,7 @@ async function getHandler(req: NextRequest) {
       );
     const todayAssignments = Number(todayAssignmentsResult[0]?.count || 0);
 
-  // Get upcoming assignments count (accepted or pending assignments with future scheduled times)
+  // Get upcoming assignments count (accepted assignments with future scheduled times)
   // Use availability slot datetime (slot_date + start_time) as canonical scheduled time.
     const upcomingAssignmentsCountResult = await db
       .select({ count: count() })
@@ -179,28 +179,36 @@ async function getHandler(req: NextRequest) {
       .where(
         and(
           eq(assignments.doctorId, doctorId),
-          sql`${assignments.status} IN ('accepted', 'pending')`,
+          sql`${assignments.status} = 'accepted'`,
           // (slot_date + start_time) > now()
           sql`(doctor_availability.slot_date + doctor_availability.start_time) > now()`
         )
       );
     const upcomingSlots = Number(upcomingAssignmentsCountResult[0]?.count || 0);
 
-    // Fetch a small bounded list of upcoming assignments with date/start/end/status (limit 5)
+    // Fetch a small bounded list of upcoming accepted assignments with date/start/end/status (limit 5)
     const upcomingLimit = 5;
     const upcomingRows = await db
       .select({
+        assignmentId: assignments.id,
         slotDate: doctorAvailability.slotDate,
         startTime: doctorAvailability.startTime,
         endTime: doctorAvailability.endTime,
         status: assignments.status,
+        patientName: patients.fullName,
+        hospitalName: hospitals.name,
+        medicalCondition: patients.medicalCondition,
+        priority: assignments.priority,
+        consultationFee: assignments.consultationFee,
       })
       .from(assignments)
       .leftJoin(doctorAvailability, eq(assignments.availabilitySlotId, doctorAvailability.id))
+      .innerJoin(patients, eq(assignments.patientId, patients.id))
+      .innerJoin(hospitals, eq(assignments.hospitalId, hospitals.id))
       .where(
         and(
           eq(assignments.doctorId, doctorId),
-          sql`${assignments.status} IN ('accepted', 'pending')`,
+          sql`${assignments.status} = 'accepted'`,
           sql`(doctor_availability.slot_date + doctor_availability.start_time) > now()`
         )
       )
@@ -208,10 +216,61 @@ async function getHandler(req: NextRequest) {
       .limit(upcomingLimit);
 
     const upcomingAssignments = (upcomingRows || []).map((r: any) => ({
+      id: r.assignmentId,
       date: r.slotDate ?? null,
       startTime: r.startTime ?? null,
       endTime: r.endTime ?? null,
       status: r.status,
+      patientName: r.patientName || 'Unknown Patient',
+      hospitalName: r.hospitalName || 'Unknown Hospital',
+      medicalCondition: r.medicalCondition || 'N/A',
+      priority: r.priority || 'routine',
+      consultationFee: r.consultationFee ? Number(r.consultationFee) : null,
+    }));
+
+    // Fetch pending assignments that require action (limit 5)
+    const actionRequiredLimit = 5;
+    const pendingAssignmentRows = await db
+      .select({
+        assignmentId: assignments.id,
+        slotDate: doctorAvailability.slotDate,
+        startTime: doctorAvailability.startTime,
+        endTime: doctorAvailability.endTime,
+        status: assignments.status,
+        patientName: patients.fullName,
+        hospitalName: hospitals.name,
+        medicalCondition: patients.medicalCondition,
+        priority: assignments.priority,
+        consultationFee: assignments.consultationFee,
+        expiresAt: assignments.expiresAt,
+      })
+      .from(assignments)
+      .leftJoin(doctorAvailability, eq(assignments.availabilitySlotId, doctorAvailability.id))
+      .innerJoin(patients, eq(assignments.patientId, patients.id))
+      .innerJoin(hospitals, eq(assignments.hospitalId, hospitals.id))
+      .where(
+        and(
+          eq(assignments.doctorId, doctorId),
+          sql`${assignments.status} = 'pending'`,
+          sql`(doctor_availability.slot_date + doctor_availability.start_time) > now()`
+        )
+      )
+      .orderBy(asc(doctorAvailability.slotDate), asc(doctorAvailability.startTime))
+      .limit(actionRequiredLimit);
+
+    const actionRequiredAssignments = (pendingAssignmentRows || []).map((r: any) => ({
+      id: r.assignmentId,
+      type: 'accept_or_decline',
+      date: r.slotDate ?? null,
+      startTime: r.startTime ?? null,
+      endTime: r.endTime ?? null,
+      status: r.status,
+      patientName: r.patientName || 'Unknown Patient',
+      hospitalName: r.hospitalName || 'Unknown Hospital',
+      medicalCondition: r.medicalCondition || 'N/A',
+      priority: r.priority || 'routine',
+      consultationFee: r.consultationFee ? Number(r.consultationFee) : null,
+      expiresAt: r.expiresAt,
     }));
 
     // Get total earnings (all time)
@@ -368,9 +427,10 @@ async function getHandler(req: NextRequest) {
         totalEarnings,
         thisMonthEarnings,
         thisMonthAssignments,
-  upcomingAssignments: upcomingSlots,
-  upcomingSlots,
-  upcomingAssignmentsList: upcomingAssignments,
+        upcomingAssignments: upcomingSlots,
+        upcomingSlots,
+        upcomingAssignmentsList: upcomingAssignments,
+        actionRequiredAssignments: actionRequiredAssignments,
         profileCompletion,
         credentials: credentialsStats,
         activeAffiliations,
