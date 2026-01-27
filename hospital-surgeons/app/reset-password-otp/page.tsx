@@ -286,21 +286,13 @@ function ResetPasswordOtpContent() {
                 </div>
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">Password Reset Successful!</h2>
-                <p className="text-gray-600 mb-6">
-                  {success || 'Your password has been reset successfully. You can now login with your new password.'}
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Success!</h2>
+                <p className="text-gray-600">
+                  Password has been reset successfully.
                 </p>
-                <div className="space-y-3">
-                  <Link
-                    href="/login"
-                    className="inline-block w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-                  >
-                    Go to Login
-                  </Link>
-                  <p className="text-sm text-gray-500">
-                    No automatic redirect - you can navigate to login when ready
-                  </p>
-                </div>
+                <p className="text-sm text-gray-500 mt-4">
+                  You can now login with your new password.
+                </p>
               </div>
             </div>
           )}
