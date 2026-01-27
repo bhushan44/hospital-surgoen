@@ -94,13 +94,6 @@ export async function POST(req: NextRequest) {
       password_hash: validatedData.password, // Plain password - will be hashed in the service
       firstName: validatedData.firstName,
       lastName: validatedData.lastName,
-      device: validatedData.device || {
-        device_token: 'web-token-' + Date.now(),
-        device_type: 'web',
-        app_version: '1.0.0',
-        os_version: '1.0.0',
-        is_active: true,
-      },
     };
     
     const result = await usersService.create(createUserDto, 'doctor');
