@@ -274,6 +274,7 @@ export class PushNotificationService {
 
       console.log(`📱 [PUSH NOTIFICATION] Found ${deviceTokens.length} active device token(s) for user ${userId}`);
       console.log(`📱 [PUSH NOTIFICATION] Preparing FCM message for ${deviceTokens.length} device(s)`);
+      console.log(deviceTokens);
 
       // Prepare FCM message
       const message: admin.messaging.MulticastMessage = {

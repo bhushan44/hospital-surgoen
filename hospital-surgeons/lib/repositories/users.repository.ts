@@ -81,6 +81,28 @@ export class UsersRepository {
     return device[0];
   }
 
+  async findDeviceByTokenAnyUser(token: string) {
+    const device = await this.db
+      .select()
+      .from(userDevices)
+      .where(eq(userDevices.deviceToken, token))
+      .limit(1);
+
+    return device[0];
+  }
+
+  async transferDeviceToUser(deviceId: string, newUserId: string) {
+    return await this.db
+      .update(userDevices)
+      .set({
+        userId: newUserId,
+        lastUsedAt: new Date().toISOString(),
+        isActive: true,
+      })
+      .where(eq(userDevices.id, deviceId))
+      .returning();
+  }
+
   async updateDeviceUsage(id: string) {
     return await this.db
       .update(userDevices)

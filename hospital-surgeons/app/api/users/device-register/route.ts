@@ -109,24 +109,37 @@ async function postHandler(req: AuthenticatedRequest) {
       userId
     );
 
+    // Also check if device exists for any other user (needs to be transferred)
+    const deviceForAnyUser = await userRepository.findDeviceByTokenAnyUser(
+      deviceData.device_token
+    );
+
     let device;
     let isNewDevice = false;
 
     if (existingDevice) {
-      // Update existing device
-      console.log('📱 [DEVICE REGISTER] Device already exists, updating...');
+      // Device already exists for current user - just update usage
+      console.log('📱 [DEVICE REGISTER] Device already exists for current user, updating...');
       console.log('📱 [DEVICE REGISTER] Existing device ID:', existingDevice.id);
       
       device = await userRepository.updateDeviceUsage(existingDevice.id);
       
       // Also update other fields if provided
       if (deviceData.app_version || deviceData.os_version || deviceData.device_name !== undefined) {
-        // Note: updateDeviceUsage only updates lastUsedAt and isActive
-        // If you need to update other fields, you might want to add an updateDevice method
         console.log('📱 [DEVICE REGISTER] Additional fields provided but updateDeviceUsage only updates lastUsedAt and isActive');
       }
       
       console.log('✅ [DEVICE REGISTER] Device updated successfully');
+    } else if (deviceForAnyUser && deviceForAnyUser.userId !== userId) {
+      // Device exists for another user - transfer it to current user
+      console.log('📱 [DEVICE REGISTER] Device exists for another user, transferring...');
+      console.log('📱 [DEVICE REGISTER] Device ID:', deviceForAnyUser.id);
+      console.log('📱 [DEVICE REGISTER] From user:', deviceForAnyUser.userId);
+      console.log('📱 [DEVICE REGISTER] To user:', userId);
+      
+      device = await userRepository.transferDeviceToUser(deviceForAnyUser.id, userId);
+      
+      console.log('✅ [DEVICE REGISTER] Device transferred successfully');
     } else {
       // Create new device
       console.log('📱 [DEVICE REGISTER] Creating new device...');
