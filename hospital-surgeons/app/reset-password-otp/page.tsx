@@ -10,10 +10,9 @@ function ResetPasswordOtpContent() {
   const searchParams = useSearchParams();
   const tokenParam = searchParams.get('token');
 
-  const [step, setStep] = useState<'loading' | 'otp' | 'password' | 'success'>('loading');
+  const [step, setStep] = useState<'loading' | 'password' | 'success'>('loading');
   const [token, setToken] = useState(tokenParam || '');
   const [email, setEmail] = useState('');
-  const [otpCode, setOtpCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -22,7 +21,7 @@ function ResetPasswordOtpContent() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Auto-send OTP when token is present in URL
+  // Auto-verify token when present in URL
   useEffect(() => {
     const handleTokenVerification = async () => {
       if (tokenParam) {
@@ -37,11 +36,10 @@ function ResetPasswordOtpContent() {
           if (data.success) {
             setToken(tokenParam);
             setEmail(data.data?.email || '');
-            setSuccess('Verification code has been sent to your email. Please check your inbox.');
-            setStep('otp');
+            setStep('password'); // Skip OTP, go directly to password
           } else {
             setError(data.message || 'Invalid or expired reset link. Please request a new one.');
-            setStep('otp'); // Still show OTP form but with error
+            setStep('password'); // Still show password form but with error
           }
         } catch (error: any) {
           console.error('Token verification error:', error);
@@ -50,14 +48,14 @@ function ResetPasswordOtpContent() {
           } else {
             setError('Invalid or expired reset link. Please request a new one.');
           }
-          setStep('otp'); // Still show OTP form but with error
+          setStep('password'); // Still show password form but with error
         } finally {
           setLoading(false);
         }
       } else {
         // No token in URL - invalid access
         setError('Invalid reset link. Please request a new password reset link.');
-        setStep('otp');
+        setStep('password');
       }
     };
 
@@ -65,26 +63,9 @@ function ResetPasswordOtpContent() {
       handleTokenVerification();
     } else {
       setError('Invalid reset link. Please request a new password reset link.');
-      setStep('otp');
+      setStep('password');
     }
   }, [tokenParam]);
-
-  // Handle OTP verification
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Validation
-    if (otpCode.trim().length !== 6 || !/^\d+$/.test(otpCode.trim())) {
-      setError('OTP code must be exactly 6 digits.');
-      return;
-    }
-
-    // For now, just move to password step if OTP format is valid
-    // Actual verification will happen when password is submitted
-    setStep('password');
-    setError('');
-    setSuccess('');
-  };
 
   // Handle password reset
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -94,12 +75,6 @@ function ResetPasswordOtpContent() {
     setSuccess('');
 
     // Validation
-    if (otpCode.trim().length !== 6 || !/^\d+$/.test(otpCode.trim())) {
-      setError('OTP code must be exactly 6 digits.');
-      setLoading(false);
-      return;
-    }
-
     if (password.length < 8) {
       setError('Password must be at least 8 characters long.');
       setLoading(false);
@@ -115,74 +90,36 @@ function ResetPasswordOtpContent() {
     try {
       const response = await apiClient.post('/api/users/reset-password-otp', {
         token: token,
-        otpCode: otpCode.trim(),
         password: password,
       });
 
       const data = response.data;
 
       if (data.success) {
-        setSuccess('Password has been reset successfully! Redirecting to login...');
+        setSuccess(data.message || 'Password has been reset successfully!');
         setStep('success');
         
-        // Redirect to login after 2 seconds
-        setTimeout(() => {
-          router.push('/login?passwordReset=true');
-        }, 2000);
+        // NO REDIRECTION - Show success message instead
+        // The user can manually navigate to login when ready
       } else {
         setError(data.message || 'Failed to reset password. Please try again.');
-        // Go back to OTP step if token/OTP is invalid
-        if (data.message?.includes('Invalid') || data.message?.includes('expired')) {
-          setStep('otp');
-        }
       }
     } catch (error: any) {
       console.error('Reset password error:', error);
       if (error.response?.data?.message) {
         setError(error.response.data.message);
-        // Go back to OTP step if token/OTP is invalid
-        if (error.response.data.message?.includes('Invalid') || error.response.data.message?.includes('expired')) {
-          setStep('otp');
-        }
       } else {
-        setError('Failed to reset password. Please check your OTP code and try again.');
+        setError('Failed to reset password. Please try again.');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle resend OTP
-  const handleResendOtp = async () => {
-    if (!token) {
-      setError('No reset token available. Please request a new password reset link.');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const response = await apiClient.get(`/api/users/verify-reset-token?token=${encodeURIComponent(token)}`);
-      const data = response.data;
-
-      if (data.success) {
-        setSuccess('Verification code has been resent to your email.');
-      } else {
-        setError(data.message || 'Failed to resend OTP. Please request a new password reset link.');
-      }
-    } catch (error: any) {
-      console.error('Resend OTP error:', error);
-      if (error.response?.data?.message) {
-        setError(error.response.data.message);
-      } else {
-        setError('Failed to resend OTP. Please request a new password reset link.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Handle resend OTP (removed - no longer needed)
+  // const handleResendOtp = async () => {
+  //   // Function removed as OTP is no longer required
+  // };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-6">
@@ -199,13 +136,11 @@ function ResetPasswordOtpContent() {
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
               {step === 'loading' && 'Verifying Reset Link...'}
-              {step === 'otp' && 'Enter Verification Code'}
               {step === 'password' && 'Set New Password'}
               {step === 'success' && 'Password Reset Successful'}
             </h1>
             <p className="text-gray-600">
               {step === 'loading' && 'Please wait while we verify your reset link...'}
-              {step === 'otp' && 'Enter the 6-digit code sent to your email'}
               {step === 'password' && 'Enter your new password'}
               {step === 'success' && 'Your password has been reset successfully'}
             </p>
@@ -243,67 +178,7 @@ function ResetPasswordOtpContent() {
             </div>
           )}
 
-          {/* Step 1: OTP Input */}
-          {step === 'otp' && (
-            <form onSubmit={handleVerifyOtp} className="space-y-6">
-              {/* Email Display */}
-              {email && (
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-xs text-gray-500 mb-1">Verification code sent to</p>
-                  <p className="text-sm font-medium text-gray-900">{email}</p>
-                </div>
-              )}
-
-              {/* OTP Code Input */}
-              <div>
-                <label htmlFor="otpCode" className="block text-sm font-medium text-gray-700 mb-2">
-                  Verification Code (6 digits)
-                </label>
-                <input
-                  id="otpCode"
-                  type="text"
-                  value={otpCode}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                    setOtpCode(value);
-                  }}
-                  placeholder="000000"
-                  maxLength={6}
-                  required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl font-mono tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <p className="mt-2 text-xs text-gray-500">
-                  Enter the 6-digit code sent to your email
-                </p>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading || otpCode.length !== 6}
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {loading ? 'Verifying...' : 'Verify Code'}
-              </button>
-
-              <div className="text-center space-y-2">
-                <button
-                  type="button"
-                  onClick={handleResendOtp}
-                  disabled={loading || !token}
-                  className="text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Resend Verification Code
-                </button>
-                <div>
-                  <Link href="/login" className="text-sm text-gray-600 hover:text-gray-700">
-                    Back to Login
-                  </Link>
-                </div>
-              </div>
-            </form>
-          )}
-
-          {/* Step 2: Password Reset */}
+          {/* Password Reset Form */}
           {step === 'password' && (
             <form onSubmit={handleResetPassword} className="space-y-6">
               {/* Email Display */}
@@ -392,29 +267,15 @@ function ResetPasswordOtpContent() {
                 {loading ? 'Resetting Password...' : 'Reset Password'}
               </button>
 
-              <div className="text-center space-y-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep('otp');
-                    setPassword('');
-                    setConfirmPassword('');
-                    setError('');
-                  }}
-                  className="text-sm text-blue-600 hover:text-blue-700"
-                >
-                  Back to OTP Verification
-                </button>
-                <div>
-                  <Link href="/login" className="text-sm text-gray-600 hover:text-gray-700">
-                    Back to Login
-                  </Link>
-                </div>
+              <div className="text-center">
+                <Link href="/login" className="text-sm text-gray-600 hover:text-gray-700">
+                  Back to Login
+                </Link>
               </div>
             </form>
           )}
 
-          {/* Step 3: Success */}
+          {/* Success Step */}
           {step === 'success' && (
             <div className="text-center space-y-6">
               <div className="flex justify-center">
@@ -427,14 +288,19 @@ function ResetPasswordOtpContent() {
               <div>
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">Password Reset Successful!</h2>
                 <p className="text-gray-600 mb-6">
-                  Your password has been reset successfully. You can now login with your new password.
+                  {success || 'Your password has been reset successfully. You can now login with your new password.'}
                 </p>
-                <Link
-                  href="/login"
-                  className="inline-block w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-                >
-                  Go to Login
-                </Link>
+                <div className="space-y-3">
+                  <Link
+                    href="/login"
+                    className="inline-block w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                  >
+                    Go to Login
+                  </Link>
+                  <p className="text-sm text-gray-500">
+                    No automatic redirect - you can navigate to login when ready
+                  </p>
+                </div>
               </div>
             </div>
           )}

@@ -5,7 +5,7 @@ import { UsersService } from '@/lib/services/users.service';
  * @swagger
  * /api/users/reset-password-otp:
  *   post:
- *     summary: Reset password using OTP code
+ *     summary: Reset password using token (no OTP required)
  *     tags: [Users]
  *     requestBody:
  *       required: true
@@ -15,17 +15,12 @@ import { UsersService } from '@/lib/services/users.service';
  *             type: object
  *             required:
  *               - token
- *               - otpCode
  *               - password
  *             properties:
  *               token:
  *                 type: string
  *                 description: Password reset token from email link
  *                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
- *               otpCode:
- *                 type: string
- *                 description: 6-digit OTP code received via email
- *                 example: "123456"
  *               password:
  *                 type: string
  *                 format: password
@@ -44,9 +39,9 @@ import { UsersService } from '@/lib/services/users.service';
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Password has been reset successfully"
+ *                   example: "Password has been reset successfully! You can now login with your new password."
  *       400:
- *         description: Bad request (invalid OTP, expired OTP, or weak password)
+ *         description: Bad request (invalid token, expired token, or weak password)
  *         content:
  *           application/json:
  *             schema:
@@ -57,30 +52,20 @@ import { UsersService } from '@/lib/services/users.service';
  *                   example: false
  *                 message:
  *                   type: string
- *                   example: "Invalid or expired OTP. Please request a new password reset code."
+ *                   example: "Password reset link has expired. Please request a new one."
  *       500:
  *         description: Internal server error
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { token, otpCode, password } = body;
+    const { token, password } = body;
 
     if (!token || typeof token !== 'string') {
       return NextResponse.json(
         {
           success: false,
           message: 'Reset token is required',
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!otpCode || typeof otpCode !== 'string') {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'OTP code is required',
         },
         { status: 400 }
       );
@@ -97,14 +82,18 @@ export async function POST(req: NextRequest) {
     }
 
     const usersService = new UsersService();
-    const result = await usersService.resetPasswordWithTokenAndOtp(token, otpCode, password);
+    const result = await usersService.resetPassword(token, password);
 
-    // Return 400 for OTP errors, 500 for server errors, 200 for success
+    // Update success message to be more user-friendly
+    if (result.success) {
+      result.message = 'Password has been reset successfully! You can now login with your new password.';
+    }
+
+    // Return 400 for token errors, 500 for server errors, 200 for success
     const statusCode = result.success ? 200 : 
                       (result.message?.includes('expired') || 
                        result.message?.includes('Invalid') || 
-                       result.message?.includes('must be at least') ||
-                       result.message?.includes('not found')) ? 400 : 500;
+                       result.message?.includes('must be at least')) ? 400 : 500;
 
     return NextResponse.json(result, { status: statusCode });
   } catch (error) {
