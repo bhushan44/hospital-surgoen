@@ -53,6 +53,12 @@ import { HospitalsService } from '@/lib/services/hospitals.service';
  *                 type: string
  *               city:
  *                 type: string
+ *               latitude:
+ *                 type: number
+ *                 description: Optional - Only used if provided by frontend
+ *               longitude:
+ *                 type: number
+ *                 description: Optional - Only used if provided by frontend
  *     responses:
  *       201:
  *         description: Hospital created successfully

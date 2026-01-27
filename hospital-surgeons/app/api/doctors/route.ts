@@ -60,6 +60,12 @@ import { DoctorsService } from '@/lib/services/doctors.service';
  *                 type: string
  *               name:
  *                 type: string
+ *               latitude:
+ *                 type: number
+ *                 description: Optional - Only used if provided by frontend
+ *               longitude:
+ *                 type: number
+ *                 description: Optional - Only used if provided by frontend
  *     responses:
  *       201:
  *         description: Doctor created successfully

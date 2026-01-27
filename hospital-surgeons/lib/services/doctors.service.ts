@@ -1,7 +1,6 @@
 import bcrypt from 'bcrypt';
 import { DoctorsRepository, CreateDoctorData, CreateDoctorCredentialData, CreateDoctorSpecialtyData, CreateDoctorAvailabilityData, CreateDoctorUnavailabilityData, DoctorQuery, CreateAvailabilityTemplateData, UpdateAvailabilityTemplateData } from '@/lib/repositories/doctors.repository';
 import { UsersService } from '@/lib/services/users.service';
-import { geocodeLocation } from '@/lib/utils/geocoding';
 
 export interface CreateDoctorDto {
   email: string;
@@ -145,13 +144,6 @@ export class DoctorsService {
         email: createDoctorDto.email,
         phone: createDoctorDto.phone,
         password_hash: hashedPassword,
-        device: {
-          device_token: 'temp_token',
-          device_type: 'web',
-          app_version: '1.0.0',
-          os_version: '1.0.0',
-          is_active: true,
-        },
       }, 'doctor');
 
       if (!userResult.success || !userResult.data) {
@@ -163,27 +155,8 @@ export class DoctorsService {
 
       const userId = userResult.data[0].id;
 
-      // Optionally geocode location if provided
-      let latitude: number | undefined;
-      let longitude: number | undefined;
-      if ((createDoctorDto.fullAddress || createDoctorDto.city || createDoctorDto.state) 
-          && (createDoctorDto.latitude === undefined || createDoctorDto.longitude === undefined)) {
-        const geo = await geocodeLocation({
-          fullAddress: createDoctorDto.fullAddress,
-          city: createDoctorDto.city,
-          state: createDoctorDto.state,
-          pincode: createDoctorDto.pincode,
-        });
-        if (geo) {
-          latitude = geo.latitude;
-          longitude = geo.longitude;
-        }
-      } else {
-        latitude = createDoctorDto.latitude;
-        longitude = createDoctorDto.longitude;
-      }
-
-      // Create doctor profile
+      // Only use lat/long if explicitly provided by frontend
+      // Do not auto-geocode - frontend should handle geocoding if needed
       const doctor = await this.doctorsRepository.createDoctor(
         {
           firstName: createDoctorDto.firstName,
@@ -197,8 +170,8 @@ export class DoctorsService {
           city: createDoctorDto.city,
           state: createDoctorDto.state,
           pincode: createDoctorDto.pincode,
-          latitude,
-          longitude,
+          latitude: createDoctorDto.latitude,
+          longitude: createDoctorDto.longitude,
         },
         userId,
       );
@@ -339,27 +312,8 @@ export class DoctorsService {
       const firstName = createDoctorProfileDto.firstName || '';
       const lastName = createDoctorProfileDto.lastName || '';
 
-      // Geocode location using address components for better accuracy
-      let latitude: number | undefined = createDoctorProfileDto.latitude;
-      let longitude: number | undefined = createDoctorProfileDto.longitude;
-      
-      // Use address components (city and state are required, fullAddress and pincode are optional)
-      if ((createDoctorProfileDto.fullAddress || createDoctorProfileDto.city || createDoctorProfileDto.state) 
-          && (latitude === undefined || longitude === undefined)) {
-        const geo = await geocodeLocation({
-          fullAddress: createDoctorProfileDto.fullAddress,
-          city: createDoctorProfileDto.city,
-          state: createDoctorProfileDto.state,
-          pincode: createDoctorProfileDto.pincode,
-        });
-        console.log('geo', geo, createDoctorProfileDto);
-        if (geo) {
-          latitude = geo.latitude;
-          longitude = geo.longitude;
-        }
-      }
-      
-      // Create doctor profile
+      // Only use lat/long if explicitly provided by frontend
+      // Do not auto-geocode - frontend should handle geocoding if needed
       const doctor = await this.doctorsRepository.createDoctor(
         {
           firstName,
@@ -373,8 +327,8 @@ export class DoctorsService {
           city: createDoctorProfileDto.city,
           state: createDoctorProfileDto.state,
           pincode: createDoctorProfileDto.pincode,
-          latitude,
-          longitude,
+          latitude: createDoctorProfileDto.latitude,
+          longitude: createDoctorProfileDto.longitude,
         },
         userId,
       );
@@ -403,42 +357,10 @@ export class DoctorsService {
         };
       }
 
-      // If location components are being updated, always re-geocode
-      let latitude = updateDoctorDto.latitude;
-      let longitude = updateDoctorDto.longitude;
-      
-      // If location components are being updated, always re-geocode
-      const hasLocationUpdate = updateDoctorDto.fullAddress !== undefined ||
-                                updateDoctorDto.city !== undefined ||
-                                updateDoctorDto.state !== undefined ||
-                                updateDoctorDto.pincode !== undefined;
-      
-      if (hasLocationUpdate) {
-        // Always geocode when location fields are updated
-        const geo = await geocodeLocation({
-          fullAddress: updateDoctorDto.fullAddress,
-          city: updateDoctorDto.city,
-          state: updateDoctorDto.state,
-          pincode: updateDoctorDto.pincode,
-        });
-        console.log('geo', geo, updateDoctorDto);
-        if (geo) {
-          latitude = geo.latitude;
-          longitude = geo.longitude;
-        }
-        // If geocoding fails and coordinates were not explicitly provided,
-        // leave latitude/longitude as undefined to preserve old coordinates
-        if (!geo && latitude === undefined && longitude === undefined) {
-          // Keep existing coordinates from database (will be preserved in repository)
-          latitude = undefined;
-          longitude = undefined;
-        }
-      }
-
+      // Only use lat/long if explicitly provided by frontend
+      // Do not auto-geocode - frontend should handle geocoding if needed
       const updatedDoctor = await this.doctorsRepository.updateDoctor(id, {
         ...updateDoctorDto,
-        latitude,
-        longitude,
       });
 
       return {

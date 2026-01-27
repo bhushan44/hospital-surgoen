@@ -194,27 +194,10 @@ export async function POST(req: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(body.password, 10);
 
-    // Use latitude/longitude from body if provided, otherwise geocode from address fields
-    let latitude = body.latitude;
-    let longitude = body.longitude;
-    
-    // Only geocode if lat/lng are not provided in the request body
-    if (!latitude || !longitude) {
-      if (body.fullAddress || body.city || body.state || body.pincode) {
-        const { geocodeLocation } = await import('@/lib/utils/geocoding');
-        const geo = await geocodeLocation({
-          fullAddress: body.fullAddress,
-          city: body.city,
-          state: body.state,
-          pincode: body.pincode,
-        });
-        
-        if (geo) {
-          latitude = geo.latitude;
-          longitude = geo.longitude;
-        }
-      }
-    }
+    // Use latitude/longitude from body if provided, otherwise set to null
+    // Frontend is responsible for geocoding - we don't auto-geocode
+    const latitude = body.latitude || null;
+    const longitude = body.longitude || null;
 
     // Step 1: Create user
     const [newUser] = await db

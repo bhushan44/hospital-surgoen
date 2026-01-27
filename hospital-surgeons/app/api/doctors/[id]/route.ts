@@ -67,6 +67,12 @@ import { eq } from 'drizzle-orm';
  *               profilePhotoId:
  *                 type: string
  *                 format: uuid
+ *               latitude:
+ *                 type: number
+ *                 description: Optional - Only used if provided by frontend
+ *               longitude:
+ *                 type: number
+ *                 description: Optional - Only used if provided by frontend
  *     responses:
  *       200:
  *         description: Doctor updated successfully

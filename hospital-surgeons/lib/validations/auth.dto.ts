@@ -17,7 +17,6 @@ export const LoginDtoSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(1, 'Password is required'),
   accountType: z.enum(['doctor', 'hospital', 'admin']).optional(),
-  device: DeviceSchema.optional(),
 });
 
 export type LoginDto = z.infer<typeof LoginDtoSchema>;
@@ -29,7 +28,6 @@ export const SignupDtoSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-  device: DeviceSchema.optional(),
 });
 
 export type SignupDto = z.infer<typeof SignupDtoSchema>;

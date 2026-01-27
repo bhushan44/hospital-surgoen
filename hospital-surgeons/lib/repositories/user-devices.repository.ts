@@ -1,6 +1,6 @@
 import { getDb } from '@/lib/db';
 import { userDevices } from '@/src/db/drizzle/migrations/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 
 /**
  * User Devices Repository
@@ -22,7 +22,8 @@ export class UserDevicesRepository {
         .where(
           and(
             eq(userDevices.userId, userId),
-            eq(userDevices.isActive, true)
+            eq(userDevices.isActive, true),
+            ne(userDevices.deviceType, 'web')
           )
         );
         console.log(devices,"devices")

@@ -260,6 +260,8 @@ export class PushNotificationService {
       // Get device tokens for the user
       console.log('📱 [PUSH NOTIFICATION] Fetching active device tokens for user:', userId);
       let deviceTokens = await this.userDevicesRepository.getActiveDeviceTokens(userId);
+      console.log(`📱 [PUSH NOTIFICATION] Retrieved ${deviceTokens.length} device token(s) from repository`);
+      
 
       if (deviceTokens.length === 0) {
         console.log(`📱 [PUSH NOTIFICATION] No active device tokens found for user ${userId}`);

@@ -18,7 +18,6 @@ import { validateRequest } from '@/lib/utils/validate-request';
  *             required:
  *               - email
  *               - password
- *               - device
  *             properties:
  *               email:
  *                 type: string
@@ -33,17 +32,6 @@ import { validateRequest } from '@/lib/utils/validate-request';
  *                 enum: [doctor, hospital, admin]
  *                 description: Optional. Expected account type for validation. If provided, must match user's actual role.
  *                 example: doctor
- *               device:
- *                 type: object
- *                 required:
- *                   - device_token
- *                   - device_type
- *                 properties:
- *                   device_token:
- *                     type: string
- *                   device_type:
- *                     type: string
- *                     enum: [ios, android, web]
  *     responses:
  *       200:
  *         description: Login successful

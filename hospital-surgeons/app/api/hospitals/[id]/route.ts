@@ -70,6 +70,12 @@ import { eq } from 'drizzle-orm';
  *                 type: string
  *               numberOfBeds:
  *                 type: number
+ *               latitude:
+ *                 type: number
+ *                 description: Optional - Only used if provided by frontend
+ *               longitude:
+ *                 type: number
+ *                 description: Optional - Only used if provided by frontend
  *     responses:
  *       200:
  *         description: Hospital updated successfully
