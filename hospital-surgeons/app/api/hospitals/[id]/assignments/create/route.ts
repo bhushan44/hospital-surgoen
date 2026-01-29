@@ -151,14 +151,33 @@ export async function POST(
       throw error;
     }
 
-    // Calculate expiresAt based on priority
-    const expiresAt = new Date();
+    // 1. expiresAt calculated based on priority
+    //    Emergency: +1h, Urgent: +6h, Routine: +24h
+    let expiresAt = new Date();
     if (priority === 'routine') {
       expiresAt.setHours(expiresAt.getHours() + 24);
     } else if (priority === 'urgent') {
       expiresAt.setHours(expiresAt.getHours() + 6);
     } else if (priority === 'emergency') {
       expiresAt.setHours(expiresAt.getHours() + 1);
+    }
+
+    // 2. Validate expiresAt against assignment time bounds (only if time bounds exist)
+    if (startTime && endTime) {
+      // Parse HH:mm format (startTime and endTime are in HH:mm format from parent slot)
+      // Create Date objects using today's date + parsed times
+      const today = new Date();
+      const [startHour, startMin] = startTime.split(':').map(Number);
+      const [endHour, endMin] = endTime.split(':').map(Number);
+      
+      const startTimeDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), startHour, startMin);
+      const endTimeDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), endHour, endMin);
+
+      if (expiresAt > endTimeDate) {
+        // Case 1: Expires after assignment ends - set to end time
+        expiresAt = endTimeDate;
+      }
+      // else: expiresAt is valid (before/during assignment) → keep it
     }
 
     // Verify priority exists in enum

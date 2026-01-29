@@ -152,11 +152,13 @@ export class UsersService {
     }
   }
 
-  async refreshToken(body: RefreshTokenDto) {
+  async refreshToken(token:string) {
     try {
+      console.log(token,"token")
       // Verify refresh token
+
       const payload = verifyToken(
-        body.token,
+        token,
         process.env.JWT_REFRESH_TOKEN_SECRET!
       );
 
@@ -169,6 +171,7 @@ export class UsersService {
 
       return { success: true, data: { accessToken } };
     } catch (err) {
+      console.error('Error refreshing token:', err);
       return { success: false, message: 'Invalid refresh token' };
     }
   }
