@@ -150,7 +150,9 @@ export async function GET(
     // Support multiple specialty IDs
     const specialtyIds = searchParams.getAll('specialtyId'); // Gets all values for 'specialtyId'
     const date = searchParams.get('date') || undefined;
-    const priority = searchParams.get('priority') || 'routine';
+    
+    // Debug: Log search parameters
+    console.log('🔍 Find-doctors search params:', { searchText, specialtyIds, date });
     
     // Pagination parameters
     const page = parseInt(searchParams.get('page') || '1', 10);
@@ -264,54 +266,67 @@ export async function GET(
       }
     }
 
-    // Build WHERE conditions dynamically using Drizzle's sql template
-    const whereConditions: any[] = [];
+    // Build WHERE conditions as strings
+    // Logic: 
+    // - If ONLY search text: search by name OR specialty name
+    // - If ONLY specialty filter: filter by selected specialties
+    // - If BOTH search AND specialty filter: search by NAME AND has selected specialty
+    const whereConditionStrings: string[] = [];
 
-    // Only show verified doctors
-    // whereConditions.push(sql`d.license_verification_status = 'verified'`);
+    // Determine if we have both search and specialty filter
+    const hasBothSearchAndSpecialty = searchText && specialtyIds.length > 0;
 
-    // Search text condition - improved to search first name, last name, full name, and specialty
+    // Search text condition
     if (searchText) {
+      console.log('✅ Adding search condition for:', searchText);
       const searchPattern = `%${searchText.toLowerCase()}%`;
-      whereConditions.push(sql`(
-        LOWER(d.first_name) LIKE ${searchPattern} OR
-        LOWER(d.last_name) LIKE ${searchPattern} OR
-        LOWER(d.first_name || ' ' || d.last_name) LIKE ${searchPattern} OR
-        LOWER(d.last_name || ' ' || d.first_name) LIKE ${searchPattern} OR
-        EXISTS (
-          SELECT 1 FROM doctor_specialties ds
-          INNER JOIN specialties s ON ds.specialty_id = s.id
-          WHERE ds.doctor_id = d.id AND LOWER(s.name) LIKE ${searchPattern}
-        )
-  `);
+      
+      if (hasBothSearchAndSpecialty) {
+        // When both search and specialty filter are provided: search by NAME ONLY
+        whereConditionStrings.push(`(
+          LOWER(d.first_name) LIKE '${searchPattern}' OR
+          LOWER(d.last_name) LIKE '${searchPattern}' OR
+          LOWER(d.first_name || ' ' || d.last_name) LIKE '${searchPattern}' OR
+          LOWER(d.last_name || ' ' || d.first_name) LIKE '${searchPattern}'
+        )`);
+      } else {
+        // When only search is provided: search by NAME OR SPECIALTY
+        whereConditionStrings.push(`(
+          LOWER(d.first_name) LIKE '${searchPattern}' OR
+          LOWER(d.last_name) LIKE '${searchPattern}' OR
+          LOWER(d.first_name || ' ' || d.last_name) LIKE '${searchPattern}' OR
+          LOWER(d.last_name || ' ' || d.first_name) LIKE '${searchPattern}' OR
+          EXISTS (
+            SELECT 1 FROM doctor_specialties ds
+            INNER JOIN specialties s ON ds.specialty_id = s.id
+            WHERE ds.doctor_id = d.id AND LOWER(s.name) LIKE '${searchPattern}'
+          )
+        )`);
+      }
+    } else {
+      console.log('⚠️  No search text provided');
     }
-    // Multiple specialty IDs condition - use proper SQL array syntax
+
+    // Specialty filter condition - always filters to selected specialties when provided
     if (specialtyIds.length > 0) {
-      // Use EXISTS with ANY clause for multiple specialty IDs
-      // Build array literal properly: ARRAY['uuid1'::uuid, 'uuid2'::uuid]
+      console.log('✅ Adding specialty filter for:', specialtyIds);
       const specialtyArrayLiteral = `ARRAY[${specialtyIds.map(id => `'${id}'::uuid`).join(', ')}]`;
-      whereConditions.push(sql.raw(`EXISTS (
+      whereConditionStrings.push(`EXISTS (
         SELECT 1 FROM doctor_specialties 
         WHERE doctor_id = d.id 
         AND specialty_id = ANY(${specialtyArrayLiteral})
-      )`));
+      )`);
+    } else {
+      console.log('⚠️  No specialty filter applied');
     }
 
-    // Build base WHERE clause by combining conditions and prefixing with
-    // `AND` so helpers that emit `WHERE 1=1 ${baseWhereClause}` remain valid.
-    // baseWhereClause will be either empty (sql``) or a fragment starting
-    // with `AND ...`.
-    let baseWhereClause: any = sql``;
-    if (whereConditions.length > 0) {
-      if (whereConditions.length === 1) {
-        baseWhereClause = sql`AND ${whereConditions[0]}`;
-      } else {
-        let combined = whereConditions[0];
-        for (let i = 1; i < whereConditions.length; i++) {
-          combined = sql`${combined} AND ${whereConditions[i]}`;
-        }
-        baseWhereClause = sql`AND ${combined}`;
-      }
+    // Build WHERE clause string by combining all conditions with AND
+    let whereClauseString = '';
+    if (whereConditionStrings.length > 0) {
+      whereClauseString = whereConditionStrings.join(' AND ');
+      console.log('📋 WHERE conditions count:', whereConditionStrings.length);
+    } else {
+      console.log('⚠️  No WHERE conditions applied');
     }
 
     // Check if PostGIS is available
@@ -349,9 +364,6 @@ export async function GET(
   // Step 1: Get favorite doctor IDs (from hospital preferences)
   const favoriteDoctorIds = hospitalPrefs[0]?.preferredDoctorIds || [];
 
-  // Track whether the base whereClause already has conditions (built above)
-  const whereHasConditions = whereConditions.length > 0;
-
     // Respect the onlyFavorites query parameter. When onlyFavorites is true
     // we must return only favorite doctors (or an empty result if none exist).
     // When onlyFavorites is not provided/false, fall back to the default
@@ -362,6 +374,9 @@ export async function GET(
 
     let onlyFavoritesApplied = false;
     console.log('onlyFavorites requested:', onlyFavorites);
+
+    // Build final WHERE clause including onlyFavorites condition if needed
+    let finalWhereClauseString = whereClauseString;
 
     if (onlyFavorites) {
       // If the caller explicitly asked for only favorites but the hospital has
@@ -389,15 +404,23 @@ export async function GET(
 
       // Hospital has favorites and caller requested onlyFavorites -> restrict
       // the WHERE clause to those favorite IDs.
-      const favArrayLiteral = `ARRAY[${favoriteDoctorIds.map(id => `'${id}'::uuid`).join(', ')}]`;
-      if (!whereHasConditions) {
-        baseWhereClause = sql`AND d.id = ANY(${sql.raw(favArrayLiteral)})`;
+      const favArrayIds = favoriteDoctorIds.map(id => `'${id}'::uuid`).join(', ');
+      const favoritesCondition = `d.id = ANY(ARRAY[${favArrayIds}])`;
+      
+      if (finalWhereClauseString) {
+        finalWhereClauseString = finalWhereClauseString + ' AND ' + favoritesCondition;
       } else {
-        baseWhereClause = sql`${baseWhereClause} AND d.id = ANY(${sql.raw(favArrayLiteral)})`;
+        finalWhereClauseString = favoritesCondition;
       }
 
       onlyFavoritesApplied = true;
     }
+
+    // Convert final WHERE clause string to sql.raw for PostGIS helpers
+    // PostGIS queries expect baseWhereClause to start with ' AND' or be empty
+    const baseWhereClause = finalWhereClauseString 
+      ? sql.raw(' AND ' + finalWhereClauseString)
+      : sql.raw('');
 
     // Step 2: Get total count of doctors within radius (with location)
     const totalCount = await countDoctorsInFixedRadius(
@@ -598,6 +621,12 @@ export async function GET(
       // Use doctor's actual subscription tier from database (not calculated)
       const subscriptionTier = (doctor as any).subscriptionTier || 'free';
 
+      const specialtiesArray = Array.isArray(doctor.specialties)
+        ? doctor.specialties
+        : typeof doctor.specialties === 'string' && doctor.specialties
+          ? doctor.specialties.split(',').map((s: string) => s.trim()).filter(Boolean)
+          : [];
+
       // Format parent slots - these are the main availability windows
       // The UI will fetch detailed availability (with booked sub-slots) when user selects a slot
       const slots = (doctor.availableSlots || []).map((slot: any) => {
@@ -629,7 +658,8 @@ export async function GET(
       return {
         id: doctor.id,
         name: `Dr. ${doctor.firstName} ${doctor.lastName}`,
-        specialty: doctor.specialties?.[0] || 'General Medicine',
+        specialty: specialtiesArray[0] || 'General Medicine',
+        specialties: specialtiesArray,
         subscriptionTier: subscriptionTier, // Doctor's actual subscription tier from database
         experience,
         rating: rating || 0,
