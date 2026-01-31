@@ -17,7 +17,7 @@ async function patchHandler(
   try {
     const params = await context.params;
     const assignmentId = params.id;
-    
+
     // Validate request body with Zod
     const validation = await validateRequest(req, UpdateAssignmentStatusDtoSchema);
     if (!validation.success) {
@@ -55,7 +55,7 @@ async function patchHandler(
       const { DoctorsService } = await import('@/lib/services/doctors.service');
       const doctorsService = new DoctorsService();
       const doctorResult = await doctorsService.findDoctorByUserId(user.userId);
-      
+
       if (!doctorResult.success || !doctorResult.data || doctorResult.data.id !== assignmentData.doctorId) {
         return NextResponse.json(
           {
@@ -70,7 +70,7 @@ async function patchHandler(
       const { HospitalsService } = await import('@/lib/services/hospitals.service');
       const hospitalsService = new HospitalsService();
       const hospitalResult = await hospitalsService.findHospitalByUserId(user.userId);
-      
+
       if (!hospitalResult.success || !hospitalResult.data || hospitalResult.data.id !== assignmentData.hospitalId) {
         return NextResponse.json(
           {
@@ -106,6 +106,49 @@ async function patchHandler(
       );
     }
 
+    // Only allow 'completed' status if current time is after the scheduled start time
+    if (status === 'completed' && assignmentData.availabilitySlotId) {
+      const slotInfo = await db
+        .select({
+          slotDate: doctorAvailability.slotDate,
+          startTime: doctorAvailability.startTime,
+        })
+        .from(doctorAvailability)
+        .where(eq(doctorAvailability.id, assignmentData.availabilitySlotId))
+        .limit(1);
+
+      if (slotInfo.length > 0) {
+        const slot = slotInfo[0];
+        // Combine slotDate and startTime to create the scheduled start datetime
+        const scheduledStartDateTime = new Date(`${slot.slotDate}T${slot.startTime}`);
+        const now = new Date();
+
+        // Check if current time is before the scheduled start time
+        if (now < scheduledStartDateTime) {
+          const timeDifferenceMs = scheduledStartDateTime.getTime() - now.getTime();
+          const hoursUntilStart = timeDifferenceMs / (1000 * 60 * 60);
+
+          const daysRemaining = Math.floor(hoursUntilStart / 24);
+          const hoursRemaining = Math.floor(hoursUntilStart % 24);
+          const minutesRemaining = Math.floor((hoursUntilStart % 1) * 60);
+
+          const timeRemainingText = daysRemaining > 0
+            ? `${daysRemaining} day${daysRemaining > 1 ? 's' : ''}, ${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''} and ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`
+            : hoursRemaining > 0
+              ? `${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''} and ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`
+              : `${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`;
+
+          return NextResponse.json(
+            {
+              success: false,
+              message: `Assignment cannot be marked as completed before its scheduled start time. The assignment is scheduled to start in ${timeRemainingText} (${scheduledStartDateTime.toLocaleString()}).`,
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // Only allow 'cancelled' status if assignment is 'pending' or 'accepted'
     if (status === 'cancelled' && assignmentData.status !== 'pending' && assignmentData.status !== 'accepted') {
       return NextResponse.json(
@@ -119,22 +162,22 @@ async function patchHandler(
 
     // Check configurable cancellation notice period for assignments with booked slots
     // Apply to both 'pending' and 'accepted' assignments that have an availabilitySlotId
-    if (status === 'cancelled' && assignmentData.availabilitySlotId && 
-        (assignmentData.status === 'pending' || assignmentData.status === 'accepted')) {
+    if (status === 'cancelled' && assignmentData.availabilitySlotId &&
+      (assignmentData.status === 'pending' || assignmentData.status === 'accepted')) {
       // Fetch hospital preferences to get the cancellation notice period (in days)
       const { hospitalPreferences } = await import('@/src/db/drizzle/migrations/schema');
       const preferences = await db
-        .select({ 
-          assignmentCancellationNoticeDays: hospitalPreferences.assignmentCancellationNoticeDays 
+        .select({
+          assignmentCancellationNoticeDays: hospitalPreferences.assignmentCancellationNoticeDays
         })
         .from(hospitalPreferences)
         .where(eq(hospitalPreferences.hospitalId, assignmentData.hospitalId))
         .limit(1);
-      
+
       // Get cancellation notice period (default to 1 day if not set)
       const cancellationNoticeDays = preferences[0]?.assignmentCancellationNoticeDays ?? 1;
       const cancellationNoticeHours = cancellationNoticeDays * 24;
-      
+
       // Fetch the availability slot to get the scheduled start time
       const slotInfo = await db
         .select({
@@ -150,24 +193,24 @@ async function patchHandler(
         // Combine slotDate and startTime to create the scheduled start datetime
         const scheduledStartDateTime = new Date(`${slot.slotDate}T${slot.startTime}`);
         const now = new Date();
-        
+
         // Calculate the difference in milliseconds
         const timeDifferenceMs = scheduledStartDateTime.getTime() - now.getTime();
         // Convert to hours
         const hoursUntilStart = timeDifferenceMs / (1000 * 60 * 60);
-        
+
         // Check if less than the required notice period remains
         if (hoursUntilStart < cancellationNoticeHours) {
           const daysRemaining = Math.floor(hoursUntilStart / 24);
           const hoursRemaining = Math.floor(hoursUntilStart % 24);
           const minutesRemaining = Math.floor((hoursUntilStart % 1) * 60);
-          
-          const timeRemainingText = daysRemaining > 0 
+
+          const timeRemainingText = daysRemaining > 0
             ? `${daysRemaining} day${daysRemaining > 1 ? 's' : ''}, ${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''} and ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`
             : hoursRemaining > 0
-            ? `${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''} and ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`
-            : `${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`;
-          
+              ? `${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''} and ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`
+              : `${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}`;
+
           return NextResponse.json(
             {
               success: false,
@@ -246,7 +289,7 @@ async function patchHandler(
     // Automatically create payment record when assignment is completed
     if (status === 'completed' && assignmentData.consultationFee) {
       const { assignmentPayments } = await import('@/src/db/drizzle/migrations/schema');
-      
+
       // Check if payment already exists (prevent duplicates)
       const existingPayment = await db
         .select()
@@ -259,7 +302,7 @@ async function patchHandler(
         const consultationFee = parseFloat(assignmentData.consultationFee.toString());
         const platformCommission = 0; // No commission for now
         const doctorPayout = consultationFee; // Full amount to doctor
-        
+
         try {
           await db.insert(assignmentPayments).values({
             assignmentId: assignmentId,
@@ -294,7 +337,7 @@ async function patchHandler(
 
       if (slotInfo.length > 0) {
         const slot = slotInfo[0];
-        
+
         if (slot.parentSlotId) {
           // This is a sub-slot: delete it
           await db
@@ -323,7 +366,7 @@ async function patchHandler(
         console.log(`📬 [ASSIGNMENT STATUS] Assignment ID: ${assignmentId}`);
         console.log(`📬 [ASSIGNMENT STATUS] New Status: ${status}`);
         console.log(`📬 [ASSIGNMENT STATUS] Changed By: ${user.userRole}`);
-        
+
         const { hospitals, doctors, patients } = await import('@/src/db/drizzle/migrations/schema');
         const { NotificationsService } = await import('@/lib/services/notifications.service');
         const notificationsService = new NotificationsService();
