@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { HospitalsService } from '@/lib/services/hospitals.service';
 import { withAuth } from '@/lib/auth/middleware';
+import { getDb } from '@/lib/db';
+import { files } from '@/src/db/drizzle/migrations/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * @swagger
@@ -83,6 +86,18 @@ async function handler(req: NextRequest) {
     const user = (req as any).user;
     const hospitalsService = new HospitalsService();
     const result = await hospitalsService.findHospitalByUserId(user.userId);
+
+    let profileUrl: string | null = null;
+    if (result.success && (result as any).data?.logoId) {
+      const db = getDb();
+      const fileId = (result as any).data.logoId as string;
+      const fileResult = await db
+        .select({ url: files.url, cdnUrl: files.cdnUrl })
+        .from(files)
+        .where(eq(files.id, fileId))
+        .limit(1);
+      profileUrl = (fileResult[0]?.cdnUrl || fileResult[0]?.url || null) as string | null;
+    }
     
     // Get current subscription/plan details
     const { SubscriptionsService } = await import('@/lib/services/subscriptions.service');
@@ -92,6 +107,12 @@ async function handler(req: NextRequest) {
     // Combine profile with subscription data
     const response = {
       ...result,
+      data: (result as any).data
+        ? {
+            ...(result as any).data,
+            profile_url: profileUrl,
+          }
+        : (result as any).data,
       currentPlan: subscriptionResult.success && subscriptionResult.data ? {
         subscription: {
           id: subscriptionResult.data.subscription.id,
