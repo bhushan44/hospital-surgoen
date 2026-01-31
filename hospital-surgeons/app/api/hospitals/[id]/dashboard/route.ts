@@ -183,6 +183,8 @@ export async function GET(
     let subscriptionLimit = null;
     let assignmentUsage = null;
     let assignmentLimit = null;
+    let subscriptionUsageTrend: 'up' | 'down' | 'neutral' = 'neutral';
+    let assignmentUsageTrend: 'up' | 'down' | 'neutral' = 'neutral';
     if (hospital[0]?.userId) {
       const subscriptionResult = await db
         .select({
@@ -223,6 +225,29 @@ export async function GET(
           );
         subscriptionUsage = Number(patientsThisMonthResult[0]?.count || 0);
 
+        // Count patients previous month (for trend)
+        const patientsPreviousMonthResult = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(patients)
+          .where(
+            and(
+              eq(patients.hospitalId, hospitalId),
+              gte(patients.createdAt, startOfPreviousMonth.toISOString()),
+              sql`${patients.createdAt} < ${startOfMonth.toISOString()}`
+            )
+          );
+        const subscriptionUsagePreviousMonth = Number(patientsPreviousMonthResult[0]?.count || 0);
+        if (subscriptionUsagePreviousMonth > 0) {
+          subscriptionUsageTrend =
+            subscriptionUsage > subscriptionUsagePreviousMonth
+              ? 'up'
+              : subscriptionUsage < subscriptionUsagePreviousMonth
+                ? 'down'
+                : 'neutral';
+        } else if ((subscriptionUsage || 0) > 0 && subscriptionUsagePreviousMonth === 0) {
+          subscriptionUsageTrend = 'up';
+        }
+
         // Count assignments this month
         const assignmentsThisMonthResult = await db
           .select({ count: sql<number>`count(*)` })
@@ -234,6 +259,29 @@ export async function GET(
             )
           );
         assignmentUsage = Number(assignmentsThisMonthResult[0]?.count || 0);
+
+        // Count assignments previous month (for trend)
+        const assignmentsPreviousMonthResult = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(assignments)
+          .where(
+            and(
+              eq(assignments.hospitalId, hospitalId),
+              gte(assignments.requestedAt, startOfPreviousMonth.toISOString()),
+              sql`${assignments.requestedAt} < ${startOfMonth.toISOString()}`
+            )
+          );
+        const assignmentUsagePreviousMonth = Number(assignmentsPreviousMonthResult[0]?.count || 0);
+        if (assignmentUsagePreviousMonth > 0) {
+          assignmentUsageTrend =
+            assignmentUsage > assignmentUsagePreviousMonth
+              ? 'up'
+              : assignmentUsage < assignmentUsagePreviousMonth
+                ? 'down'
+                : 'neutral';
+        } else if ((assignmentUsage || 0) > 0 && assignmentUsagePreviousMonth === 0) {
+          assignmentUsageTrend = 'up';
+        }
       }
     }
 
@@ -397,16 +445,29 @@ export async function GET(
             change: monthlyAssignmentsChange,
             trend: monthlyAssignmentsTrend,
           },
-          subscriptionUsage: {
-            value: subscriptionUsage?.toString() || '0',
-            change: subscriptionLimit ? (subscriptionLimit === -1 ? 'Unlimited' : `${subscriptionLimit} limit`) : 'N/A',
-            trend: 'neutral',
+        //   subscriptionUsage: {
+        //     value: subscriptionUsage?.toString() || '0',
+        //     change: subscriptionLimit ? (subscriptionLimit === -1 ? 'Unlimited' : `${subscriptionLimit} limit`) : 'N/A',
+        //     trend: subscriptionUsageTrend,
+        //   },
+        //   assignmentUsage: {
+        //     value: assignmentUsage?.toString() || '0',
+        //     change: assignmentLimit ? (assignmentLimit === -1 ? 'Unlimited' : `${assignmentLimit} limit`) : 'N/A',
+        //     trend: assignmentUsageTrend,
+        //   },
+        // },
+        subscriptionUsage: {
+          patients: {
+            used: subscriptionUsage || 0,
+            limit: subscriptionLimit ?? null,
+            // trend: subscriptionUsageTrend,
           },
-          assignmentUsage: {
-            value: assignmentUsage?.toString() || '0',
-            change: assignmentLimit ? (assignmentLimit === -1 ? 'Unlimited' : `${assignmentLimit} limit`) : 'N/A',
-            trend: 'neutral',
+          assignments: {
+            used: assignmentUsage || 0,
+            limit: assignmentLimit ?? null,
+            // trend: assignmentUsageTrend,
           },
+        },
         },
         todaysSchedule: scheduleWithDetails.map((item) => ({
           id: item.id,
