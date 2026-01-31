@@ -110,6 +110,8 @@ async function getHandler(
     const status = searchParams.get('status') || undefined;
     const search = searchParams.get('search') || undefined;
     const selectedDate = searchParams.get('selectedDate') || undefined;
+    const from = searchParams.get('from') || undefined; // YYYY-MM-DD
+    const to = searchParams.get('to') || undefined; // YYYY-MM-DD
 
     // Build where conditions
     const conditions = [eq(assignments.doctorId, doctorId)];
@@ -117,8 +119,49 @@ async function getHandler(
       conditions.push(eq(assignments.status, status));
     }
 
+    // Date filter based on slot date (or requestedAt date if slot is NULL)
+    if (from || to) {
+      if (from && to) {
+        conditions.push(sql`(
+          EXISTS (
+            SELECT 1 FROM doctor_availability da 
+            WHERE da.id = ${assignments.availabilitySlotId} 
+            AND DATE(da.slot_date) BETWEEN ${from}::date AND ${to}::date
+          )
+          OR (
+            ${assignments.availabilitySlotId} IS NULL 
+            AND DATE(${assignments.requestedAt}::timestamp) BETWEEN ${from}::date AND ${to}::date
+          )
+        )`);
+      } else if (from) {
+        conditions.push(sql`(
+          EXISTS (
+            SELECT 1 FROM doctor_availability da 
+            WHERE da.id = ${assignments.availabilitySlotId} 
+            AND DATE(da.slot_date) >= ${from}::date
+          )
+          OR (
+            ${assignments.availabilitySlotId} IS NULL 
+            AND DATE(${assignments.requestedAt}::timestamp) >= ${from}::date
+          )
+        )`);
+      } else if (to) {
+        conditions.push(sql`(
+          EXISTS (
+            SELECT 1 FROM doctor_availability da 
+            WHERE da.id = ${assignments.availabilitySlotId} 
+            AND DATE(da.slot_date) <= ${to}::date
+          )
+          OR (
+            ${assignments.availabilitySlotId} IS NULL 
+            AND DATE(${assignments.requestedAt}::timestamp) <= ${to}::date
+          )
+        )`);
+      }
+    }
+
     // Filter by selected date if provided
-    if (selectedDate) {
+    if (selectedDate && !(from || to)) {
       conditions.push(
         sql`(
           EXISTS (
@@ -160,14 +203,19 @@ async function getHandler(
         hospitalName: sql<string>`(SELECT name FROM hospitals WHERE id = ${assignments.hospitalId})`,
         hospitalAddress: sql<string | null>`(SELECT COALESCE(full_address, address) FROM hospitals WHERE id = ${assignments.hospitalId})`,
         // Slot info
-        slotDate: sql<string>`(SELECT slot_date::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
-        slotTime: sql<string>`(SELECT start_time::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
-        slotEndTime: sql<string>`(SELECT end_time::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
-        parentSlotId: sql<string | null>`(SELECT parent_slot_id FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
+        slotDate: sql<string>`${doctorAvailability.slotDate}::text`,
+        slotTime: sql<string>`${doctorAvailability.startTime}::text`,
+        slotEndTime: sql<string>`${doctorAvailability.endTime}::text`,
+        parentSlotId: sql<string | null>`${doctorAvailability.parentSlotId}`,
       })
       .from(assignments)
       .where(whereClause)
-      .orderBy(desc(assignments.requestedAt));
+      .leftJoin(doctorAvailability, eq(assignments.availabilitySlotId, doctorAvailability.id))
+      .orderBy(
+        asc(sql`COALESCE(${doctorAvailability.slotDate}, DATE(${assignments.requestedAt}::timestamp))`),
+        asc(sql`COALESCE(${doctorAvailability.startTime}, (${assignments.requestedAt}::timestamp)::time)`),
+        asc(assignments.requestedAt)
+      );
 
     // Format response
     let formattedAssignments = assignmentsList.map((assignment) => {

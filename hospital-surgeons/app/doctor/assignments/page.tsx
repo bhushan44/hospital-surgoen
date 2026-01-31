@@ -63,8 +63,10 @@ export default function AssignmentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [tempSearchQuery, setTempSearchQuery] = useState('');
-  const [selectedDate, setSelectedDate] = useState<string>('');
-  const [tempSelectedDate, setTempSelectedDate] = useState<string>('');
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
+  const [tempFromDate, setTempFromDate] = useState<string>('');
+  const [tempToDate, setTempToDate] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [tempStatusFilter, setTempStatusFilter] = useState('all');
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
@@ -137,7 +139,12 @@ export default function AssignmentsPage() {
     }
   };
 
-  const fetchAssignments = async (dateOverride?: string, statusOverride?: string, searchOverride?: string) => {
+  const fetchAssignments = async (
+    fromOverride?: string,
+    toOverride?: string,
+    statusOverride?: string,
+    searchOverride?: string
+  ) => {
     if (!doctorId) return;
     
     try {
@@ -151,9 +158,13 @@ export default function AssignmentsPage() {
         params.append('status', statusToUse);
       }
       
-      const dateToUse = dateOverride !== undefined ? dateOverride : selectedDate;
-      if (dateToUse) {
-        params.append('selectedDate', dateToUse);
+      const fromToUse = fromOverride !== undefined ? fromOverride : fromDate;
+      const toToUse = toOverride !== undefined ? toOverride : toDate;
+      if (fromToUse) {
+        params.append('from', fromToUse);
+      }
+      if (toToUse) {
+        params.append('to', toToUse);
       }
       
       const searchToUse = searchOverride !== undefined ? searchOverride : searchQuery;
@@ -184,18 +195,21 @@ export default function AssignmentsPage() {
   const handleApplyFilters = () => {
     setSearchQuery(tempSearchQuery);
     setStatusFilter(tempStatusFilter);
-    setSelectedDate(tempSelectedDate);
-    fetchAssignments(tempSelectedDate, tempStatusFilter, tempSearchQuery);
+    setFromDate(tempFromDate);
+    setToDate(tempToDate);
+    fetchAssignments(tempFromDate, tempToDate, tempStatusFilter, tempSearchQuery);
   };
 
   const handleClearFilters = () => {
     setTempSearchQuery('');
-    setTempSelectedDate('');
+    setTempFromDate('');
+    setTempToDate('');
     setTempStatusFilter('all');
     setSearchQuery('');
-    setSelectedDate('');
+    setFromDate('');
+    setToDate('');
     setStatusFilter('all');
-    fetchAssignments('', 'all', '');
+    fetchAssignments('', '', 'all', '');
   };
 
   const getStatusBadge = (status: string) => {
@@ -543,16 +557,29 @@ export default function AssignmentsPage() {
 
           {/* Date Filter */}
           <div className="w-[200px]">
-            <div className="relative">
-              <input 
-                type="date"
-                value={tempSelectedDate || selectedDate}
-                onChange={(e) => {
-                  setTempSelectedDate(e.target.value);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-[#2563EB] pr-10 h-10"
-              />
-              <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="relative">
+                <input
+                  type="date"
+                  value={tempFromDate || fromDate}
+                  onChange={(e) => {
+                    setTempFromDate(e.target.value);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-[#2563EB] pr-10 h-10"
+                />
+                <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              </div>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={tempToDate || toDate}
+                  onChange={(e) => {
+                    setTempToDate(e.target.value);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-[#2563EB] pr-10 h-10"
+                />
+                <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              </div>
             </div>
           </div>
 
@@ -574,7 +601,7 @@ export default function AssignmentsPage() {
           </div>
 
           {/* Clear Button */}
-          {(tempSearchQuery || tempSelectedDate || tempStatusFilter !== 'all' || searchQuery || selectedDate || statusFilter !== 'all') ? (
+          {(tempSearchQuery || tempFromDate || tempToDate || tempStatusFilter !== 'all' || searchQuery || fromDate || toDate || statusFilter !== 'all') ? (
             <Button
               variant="outline"
               onClick={handleClearFilters}
