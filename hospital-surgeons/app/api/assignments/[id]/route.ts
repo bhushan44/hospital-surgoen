@@ -119,6 +119,8 @@ async function getHandler(
         doctorLastName: doctors.lastName,
         doctorPrimaryLocation: doctors.primaryLocation,
         doctorFullAddress: doctors.fullAddress,
+        doctorLatitude: doctors.latitude,
+        doctorLongitude: doctors.longitude,
 
         // Hospital
         hospitalName: hospitals.name,
@@ -126,6 +128,8 @@ async function getHandler(
         hospitalCity: hospitals.city,
         hospitalState: hospitals.state,
         hospitalPincode: hospitals.pincode,
+        hospitalLatitude: hospitals.latitude,
+        hospitalLongitude: hospitals.longitude,
 
         // Slot
         slotDate: doctorAvailability.slotDate,
@@ -176,6 +180,14 @@ async function getHandler(
           lastName: row.doctorLastName || null,
           primaryLocation: row.doctorPrimaryLocation || null,
           fullAddress: row.doctorFullAddress || null,
+          latitude:
+            row.doctorLatitude === null || row.doctorLatitude === undefined
+              ? null
+              : Number(row.doctorLatitude),
+          longitude:
+            row.doctorLongitude === null || row.doctorLongitude === undefined
+              ? null
+              : Number(row.doctorLongitude),
         },
         hospital: {
           id: row.hospitalId,
@@ -184,6 +196,14 @@ async function getHandler(
           city: row.hospitalCity || null,
           state: row.hospitalState || null,
           pincode: row.hospitalPincode || null,
+          latitude:
+            row.hospitalLatitude === null || row.hospitalLatitude === undefined
+              ? null
+              : Number(row.hospitalLatitude),
+          longitude:
+            row.hospitalLongitude === null || row.hospitalLongitude === undefined
+              ? null
+              : Number(row.hospitalLongitude),
         },
         schedule: {
           date,

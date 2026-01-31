@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { assignmentPayments, assignments, doctors, hospitals, patients, users } from '@/src/db/drizzle/migrations/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
 /**
@@ -165,13 +165,41 @@ async function getHandler(
       whereConditions.push(eq(assignmentPayments.paymentStatus, statusFilter as any));
     }
 
+    // Earnings summary (all-time)
+    const totalEarningsResult = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(${assignmentPayments.doctorPayout}), 0)`,
+      })
+      .from(assignmentPayments)
+      .where(
+        and(
+          eq(assignmentPayments.doctorId, doctorId),
+          eq(assignmentPayments.paymentStatus, 'completed')
+        )
+      );
+
+    const pendingEarningsResult = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(${assignmentPayments.doctorPayout}), 0)`,
+      })
+      .from(assignmentPayments)
+      .where(
+        and(
+          eq(assignmentPayments.doctorId, doctorId),
+          inArray(assignmentPayments.paymentStatus, ['pending', 'processing'])
+        )
+      );
+
+    const totalEarnings = Number(totalEarningsResult[0]?.total || 0);
+    const pendingEarnings = Number(pendingEarningsResult[0]?.total || 0);
+
     // Get total count
     const totalCount = await db
-      .select({ count: assignmentPayments.id })
+      .select({ count: sql<number>`COUNT(*)` })
       .from(assignmentPayments)
       .where(and(...whereConditions));
 
-    const total = totalCount.length;
+    const total = Number(totalCount[0]?.count || 0);
     const totalPages = Math.ceil(total / limit);
 
     // Get payments with assignment, hospital, and patient details
@@ -231,6 +259,8 @@ async function getHandler(
     return NextResponse.json({
       success: true,
       data: {
+        totalEarnings,
+        pendingEarnings,
         payments: formattedPayments,
         pagination: {
           page,
