@@ -71,12 +71,6 @@ export function AssignmentManagement() {
     fetchHospitalProfile();
   }, []);
 
-  useEffect(() => {
-    if (hospitalId) {
-      fetchAssignments();
-    }
-  }, [hospitalId]);
-
   const fetchHospitalProfile = async () => {
     try {
       const response = await apiClient.get('/api/hospitals/profile');
@@ -504,13 +498,13 @@ export function AssignmentManagement() {
             {/* Apply Button */}
             <Button
               onClick={() => {
-                const dateRangeToApply = tempSelectedDateRange;
+                const dateRangeToApply = tempSelectedDateRange ?? selectedDateRange;
                 const statusToApply = tempStatusFilter;
                 const searchToApply = tempSearchQuery.trim();
                 setSelectedDateRange(dateRangeToApply);
                 setStatusFilter(statusToApply);
                 setSearchQuery(searchToApply);
-                setTempSelectedDateRange(undefined);
+                setTempSelectedDateRange(dateRangeToApply);
                 setTempStatusFilter(statusToApply);
                 setTempSearchQuery('');
                 fetchAssignments(dateRangeToApply, statusToApply, searchToApply);
