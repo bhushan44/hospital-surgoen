@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import type { DateRange } from 'react-day-picker';
 import { Search, Filter, Clock, CheckCircle, XCircle, AlertCircle, MessageSquare, Phone, Calendar as CalendarIcon, Loader2, X, DollarSign } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -35,6 +36,13 @@ import { cn } from '../../components/ui/utils';
 import apiClient from '@/lib/api/httpClient';
 
 export function AssignmentManagement() {
+  const formatDateYYYYMMDD = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const router = useRouter();
   
   const onNavigate = (page: string) => {
@@ -52,8 +60,8 @@ export function AssignmentManagement() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [tempStatusFilter, setTempStatusFilter] = useState('all');
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
-  const [tempSelectedDate, setTempSelectedDate] = useState<string>('');
+  const [selectedDateRange, setSelectedDateRange] = useState<DateRange | undefined>(undefined);
+  const [tempSelectedDateRange, setTempSelectedDateRange] = useState<DateRange | undefined>(undefined);
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [usage, setUsage] = useState<any>(null);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
@@ -113,7 +121,7 @@ export function AssignmentManagement() {
     }
   };
 
-  const fetchAssignments = async (dateOverride?: Date, statusOverride?: string, searchOverride?: string) => {
+  const fetchAssignments = async (dateRangeOverride?: DateRange, statusOverride?: string, searchOverride?: string) => {
     if (!hospitalId) return;
     
     try {
@@ -124,9 +132,12 @@ export function AssignmentManagement() {
       if (statusToUse !== 'all') {
         params.append('status', statusToUse);
       }
-      const dateToUse = dateOverride || selectedDate;
-      if (dateToUse) {
-        params.append('selectedDate', dateToUse.toISOString().split('T')[0]);
+      const dateRangeToUse = dateRangeOverride || selectedDateRange;
+      if (dateRangeToUse?.from) {
+        const fromStr = formatDateYYYYMMDD(dateRangeToUse.from);
+        const toStr = formatDateYYYYMMDD(dateRangeToUse.to ?? dateRangeToUse.from);
+        params.append('from', fromStr);
+        params.append('to', toStr);
       }
       const searchToUse = searchOverride !== undefined ? searchOverride : searchQuery;
       if (searchToUse) {
@@ -154,6 +165,7 @@ export function AssignmentManagement() {
             patient: assignment.patient || 'Unknown',
             condition: assignment.condition || 'N/A',
             doctor: assignment.doctor || 'Unknown',
+            doctorAddress: assignment.doctorAddress || null,
             specialty: assignment.specialty || 'General',
             date: assignment.date || '',
             time: formattedTime,
@@ -422,17 +434,35 @@ export function AssignmentManagement() {
 
             {/* Date Filter */}
             <div className="w-[200px]">
-              <div className="relative">
-                <input 
-                  type="date"
-                  value={tempSelectedDate || (selectedDate ? selectedDate.toISOString().split('T')[0] : '')}
-                  onChange={(e) => {
-                    setTempSelectedDate(e.target.value);
-                  }}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 pr-10 h-10"
-                />
-                <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full h-10 justify-start text-left font-normal border-slate-300"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4 text-slate-500" />
+                    {tempSelectedDateRange?.from
+                      ? tempSelectedDateRange.to
+                        ? `${formatDateYYYYMMDD(tempSelectedDateRange.from)} - ${formatDateYYYYMMDD(tempSelectedDateRange.to)}`
+                        : formatDateYYYYMMDD(tempSelectedDateRange.from)
+                      : selectedDateRange?.from
+                        ? selectedDateRange.to
+                          ? `${formatDateYYYYMMDD(selectedDateRange.from)} - ${formatDateYYYYMMDD(selectedDateRange.to)}`
+                          : formatDateYYYYMMDD(selectedDateRange.from)
+                        : 'Select date range'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <DateCalendar
+                    mode="range"
+                    selected={tempSelectedDateRange ?? selectedDateRange}
+                    onSelect={(range) => {
+                      setTempSelectedDateRange(range);
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Status Filter */}
@@ -453,15 +483,15 @@ export function AssignmentManagement() {
             </div>
 
             {/* Clear Button */}
-            {(tempSearchQuery || tempSelectedDate || tempStatusFilter !== 'all' || searchQuery || selectedDate || statusFilter !== 'all') && (
+            {(tempSearchQuery || tempSelectedDateRange || tempStatusFilter !== 'all' || searchQuery || selectedDateRange || statusFilter !== 'all') && (
               <Button
                 variant="outline"
                 onClick={() => {
                   setTempSearchQuery('');
-                  setTempSelectedDate('');
+                  setTempSelectedDateRange(undefined);
                   setTempStatusFilter('all');
                   setSearchQuery('');
-                  setSelectedDate(undefined);
+                  setSelectedDateRange(undefined);
                   setStatusFilter('all');
                   fetchAssignments(undefined, 'all', '');
                 }}
@@ -474,16 +504,16 @@ export function AssignmentManagement() {
             {/* Apply Button */}
             <Button
               onClick={() => {
-                const dateToApply = tempSelectedDate ? new Date(tempSelectedDate) : undefined;
+                const dateRangeToApply = tempSelectedDateRange;
                 const statusToApply = tempStatusFilter;
                 const searchToApply = tempSearchQuery.trim();
-                setSelectedDate(dateToApply);
+                setSelectedDateRange(dateRangeToApply);
                 setStatusFilter(statusToApply);
                 setSearchQuery(searchToApply);
-                setTempSelectedDate('');
+                setTempSelectedDateRange(undefined);
                 setTempStatusFilter(statusToApply);
                 setTempSearchQuery('');
-                fetchAssignments(dateToApply, statusToApply, searchToApply);
+                fetchAssignments(dateRangeToApply, statusToApply, searchToApply);
               }}
               className="h-10 px-6 bg-teal-600 hover:bg-teal-700 text-white"
             >
@@ -540,6 +570,9 @@ export function AssignmentManagement() {
                               <div>
                                 <p className="font-medium text-slate-900">{assignment.doctor}</p>
                                 <p className="text-sm text-slate-500 mt-0.5">{assignment.specialty}</p>
+                                {assignment.doctorAddress && (
+                                  <p className="text-xs text-slate-500 mt-0.5">{assignment.doctorAddress}</p>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="py-4">
@@ -643,6 +676,9 @@ export function AssignmentManagement() {
                   <div className="space-y-1 text-sm">
                     <p><span className="text-gray-500">Name:</span> {selectedAssignment.doctor}</p>
                     <p><span className="text-gray-500">Specialty:</span> {selectedAssignment.specialty}</p>
+                    {selectedAssignment.doctorAddress && (
+                      <p><span className="text-gray-500">Address:</span> {selectedAssignment.doctorAddress}</p>
+                    )}
                   </div>
                 </div>
               </div>

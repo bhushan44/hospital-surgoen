@@ -83,6 +83,8 @@ async function getHandler(
     const search = searchParams.get('search') || undefined;
     const dateFilter = searchParams.get('dateFilter') || undefined; // 'today' | 'future' | undefined
     const selectedDate = searchParams.get('selectedDate') || undefined; // Custom date selection
+    const from = searchParams.get('from') || undefined; // YYYY-MM-DD
+    const to = searchParams.get('to') || undefined; // YYYY-MM-DD
 
     // Build where conditions
     const conditions = [eq(assignments.hospitalId, hospitalId)];
@@ -91,7 +93,45 @@ async function getHandler(
     }
 
     // Date filter based on slot date
-    if (selectedDate) {
+    if (from || to) {
+      if (from && to) {
+        conditions.push(sql`(
+          EXISTS (
+            SELECT 1 FROM doctor_availability da 
+            WHERE da.id = ${assignments.availabilitySlotId} 
+            AND DATE(da.slot_date) BETWEEN ${from}::date AND ${to}::date
+          )
+          OR (
+            ${assignments.availabilitySlotId} IS NULL 
+            AND DATE(${assignments.requestedAt}::timestamp) BETWEEN ${from}::date AND ${to}::date
+          )
+        )`);
+      } else if (from) {
+        conditions.push(sql`(
+          EXISTS (
+            SELECT 1 FROM doctor_availability da 
+            WHERE da.id = ${assignments.availabilitySlotId} 
+            AND DATE(da.slot_date) >= ${from}::date
+          )
+          OR (
+            ${assignments.availabilitySlotId} IS NULL 
+            AND DATE(${assignments.requestedAt}::timestamp) >= ${from}::date
+          )
+        )`);
+      } else if (to) {
+        conditions.push(sql`(
+          EXISTS (
+            SELECT 1 FROM doctor_availability da 
+            WHERE da.id = ${assignments.availabilitySlotId} 
+            AND DATE(da.slot_date) <= ${to}::date
+          )
+          OR (
+            ${assignments.availabilitySlotId} IS NULL 
+            AND DATE(${assignments.requestedAt}::timestamp) <= ${to}::date
+          )
+        )`);
+      }
+    } else if (selectedDate) {
       // Custom date selection - filter by specific date
       conditions.push(sql`(
         EXISTS (
@@ -161,14 +201,23 @@ async function getHandler(
         // Doctor info
         doctorFirstName: sql<string>`(SELECT first_name FROM doctors WHERE id = ${assignments.doctorId})`,
         doctorLastName: sql<string>`(SELECT last_name FROM doctors WHERE id = ${assignments.doctorId})`,
+        doctorFullAddress: sql<string>`(SELECT full_address FROM doctors WHERE id = ${assignments.doctorId})`,
+        doctorCity: sql<string>`(SELECT city FROM doctors WHERE id = ${assignments.doctorId})`,
+        doctorState: sql<string>`(SELECT state FROM doctors WHERE id = ${assignments.doctorId})`,
+        doctorPincode: sql<string>`(SELECT pincode FROM doctors WHERE id = ${assignments.doctorId})`,
         specialtyName: sql<string>`(SELECT name FROM specialties WHERE id = (SELECT specialty_id FROM doctor_specialties WHERE doctor_id = ${assignments.doctorId} LIMIT 1))`,
         // Slot info
-        slotDate: sql<string>`(SELECT slot_date::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
-        slotTime: sql<string>`(SELECT start_time::text FROM doctor_availability WHERE id = ${assignments.availabilitySlotId})`,
+        slotDate: sql<string>`${doctorAvailability.slotDate}::text`,
+        slotTime: sql<string>`${doctorAvailability.startTime}::text`,
       })
       .from(assignments)
       .where(whereClause)
-      .orderBy(desc(assignments.requestedAt));
+      .leftJoin(doctorAvailability, eq(assignments.availabilitySlotId, doctorAvailability.id))
+      .orderBy(
+        asc(sql`COALESCE(${doctorAvailability.slotDate}, DATE(${assignments.requestedAt}::timestamp))`),
+        asc(sql`COALESCE(${doctorAvailability.startTime}, (${assignments.requestedAt}::timestamp)::time)`),
+        asc(assignments.requestedAt)
+      );
 
     // Format response
     let formattedAssignments = assignmentsList.map((assignment) => {
@@ -192,6 +241,7 @@ async function getHandler(
         patient: assignment.patientName || 'Unknown',
         condition: assignment.patientCondition || 'N/A',
         doctor: `Dr. ${assignment.doctorFirstName || ''} ${assignment.doctorLastName || ''}`.trim(),
+        doctorAddress: assignment.doctorFullAddress || [assignment.doctorCity, assignment.doctorState, assignment.doctorPincode].filter(Boolean).join(', ') || null,
         specialty: assignment.specialtyName || 'General',
         date,
         time,
