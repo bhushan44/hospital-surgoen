@@ -181,6 +181,8 @@ export async function GET(
 
     let subscriptionUsage = null;
     let subscriptionLimit = null;
+    let assignmentUsage = null;
+    let assignmentLimit = null;
     if (hospital[0]?.userId) {
       const subscriptionResult = await db
         .select({
@@ -200,12 +202,14 @@ export async function GET(
         const planFeaturesResult = await db
           .select({
             maxPatients: hospitalPlanFeatures.maxPatientsPerMonth,
+            maxAssignments: hospitalPlanFeatures.maxAssignmentsPerMonth,
           })
           .from(hospitalPlanFeatures)
           .where(eq(hospitalPlanFeatures.planId, subscriptionResult[0].planId))
           .limit(1);
 
         subscriptionLimit = planFeaturesResult[0]?.maxPatients;
+        assignmentLimit = planFeaturesResult[0]?.maxAssignments;
         
         // Count patients this month
         const patientsThisMonthResult = await db
@@ -218,6 +222,18 @@ export async function GET(
             )
           );
         subscriptionUsage = Number(patientsThisMonthResult[0]?.count || 0);
+
+        // Count assignments this month
+        const assignmentsThisMonthResult = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(assignments)
+          .where(
+            and(
+              eq(assignments.hospitalId, hospitalId),
+              gte(assignments.requestedAt, startOfMonth.toISOString())
+            )
+          );
+        assignmentUsage = Number(assignmentsThisMonthResult[0]?.count || 0);
       }
     }
 
@@ -384,6 +400,11 @@ export async function GET(
           subscriptionUsage: {
             value: subscriptionUsage?.toString() || '0',
             change: subscriptionLimit ? (subscriptionLimit === -1 ? 'Unlimited' : `${subscriptionLimit} limit`) : 'N/A',
+            trend: 'neutral',
+          },
+          assignmentUsage: {
+            value: assignmentUsage?.toString() || '0',
+            change: assignmentLimit ? (assignmentLimit === -1 ? 'Unlimited' : `${assignmentLimit} limit`) : 'N/A',
             trend: 'neutral',
           },
         },
