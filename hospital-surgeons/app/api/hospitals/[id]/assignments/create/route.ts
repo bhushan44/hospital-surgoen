@@ -163,15 +163,30 @@ export async function POST(
     }
 
     // 2. Validate expiresAt against assignment time bounds (only if time bounds exist)
-    if (startTime && endTime) {
+    // We need to fetch the slot date to properly compare times for future assignments
+    let slotDate: string | null = null;
+    if (parentSlotId) {
+      // Fetch parent slot to get the actual slot date
+      const parentSlotData = await db
+        .select({ slotDate: doctorAvailability.slotDate })
+        .from(doctorAvailability)
+        .where(eq(doctorAvailability.id, parentSlotId))
+        .limit(1);
+      
+      if (parentSlotData.length > 0) {
+        slotDate = parentSlotData[0].slotDate;
+      }
+    }
+
+    if (startTime && endTime && slotDate) {
       // Parse HH:mm format (startTime and endTime are in HH:mm format from parent slot)
-      // Create Date objects using today's date + parsed times
-      const today = new Date();
+      // Create Date objects using the ACTUAL slot date + parsed times
+      const [year, month, day] = slotDate.split('-').map(Number);
       const [startHour, startMin] = startTime.split(':').map(Number);
       const [endHour, endMin] = endTime.split(':').map(Number);
       
-      const startTimeDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), startHour, startMin);
-      const endTimeDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), endHour, endMin);
+      const startTimeDate = new Date(year, month - 1, day, startHour, startMin);
+      const endTimeDate = new Date(year, month - 1, day, endHour, endMin);
 
       if (expiresAt > endTimeDate) {
         // Case 1: Expires after assignment ends - set to end time
