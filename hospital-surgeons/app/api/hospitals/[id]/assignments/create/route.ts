@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { assignments, doctorAvailability, enumPriority, doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, hospitals, patients, users } from '@/src/db/drizzle/migrations/schema';
+import { assignments, doctorAvailability, enumPriority, doctors, subscriptions, subscriptionPlans, doctorPlanFeatures, doctorAssignmentUsage, hospitals, patients, users, assignmentExpiryConfig } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { getMaxAssignmentsForDoctor, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/config/subscription-limits';
 import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
@@ -16,7 +16,7 @@ export async function POST(
   try {
     const params = await context.params;
     const hospitalId = params.id;
-    
+
     // Validate UUID format
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(hospitalId) || hospitalId === 'hospital-id-placeholder') {
@@ -28,13 +28,13 @@ export async function POST(
         { status: 400 }
       );
     }
-    
+
     const db = getDb();
-    
+
     // Validate request body with Zod
     const { CreateAssignmentDtoSchema } = await import('@/lib/validations/assignment.dto');
     const { validateRequest } = await import('@/lib/utils/validate-request');
-    
+
     const validation = await validateRequest(req, CreateAssignmentDtoSchema);
     if (!validation.success) {
       return validation.response;
@@ -45,7 +45,7 @@ export async function POST(
     // Check hospital assignment limit first
     const { HospitalUsageService } = await import('@/lib/services/hospital-usage.service');
     const hospitalUsageService = new HospitalUsageService();
-    
+
     try {
       await hospitalUsageService.checkAssignmentLimit(hospitalId);
     } catch (error: any) {
@@ -99,7 +99,7 @@ export async function POST(
             .where(eq(doctors.id, doctorId))
             .limit(1);
 
-          const doctorName = doctor.length > 0 
+          const doctorName = doctor.length > 0
             ? `Dr. ${doctor[0].firstName} ${doctor[0].lastName}`
             : 'This doctor';
 
@@ -117,7 +117,7 @@ export async function POST(
             .limit(1);
 
           const usageData = usage.length > 0 ? usage[0] : null;
-          const resetDate = usageData?.resetDate 
+          const resetDate = usageData?.resetDate
             ? new Date(usageData.resetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
             : 'the 1st of next month';
 
@@ -151,16 +151,33 @@ export async function POST(
       throw error;
     }
 
-    // 1. expiresAt calculated based on priority
-    //    Emergency: +1h, Urgent: +6h, Routine: +24h
-    let expiresAt = new Date();
-    if (priority === 'routine') {
-      expiresAt.setHours(expiresAt.getHours() + 24);
-    } else if (priority === 'urgent') {
-      expiresAt.setHours(expiresAt.getHours() + 6);
-    } else if (priority === 'emergency') {
-      expiresAt.setHours(expiresAt.getHours() + 1);
+
+    // 1. Calculate expiresAt based on priority using database configuration
+    // Fetch configuration for the specific priority
+    const expiryConfig = await db
+      .select({ expiryHours: assignmentExpiryConfig.expiryHours })
+      .from(assignmentExpiryConfig)
+      .where(
+        and(
+          eq(assignmentExpiryConfig.priority, priority),
+          eq(assignmentExpiryConfig.isActive, true)
+        )
+      )
+      .limit(1);
+
+    let expiryHours = 24; // Default fallback: 24 hours (Routine)
+
+    if (expiryConfig.length > 0) {
+      expiryHours = expiryConfig[0].expiryHours;
+    } else {
+      // Fallback defaults if config is missing
+      if (priority === 'urgent') expiryHours = 6;
+      else if (priority === 'emergency') expiryHours = 1;
     }
+
+    let expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + expiryHours);
+
 
     // 2. Validate expiresAt against assignment time bounds (only if time bounds exist)
     // We need to fetch the slot date to properly compare times for future assignments
@@ -172,7 +189,7 @@ export async function POST(
         .from(doctorAvailability)
         .where(eq(doctorAvailability.id, parentSlotId))
         .limit(1);
-      
+
       if (parentSlotData.length > 0) {
         slotDate = parentSlotData[0].slotDate;
       }
@@ -184,7 +201,7 @@ export async function POST(
       const [year, month, day] = slotDate.split('-').map(Number);
       const [startHour, startMin] = startTime.split(':').map(Number);
       const [endHour, endMin] = endTime.split(':').map(Number);
-      
+
       const startTimeDate = new Date(year, month - 1, day, startHour, startMin);
       const endTimeDate = new Date(year, month - 1, day, endHour, endMin);
 
@@ -217,7 +234,7 @@ export async function POST(
 
     if (parentSlotId && startTime && endTime) {
       // NEW FLOW: Create sub-slot from parent slot
-      
+
       // 1. Get and validate parent slot
       const parentSlot = await doctorsRepository.getParentSlot(parentSlotId);
       if (!parentSlot) {
@@ -421,7 +438,7 @@ export async function POST(
       console.log('📬 [ASSIGNMENT CREATE] Attempting to send push notification to doctor');
       console.log(`📬 [ASSIGNMENT CREATE] Assignment ID: ${newAssignment[0].id}`);
       console.log(`📬 [ASSIGNMENT CREATE] Doctor ID: ${doctorId}`);
-      
+
       // Get doctor's userId
       const doctor = await db
         .select({ userId: doctors.userId })
@@ -431,7 +448,7 @@ export async function POST(
 
       if (doctor.length > 0 && doctor[0].userId) {
         console.log(`📬 [ASSIGNMENT CREATE] Doctor User ID: ${doctor[0].userId}`);
-        
+
         const { NotificationsService } = await import('@/lib/services/notifications.service');
         const notificationsService = new NotificationsService();
 
@@ -524,7 +541,7 @@ async function checkAssignmentLimit(doctorId: string, db: any) {
 
   // Get or create usage record for current month
   const currentMonth = new Date().toISOString().slice(0, 7); // "2024-03"
-  
+
   let usage = await db
     .select()
     .from(doctorAssignmentUsage)

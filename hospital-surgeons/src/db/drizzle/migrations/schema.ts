@@ -481,6 +481,16 @@ export const enumStatus = pgTable("enum_status", {
 	description: text(),
 });
 
+export const assignmentExpiryConfig = pgTable("assignment_expiry_config", {
+	priority: text().primaryKey().notNull(),
+	expiryHours: integer("expiry_hours").notNull(),
+	isActive: boolean("is_active").default(true),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+	check("assignment_expiry_config_expiry_hours_check", sql`expiry_hours > 0`),
+	check("assignment_expiry_config_priority_check", sql`priority = ANY (ARRAY['routine'::text, 'urgent'::text, 'emergency'::text])`),
+]);
+
 export const patients = pgTable("patients", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	hospitalId: uuid("hospital_id").notNull(),
