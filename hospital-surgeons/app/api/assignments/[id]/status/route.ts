@@ -119,11 +119,10 @@ async function patchHandler(
 
       if (slotInfo.length > 0) {
         const slot = slotInfo[0];
-        // Combine slotDate and startTime to create the scheduled start datetime
-        const scheduledStartDateTime = new Date(`${slot.slotDate}T${slot.startTime}`);
+        // Use IST offset (+05:30) since slot times are stored in IST
+        const scheduledStartDateTime = new Date(`${slot.slotDate}T${slot.startTime}+05:30`);
         const now = new Date();
 
-        // Check if current time is before the scheduled start time
         if (now < scheduledStartDateTime) {
           const timeDifferenceMs = scheduledStartDateTime.getTime() - now.getTime();
           const hoursUntilStart = timeDifferenceMs / (1000 * 60 * 60);
@@ -141,7 +140,7 @@ async function patchHandler(
           return NextResponse.json(
             {
               success: false,
-              message: `Assignment cannot be marked as completed before its scheduled start time. The assignment is scheduled to start in ${timeRemainingText} (${scheduledStartDateTime.toLocaleString()}).`,
+              message: `Assignment cannot be marked as completed before its scheduled start time. The assignment is scheduled to start in ${timeRemainingText} (${scheduledStartDateTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}).`,
             },
             { status: 400 }
           );
@@ -190,8 +189,8 @@ async function patchHandler(
 
       if (slotInfo.length > 0) {
         const slot = slotInfo[0];
-        // Combine slotDate and startTime to create the scheduled start datetime
-        const scheduledStartDateTime = new Date(`${slot.slotDate}T${slot.startTime}`);
+        // Combine slotDate and startTime with IST offset since slot times are stored in IST
+        const scheduledStartDateTime = new Date(`${slot.slotDate}T${slot.startTime}+05:30`);
         const now = new Date();
 
         // Calculate the difference in milliseconds

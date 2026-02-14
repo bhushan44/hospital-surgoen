@@ -202,8 +202,22 @@ export async function POST(
       const [startHour, startMin] = startTime.split(':').map(Number);
       const [endHour, endMin] = endTime.split(':').map(Number);
 
-      const startTimeDate = new Date(year, month - 1, day, startHour, startMin);
-      const endTimeDate = new Date(year, month - 1, day, endHour, endMin);
+      // Use IST offset (+05:30) since slot times are stored in IST
+      const startTimeDate = new Date(`${slotDate}T${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}:00+05:30`);
+      const endTimeDate = new Date(`${slotDate}T${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}:00+05:30`);
+
+      // Validate that the selected time is not in the past
+      const now = new Date();
+      if (startTimeDate < now) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Cannot create assignment for a past time. The selected start time (${startTimeDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}) has already passed.`,
+            error: 'PAST_TIME_NOT_ALLOWED',
+          },
+          { status: 400 }
+        );
+      }
 
       if (expiresAt > endTimeDate) {
         // Case 1: Expires after assignment ends - set to end time
@@ -323,7 +337,7 @@ export async function POST(
       // OLD FLOW: Direct slot reference (backward compatibility)
       // Check if it's a parent slot - if so, reject (must use parentSlotId flow)
       const slot = await db
-        .select({ id: doctorAvailability.id, parentSlotId: doctorAvailability.parentSlotId })
+        .select({ id: doctorAvailability.id, parentSlotId: doctorAvailability.parentSlotId, slotDate: doctorAvailability.slotDate, startTime: doctorAvailability.startTime })
         .from(doctorAvailability)
         .where(eq(doctorAvailability.id, availabilitySlotId))
         .limit(1);
@@ -337,6 +351,23 @@ export async function POST(
           },
           { status: 404 }
         );
+      }
+
+      // Validate that the slot time is not in the past
+      if (slot[0].slotDate && slot[0].startTime) {
+        // Use IST offset (+05:30) since slot times are stored in IST
+        const slotStartDateTime = new Date(`${slot[0].slotDate}T${slot[0].startTime}+05:30`);
+        const now = new Date();
+        if (slotStartDateTime < now) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: `Cannot create assignment for a past time. The selected start time (${slotStartDateTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}) has already passed.`,
+              error: 'PAST_TIME_NOT_ALLOWED',
+            },
+            { status: 400 }
+          );
+        }
       }
 
       // If it's a parent slot, reject (must use parentSlotId + time range)
