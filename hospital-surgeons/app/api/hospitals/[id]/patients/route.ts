@@ -112,10 +112,28 @@ export async function GET(
     const db = getDb();
     const searchParams = req.nextUrl.searchParams;
 
-    const search = searchParams.get('search') || undefined;
-    const status = searchParams.get('status') || undefined; // 'assigned', 'unassigned', 'declined'
+    // Pagination params
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const offset = (page - 1) * limit;
 
-    // First, get all patients
+    // Search by patient name at DB level
+    const search = searchParams.get('search') || undefined;
+
+    // Build where condition
+    const whereCondition = search
+      ? and(eq(patients.hospitalId, hospitalId), like(patients.fullName, `%${search}%`))
+      : eq(patients.hospitalId, hospitalId);
+
+    // Get total count for pagination
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(patients)
+      .where(whereCondition);
+    const total = Number(countResult[0]?.count || 0);
+    const totalPages = Math.ceil(total / limit);
+
+    // Get paginated patients
     const patientsList = await db
       .select({
         id: patients.id,
@@ -132,10 +150,12 @@ export async function GET(
         createdAt: patients.createdAt,
       })
       .from(patients)
-      .where(eq(patients.hospitalId, hospitalId))
-      .orderBy(desc(patients.createdAt));
+      .where(whereCondition)
+      .orderBy(desc(patients.createdAt))
+      .limit(limit)
+      .offset(offset);
 
-    // Then, for each patient, get the latest assignment with doctor info
+    // For each patient, get the latest assignment with doctor info
     const patientsWithAssignments = await Promise.all(
       patientsList.map(async (patient) => {
         // Get latest assignment for this patient
@@ -158,7 +178,7 @@ export async function GET(
             doctorId: null,
             doctorFirstName: null,
             doctorLastName: null,
-            specialtyName: null,
+            specialties: [],
           };
         }
 
@@ -176,18 +196,15 @@ export async function GET(
           .limit(1);
 
         // Get specialty
-        let specialtyName = null;
+        let doctorSpecialtyNames: string[] = [];
         if (doctorInfo.length > 0) {
-          const specialty = await db
-            .select({
-              name: specialties.name,
-            })
+          const specialtyRows = await db
+            .select({ name: specialties.name })
             .from(specialties)
             .innerJoin(doctorSpecialties, eq(specialties.id, doctorSpecialties.specialtyId))
-            .where(eq(doctorSpecialties.doctorId, assignment.doctorId))
-            .limit(1);
+            .where(eq(doctorSpecialties.doctorId, assignment.doctorId));
 
-          specialtyName = specialty[0]?.name || null;
+          doctorSpecialtyNames = specialtyRows.map((s) => s.name);
         }
 
         return {
@@ -196,13 +213,13 @@ export async function GET(
           doctorId: assignment.doctorId,
           doctorFirstName: doctorInfo[0]?.firstName || null,
           doctorLastName: doctorInfo[0]?.lastName || null,
-          specialtyName: specialtyName,
+          specialties: doctorSpecialtyNames,
         };
       })
     );
 
-    // Format and filter results
-    let formattedPatients = patientsWithAssignments.map((patient) => {
+    // Format results
+    const formattedPatients = patientsWithAssignments.map((patient) => {
       const age = patient.dateOfBirth
         ? Math.floor((new Date().getTime() - new Date(patient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
         : null;
@@ -211,24 +228,14 @@ export async function GET(
         ? `Dr. ${patient.doctorFirstName || ''} ${patient.doctorLastName || ''}`.trim()
         : null;
 
-      // Determine status based on latest assignment
       let patientStatus = 'unassigned';
       if (patient.assignmentStatus) {
-        // If there's a latest assignment, use its status
-        if (patient.assignmentStatus === 'accepted') {
-          patientStatus = 'assigned';
-        } else if (patient.assignmentStatus === 'declined') {
-          patientStatus = 'declined';
-        } else if (patient.assignmentStatus === 'pending') {
-          patientStatus = 'pending';
-        } else if (patient.assignmentStatus === 'completed') {
-          patientStatus = 'completed';
-        } else {
-          // For any other status, show it as-is
-          patientStatus = patient.assignmentStatus;
-        }
+        if (patient.assignmentStatus === 'accepted') patientStatus = 'assigned';
+        else if (patient.assignmentStatus === 'declined') patientStatus = 'declined';
+        else if (patient.assignmentStatus === 'pending') patientStatus = 'pending';
+        else if (patient.assignmentStatus === 'completed') patientStatus = 'completed';
+        else patientStatus = patient.assignmentStatus;
       }
-      // If assignmentStatus is null, patientStatus remains 'unassigned'
 
       return {
         id: patient.id,
@@ -237,31 +244,22 @@ export async function GET(
         gender: patient.gender || 'N/A',
         admissionDate: patient.createdAt ? new Date(patient.createdAt).toISOString().split('T')[0] : null,
         condition: patient.medicalCondition || 'N/A',
-        specialty: patient.specialtyName || 'General Medicine',
+        specialties: patient.specialties,
+        specialty: patient.specialties[0] || 'General Medicine',
         assignedDoctor,
         status: patientStatus,
       };
     });
 
-    // Apply search filter
-    if (search) {
-      const searchLower = search.toLowerCase();
-      formattedPatients = formattedPatients.filter(
-        (p) =>
-          p.name.toLowerCase().includes(searchLower) ||
-          p.condition.toLowerCase().includes(searchLower) ||
-          p.specialty.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Apply status filter
-    if (status) {
-      formattedPatients = formattedPatients.filter((p) => p.status === status);
-    }
-
     return NextResponse.json({
       success: true,
       data: formattedPatients,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
     });
   } catch (error) {
     console.error('Error fetching patients:', error);

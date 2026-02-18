@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Edit, Eye, UserPlus, CheckCircle, AlertCircle, XCircle, Loader2, Clock } from 'lucide-react';
+import { Plus, Search, Filter, Edit, Eye, UserPlus, CheckCircle, AlertCircle, XCircle, Loader2, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -38,6 +38,7 @@ export function PatientManagement() {
   };
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -46,6 +47,10 @@ export function PatientManagement() {
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalPatients, setTotalPatients] = useState(0);
+  const PAGE_LIMIT = 10;
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -55,12 +60,21 @@ export function PatientManagement() {
     }
   }, []);
 
+  // Debounce search input by 400ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1); // reset to page 1 on new search
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   useEffect(() => {
     if (hospitalId) {
       fetchPatients();
       fetchUsage();
     }
-  }, [hospitalId]);
+  }, [hospitalId, currentPage, debouncedSearch]);
 
   const fetchHospitalProfile = async () => {
     try {
@@ -108,10 +122,19 @@ export function PatientManagement() {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiClient.get(`/api/hospitals/${hospitalId}/patients`);
+      const params = new URLSearchParams({
+        page: String(currentPage),
+        limit: String(PAGE_LIMIT),
+      });
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      const response = await apiClient.get(`/api/hospitals/${hospitalId}/patients?${params.toString()}`);
       const result = response.data;
       if (result.success && result.data) {
         setPatients(result.data);
+        if (result.pagination) {
+          setTotalPages(result.pagination.totalPages);
+          setTotalPatients(result.pagination.total);
+        }
       } else {
         setError('Failed to load patients');
       }
@@ -168,12 +191,6 @@ export function PatientManagement() {
         );
     }
   };
-
-  const filteredPatients = patients.filter(patient =>
-    patient.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    patient.condition.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    patient.specialty.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   if (showAddPatient) {
     return (
@@ -298,7 +315,7 @@ export function PatientManagement() {
                 <Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-4" />
                 <p className="text-slate-600">Loading patients...</p>
               </div>
-            ) : filteredPatients.length === 0 ? (
+            ) : patients.length === 0 ? (
               <div className="p-12 text-center">
                 <p className="text-slate-600 mb-4">No patients found</p>
                 <Button onClick={() => setShowAddPatient(true)} className="bg-teal-600 hover:bg-teal-700">
@@ -321,14 +338,14 @@ export function PatientManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredPatients.map((patient) => (
+                  {patients.map((patient) => (
                   <TableRow key={patient.id}>
                     <TableCell>{patient.name}</TableCell>
                     <TableCell>{patient.age} / {patient.gender}</TableCell>
                     <TableCell>{new Date(patient.admissionDate).toLocaleDateString()}</TableCell>
                     <TableCell>{patient.condition}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{patient.specialty}</Badge>
+                      <Badge variant="outline">{patient.specialtyName || patient.specialty}</Badge>
                     </TableCell>
                     <TableCell>
                       {patient.assignedDoctor || (
@@ -338,8 +355,8 @@ export function PatientManagement() {
                     <TableCell>{getStatusBadge(patient.status)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
                           onClick={() => {
                             setSelectedPatient(patient);
@@ -348,8 +365,8 @@ export function PatientManagement() {
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
                           onClick={() => {
                             setSelectedPatient(patient);
@@ -374,6 +391,38 @@ export function PatientManagement() {
                 </TableBody>
               </Table>
             )}
+
+          {/* Pagination Controls */}
+          {!loading && totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t">
+              <p className="text-sm text-slate-600">
+                Showing {((currentPage - 1) * PAGE_LIMIT) + 1}–{Math.min(currentPage * PAGE_LIMIT, totalPatients)} of {totalPatients} patients
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Previous
+                </Button>
+                <span className="text-sm text-slate-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
           </div>
         </div>
       </div>
