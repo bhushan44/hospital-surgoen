@@ -264,12 +264,8 @@ export class PushNotificationService {
       
 
       if (deviceTokens.length === 0) {
-        console.log(`📱 [PUSH NOTIFICATION] No active device tokens found for user ${userId}`);
-        // For testing: use a fake token to test FCM sending logic
-        const fakeToken = `test-token-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-        deviceTokens = [fakeToken];
-        console.log(`🧪 [PUSH NOTIFICATION] TEST MODE: Using fake token for testing: ${fakeToken.substring(0, 20)}...`);
-        console.log('🧪 [PUSH NOTIFICATION] Note: This is a test token - FCM will reject it, but we can test the sending flow');
+        console.log(`📱 [PUSH NOTIFICATION] No active device tokens found for user ${userId}. Skipping push notification.`);
+        return { success: false, sentCount: 0, error: 'No active device tokens found' };
       }
 
       console.log(`📱 [PUSH NOTIFICATION] Found ${deviceTokens.length} active device token(s) for user ${userId}`);
@@ -325,26 +321,36 @@ export class PushNotificationService {
 
       // Log failed tokens and their errors
       if (response.failureCount > 0) {
-        const failedTokens = deviceTokens.filter(
-          (_, index) => !response.responses[index].success
-        );
+        // FCM error codes that mean the token is permanently invalid and should be deactivated
+        const permanentFailureCodes = new Set([
+          'messaging/invalid-registration-token',
+          'messaging/registration-token-not-registered',
+          'messaging/invalid-argument',
+        ]);
 
-        console.warn(`⚠️  [PUSH NOTIFICATION] ${failedTokens.length} device token(s) failed to send`);
+        const tokensToDeactivate: string[] = [];
 
-        // Log details of each failure
+        console.warn(`⚠️  [PUSH NOTIFICATION] ${response.failureCount} device token(s) failed to send`);
+
         response.responses.forEach((resp, index) => {
           if (!resp.success) {
+            const errorCode = resp.error?.code || 'UNKNOWN_ERROR';
+            const isPermanent = permanentFailureCodes.has(errorCode);
             console.error(`❌ [PUSH NOTIFICATION] Token ${index + 1} failed:`, {
-              error: resp.error?.code || 'UNKNOWN_ERROR',
+              error: errorCode,
               message: resp.error?.message || 'No error message',
+              permanent: isPermanent,
             });
+            if (isPermanent) {
+              tokensToDeactivate.push(deviceTokens[index]);
+            }
           }
         });
 
-        if (failedTokens.length > 0) {
-          console.log(`⚠️  [PUSH NOTIFICATION] Deactivating ${failedTokens.length} invalid device token(s)`);
-          await this.userDevicesRepository.deactivateTokens(failedTokens);
-          console.log(`✅ [PUSH NOTIFICATION] Deactivated ${failedTokens.length} invalid token(s)`);
+        if (tokensToDeactivate.length > 0) {
+          console.log(`⚠️  [PUSH NOTIFICATION] Deactivating ${tokensToDeactivate.length} permanently invalid token(s)`);
+          await this.userDevicesRepository.deactivateTokens(tokensToDeactivate);
+          console.log(`✅ [PUSH NOTIFICATION] Deactivated ${tokensToDeactivate.length} invalid token(s)`);
         }
       }
 

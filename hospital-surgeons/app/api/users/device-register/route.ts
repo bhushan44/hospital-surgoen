@@ -122,13 +122,12 @@ async function postHandler(req: AuthenticatedRequest) {
       console.log('📱 [DEVICE REGISTER] Device already exists for current user, updating...');
       console.log('📱 [DEVICE REGISTER] Existing device ID:', existingDevice.id);
       
-      device = await userRepository.updateDeviceUsage(existingDevice.id);
-      
-      // Also update other fields if provided
-      if (deviceData.app_version || deviceData.os_version || deviceData.device_name !== undefined) {
-        console.log('📱 [DEVICE REGISTER] Additional fields provided but updateDeviceUsage only updates lastUsedAt and isActive');
-      }
-      
+      device = await userRepository.updateDeviceUsage(existingDevice.id, {
+        app_version: deviceData.app_version,
+        os_version: deviceData.os_version,
+        device_name: deviceData.device_name,
+      });
+
       console.log('✅ [DEVICE REGISTER] Device updated successfully');
     } else if (deviceForAnyUser && deviceForAnyUser.userId !== userId) {
       // Device exists for another user - transfer it to current user

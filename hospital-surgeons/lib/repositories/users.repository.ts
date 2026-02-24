@@ -103,12 +103,18 @@ export class UsersRepository {
       .returning();
   }
 
-  async updateDeviceUsage(id: string) {
+  async updateDeviceUsage(
+    id: string,
+    fields?: { app_version?: string; os_version?: string; device_name?: string }
+  ) {
     return await this.db
       .update(userDevices)
       .set({
         lastUsedAt: new Date().toISOString(),
         isActive: true,
+        ...(fields?.app_version !== undefined && { appVersion: fields.app_version }),
+        ...(fields?.os_version !== undefined && { osVersion: fields.os_version }),
+        ...(fields?.device_name !== undefined && { deviceName: fields.device_name }),
       })
       .where(eq(userDevices.id, id))
       .returning();
