@@ -22,127 +22,98 @@ async function handler(req: NextRequest) {
     const db = getDb();
     const now = new Date();
     const currentMonth = now.toISOString().slice(0, 7); // "2024-03"
-    
-    // Get all doctors
+
+    // Calculate reset date once (1st of next month)
+    const resetDate = new Date();
+    resetDate.setMonth(resetDate.getMonth() + 1);
+    resetDate.setDate(1);
+    resetDate.setHours(0, 0, 0, 0);
+    const resetDateIso = resetDate.toISOString();
+
+    // --- Phase 1: Pre-fetch all data outside transaction (reads + limit lookups) ---
     const allDoctors = await db.select({ id: doctors.id, userId: doctors.userId }).from(doctors);
+    const allHospitals = await db.select({ id: hospitals.id, userId: hospitals.userId }).from(hospitals);
 
-    let resetCount = 0;
-    let updatedCount = 0;
+    type DoctorOp = { doctorId: string; maxAssignments: number; hasExisting: boolean };
+    type HospitalOp = { hospitalId: string; maxPatients: number; maxAssignments: number; hasExisting: boolean };
 
+    const doctorOps: DoctorOp[] = [];
     for (const doctor of allDoctors) {
-      // Get max assignments from database (queries doctorPlanFeatures.maxAssignmentsPerMonth)
       const maxAssignments = await getMaxAssignmentsForDoctor(doctor.userId);
-
-      // Calculate reset date (1st of next month)
-      const resetDate = new Date();
-      resetDate.setMonth(resetDate.getMonth() + 1);
-      resetDate.setDate(1);
-      resetDate.setHours(0, 0, 0, 0);
-
-      // Check if record exists for current month
       const existing = await db
-        .select()
+        .select({ id: doctorAssignmentUsage.doctorId })
         .from(doctorAssignmentUsage)
-        .where(
-          and(
-            eq(doctorAssignmentUsage.doctorId, doctor.id),
-            eq(doctorAssignmentUsage.month, currentMonth)
-          )
-        )
+        .where(and(eq(doctorAssignmentUsage.doctorId, doctor.id), eq(doctorAssignmentUsage.month, currentMonth)))
         .limit(1);
-
-      if (existing.length === 0) {
-        // Create new record for current month
-        await db.insert(doctorAssignmentUsage).values({
-          doctorId: doctor.id,
-          month: currentMonth,
-          count: 0,
-          limitCount: maxAssignments,
-          resetDate: resetDate.toISOString(),
-        });
-        resetCount++;
-      } else {
-        // Update limit if plan changed, reset count to 0
-        await db
-          .update(doctorAssignmentUsage)
-          .set({
-            count: 0,
-            limitCount: maxAssignments,
-            resetDate: resetDate.toISOString(),
-            updatedAt: now.toISOString(),
-          })
-          .where(
-            and(
-              eq(doctorAssignmentUsage.doctorId, doctor.id),
-              eq(doctorAssignmentUsage.month, currentMonth)
-            )
-          );
-        updatedCount++;
-      }
+      doctorOps.push({ doctorId: doctor.id, maxAssignments, hasExisting: existing.length > 0 });
     }
 
-    // Reset hospital usage
-    const allHospitals = await db.select({ id: hospitals.id, userId: hospitals.userId }).from(hospitals);
-    
+    const hospitalOps: HospitalOp[] = [];
+    for (const hospital of allHospitals) {
+      const maxPatients = await getMaxPatientsForHospital(hospital.userId);
+      const maxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital.userId);
+      const existing = await db
+        .select({ id: hospitalUsageTracking.hospitalId })
+        .from(hospitalUsageTracking)
+        .where(and(eq(hospitalUsageTracking.hospitalId, hospital.id), eq(hospitalUsageTracking.month, currentMonth)))
+        .limit(1);
+      hospitalOps.push({ hospitalId: hospital.id, maxPatients, maxAssignments, hasExisting: existing.length > 0 });
+    }
+
+    // --- Phase 2: All writes in a single atomic transaction ---
+    let resetCount = 0;
+    let updatedCount = 0;
     let hospitalResetCount = 0;
     let hospitalUpdatedCount = 0;
 
-    for (const hospital of allHospitals) {
-      // Get max patients and assignments from database (queries hospitalPlanFeatures)
-      const maxPatients = await getMaxPatientsForHospital(hospital.userId);
-      const maxAssignments = await getMaxAssignmentsForHospitalFromUser(hospital.userId);
+    await db.transaction(async (tx) => {
+      for (const op of doctorOps) {
+        if (!op.hasExisting) {
+          await tx.insert(doctorAssignmentUsage).values({
+            doctorId: op.doctorId,
+            month: currentMonth,
+            count: 0,
+            limitCount: op.maxAssignments,
+            resetDate: resetDateIso,
+          });
+          resetCount++;
+        } else {
+          await tx
+            .update(doctorAssignmentUsage)
+            .set({ count: 0, limitCount: op.maxAssignments, resetDate: resetDateIso, updatedAt: now.toISOString() })
+            .where(and(eq(doctorAssignmentUsage.doctorId, op.doctorId), eq(doctorAssignmentUsage.month, currentMonth)));
+          updatedCount++;
+        }
+      }
 
-      // Calculate reset date (1st of next month)
-      const resetDate = new Date();
-      resetDate.setMonth(resetDate.getMonth() + 1);
-      resetDate.setDate(1);
-      resetDate.setHours(0, 0, 0, 0);
-
-      // Check if record exists for current month
-      const existing = await db
-        .select()
-        .from(hospitalUsageTracking)
-        .where(
-          and(
-            eq(hospitalUsageTracking.hospitalId, hospital.id),
-            eq(hospitalUsageTracking.month, currentMonth)
-          )
-        )
-        .limit(1);
-
-      if (existing.length === 0) {
-        // Create new record for current month
-        await db.insert(hospitalUsageTracking).values({
-          hospitalId: hospital.id,
-          month: currentMonth,
-          patientsCount: 0,
-          assignmentsCount: 0,
-          patientsLimit: maxPatients,
-          assignmentsLimit: maxAssignments,
-          resetDate: resetDate.toISOString(),
-        });
-        hospitalResetCount++;
-      } else {
-        // Update limits if plan changed, reset counts to 0
-        await db
-          .update(hospitalUsageTracking)
-          .set({
+      for (const op of hospitalOps) {
+        if (!op.hasExisting) {
+          await tx.insert(hospitalUsageTracking).values({
+            hospitalId: op.hospitalId,
+            month: currentMonth,
             patientsCount: 0,
             assignmentsCount: 0,
-            patientsLimit: maxPatients,
-            assignmentsLimit: maxAssignments,
-            resetDate: resetDate.toISOString(),
-            updatedAt: now.toISOString(),
-          })
-          .where(
-            and(
-              eq(hospitalUsageTracking.hospitalId, hospital.id),
-              eq(hospitalUsageTracking.month, currentMonth)
-            )
-          );
-        hospitalUpdatedCount++;
+            patientsLimit: op.maxPatients,
+            assignmentsLimit: op.maxAssignments,
+            resetDate: resetDateIso,
+          });
+          hospitalResetCount++;
+        } else {
+          await tx
+            .update(hospitalUsageTracking)
+            .set({
+              patientsCount: 0,
+              assignmentsCount: 0,
+              patientsLimit: op.maxPatients,
+              assignmentsLimit: op.maxAssignments,
+              resetDate: resetDateIso,
+              updatedAt: now.toISOString(),
+            })
+            .where(and(eq(hospitalUsageTracking.hospitalId, op.hospitalId), eq(hospitalUsageTracking.month, currentMonth)));
+          hospitalUpdatedCount++;
+        }
       }
-    }
+    });
 
     return NextResponse.json({
       success: true,

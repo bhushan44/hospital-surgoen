@@ -199,64 +199,72 @@ export async function POST(req: NextRequest) {
     const latitude = body.latitude || null;
     const longitude = body.longitude || null;
 
-    // Step 1: Create user
-    const [newUser] = await db
-      .insert(users)
-      .values({
-        email: body.email,
-        phone: body.phone,
-        passwordHash,
-        role: 'doctor',
-        status: 'pending', // Doctor needs verification
-      })
-      .returning();
+    const { userDevices } = await import('@/src/db/drizzle/migrations/schema');
 
-    // Step 2: Create doctor profile
-    const [newDoctor] = await db
-      .insert(doctors)
-      .values({
-        userId: newUser.id,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        medicalLicenseNumber: body.medicalLicenseNumber,
-        yearsOfExperience: body.yearsOfExperience,
-        bio: body.bio || null,
-        profilePhotoId: body.profilePhotoId || null,
-        fullAddress: body.fullAddress || null,
-        city: body.city || null,
-        state: body.state || null,
-        pincode: body.pincode || null,
-        latitude: latitude ? String(latitude) : null,
-        longitude: longitude ? String(longitude) : null,
-        licenseVerificationStatus: 'pending',
-      })
-      .returning();
+    // Steps 1-4 wrapped in a transaction so partial failures roll back cleanly
+    let newUser: any;
+    let newDoctor: any;
+    let insertedSpecialties: any[] = [];
 
-    // Step 3: Create doctor specialties
-    const specialtyInserts = body.specialties.map((spec: any, index: number) => ({
-      doctorId: newDoctor.id,
-      specialtyId: spec.specialtyId,
-      isPrimary: spec.isPrimary || (index === 0 && !body.specialties.some((s: any) => s.isPrimary === true)),
-      yearsOfExperience: spec.yearsOfExperience || null,
-    }));
+    await db.transaction(async (tx) => {
+      // Step 1: Create user
+      [newUser] = await tx
+        .insert(users)
+        .values({
+          email: body.email,
+          phone: body.phone,
+          passwordHash,
+          role: 'doctor',
+          status: 'pending', // Doctor needs verification
+        })
+        .returning();
 
-    const insertedSpecialties = await db
-      .insert(doctorSpecialties)
-      .values(specialtyInserts)
-      .returning();
+      // Step 2: Create doctor profile
+      [newDoctor] = await tx
+        .insert(doctors)
+        .values({
+          userId: newUser.id,
+          firstName: body.firstName,
+          lastName: body.lastName,
+          medicalLicenseNumber: body.medicalLicenseNumber,
+          yearsOfExperience: body.yearsOfExperience,
+          bio: body.bio || null,
+          profilePhotoId: body.profilePhotoId || null,
+          fullAddress: body.fullAddress || null,
+          city: body.city || null,
+          state: body.state || null,
+          pincode: body.pincode || null,
+          latitude: latitude ? String(latitude) : null,
+          longitude: longitude ? String(longitude) : null,
+          licenseVerificationStatus: 'pending',
+        })
+        .returning();
 
-    // Step 4: Create device record if provided
-    if (body.device) {
-      const { userDevices } = await import('@/src/db/drizzle/migrations/schema');
-      await db.insert(userDevices).values({
-        userId: newUser.id,
-        deviceType: body.device.device_type || 'web',
-        deviceToken: body.device.device_token || `web-token-${Date.now()}`,
-        appVersion: body.device.app_version || '1.0.0',
-        osVersion: body.device.os_version || '1.0.0',
-        isActive: body.device.is_active !== false,
-      });
-    }
+      // Step 3: Create doctor specialties
+      const specialtyInserts = body.specialties.map((spec: any, index: number) => ({
+        doctorId: newDoctor.id,
+        specialtyId: spec.specialtyId,
+        isPrimary: spec.isPrimary || (index === 0 && !body.specialties.some((s: any) => s.isPrimary === true)),
+        yearsOfExperience: spec.yearsOfExperience || null,
+      }));
+
+      insertedSpecialties = await tx
+        .insert(doctorSpecialties)
+        .values(specialtyInserts)
+        .returning();
+
+      // Step 4: Create device record if provided
+      if (body.device) {
+        await tx.insert(userDevices).values({
+          userId: newUser.id,
+          deviceType: body.device.device_type || 'web',
+          deviceToken: body.device.device_token || `web-token-${Date.now()}`,
+          appVersion: body.device.app_version || '1.0.0',
+          osVersion: body.device.os_version || '1.0.0',
+          isActive: body.device.is_active !== false,
+        });
+      }
+    });
 
     // Step 5: Auto-create free plan subscription
     try {

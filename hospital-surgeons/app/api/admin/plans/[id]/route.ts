@@ -232,83 +232,78 @@ export async function PUT(
       }
     }
 
-    // Update plan
-    const [updatedPlan] = await db
-      .update(subscriptionPlans)
-      .set(updateData)
-      .where(eq(subscriptionPlans.id, planId))
-      .returning();
+    // Pre-fetch feature rows outside the transaction (reads are safe outside)
+    const existingDoctorFeatures = features && userRole === 'doctor'
+      ? await db.select().from(doctorPlanFeatures).where(eq(doctorPlanFeatures.planId, planId)).limit(1)
+      : [];
+    const existingHospitalFeatures = features && userRole === 'hospital'
+      ? await db.select().from(hospitalPlanFeatures).where(eq(hospitalPlanFeatures.planId, planId)).limit(1)
+      : [];
 
-    // Update or create features if provided
-    if (features) {
-      if (userRole === 'doctor') {
-        const doctorFeatures = features as { visibilityWeight?: number; maxAffiliations?: number; maxAssignmentsPerMonth?: number; notes?: string };
-        const { visibilityWeight, maxAffiliations, maxAssignmentsPerMonth, notes } = doctorFeatures;
+    // Update plan + features atomically so they can never be out of sync
+    let updatedPlan: typeof subscriptionPlans.$inferSelect = {} as any;
 
-        const existingFeatures = await db
-          .select()
-          .from(doctorPlanFeatures)
-          .where(eq(doctorPlanFeatures.planId, planId))
-          .limit(1);
+    await db.transaction(async (tx) => {
+      [updatedPlan] = await tx
+        .update(subscriptionPlans)
+        .set(updateData)
+        .where(eq(subscriptionPlans.id, planId))
+        .returning();
 
-        if (existingFeatures.length > 0) {
-          // Update existing
-          await db
-            .update(doctorPlanFeatures)
-            .set({
-              visibilityWeight: visibilityWeight !== undefined ? visibilityWeight : existingFeatures[0].visibilityWeight,
-              maxAffiliations: maxAffiliations !== undefined ? maxAffiliations : existingFeatures[0].maxAffiliations,
-              maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : existingFeatures[0].maxAssignmentsPerMonth,
-              notes: notes !== undefined ? notes : existingFeatures[0].notes,
-            })
-            .where(eq(doctorPlanFeatures.planId, planId));
-        } else {
-          // Create new
-          await db
-            .insert(doctorPlanFeatures)
-            .values({
-              planId: planId,
-              visibilityWeight: visibilityWeight !== undefined ? visibilityWeight : 1,
-              maxAffiliations: maxAffiliations !== undefined ? maxAffiliations : 1,
-              maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : null,
-              notes: notes || null,
-            });
-        }
-      } else if (userRole === 'hospital') {
-        const hospitalFeatures = features as { maxPatientsPerMonth?: number; maxAssignmentsPerMonth?: number; includesPremiumDoctors?: boolean; notes?: string };
-        const { maxPatientsPerMonth, maxAssignmentsPerMonth, includesPremiumDoctors, notes } = hospitalFeatures;
+      if (features) {
+        if (userRole === 'doctor') {
+          const doctorFeatures = features as { visibilityWeight?: number; maxAffiliations?: number; maxAssignmentsPerMonth?: number; notes?: string };
+          const { visibilityWeight, maxAffiliations, maxAssignmentsPerMonth, notes } = doctorFeatures;
 
-        const existingFeatures = await db
-          .select()
-          .from(hospitalPlanFeatures)
-          .where(eq(hospitalPlanFeatures.planId, planId))
-          .limit(1);
+          if (existingDoctorFeatures.length > 0) {
+            await tx
+              .update(doctorPlanFeatures)
+              .set({
+                visibilityWeight: visibilityWeight !== undefined ? visibilityWeight : existingDoctorFeatures[0].visibilityWeight,
+                maxAffiliations: maxAffiliations !== undefined ? maxAffiliations : existingDoctorFeatures[0].maxAffiliations,
+                maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : existingDoctorFeatures[0].maxAssignmentsPerMonth,
+                notes: notes !== undefined ? notes : existingDoctorFeatures[0].notes,
+              })
+              .where(eq(doctorPlanFeatures.planId, planId));
+          } else {
+            await tx
+              .insert(doctorPlanFeatures)
+              .values({
+                planId,
+                visibilityWeight: visibilityWeight !== undefined ? visibilityWeight : 1,
+                maxAffiliations: maxAffiliations !== undefined ? maxAffiliations : 1,
+                maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : null,
+                notes: notes || null,
+              });
+          }
+        } else if (userRole === 'hospital') {
+          const hospitalFeatures = features as { maxPatientsPerMonth?: number; maxAssignmentsPerMonth?: number; includesPremiumDoctors?: boolean; notes?: string };
+          const { maxPatientsPerMonth, maxAssignmentsPerMonth, includesPremiumDoctors, notes } = hospitalFeatures;
 
-        if (existingFeatures.length > 0) {
-          // Update existing
-          await db
-            .update(hospitalPlanFeatures)
-            .set({
-              maxPatientsPerMonth: maxPatientsPerMonth !== undefined ? maxPatientsPerMonth : existingFeatures[0].maxPatientsPerMonth,
-              maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : existingFeatures[0].maxAssignmentsPerMonth,
-              includesPremiumDoctors: includesPremiumDoctors !== undefined ? includesPremiumDoctors : existingFeatures[0].includesPremiumDoctors,
-              notes: notes !== undefined ? notes : existingFeatures[0].notes,
-            })
-            .where(eq(hospitalPlanFeatures.planId, planId));
-        } else {
-          // Create new
-          await db
-            .insert(hospitalPlanFeatures)
-            .values({
-              planId: planId,
-              maxPatientsPerMonth: maxPatientsPerMonth !== undefined && maxPatientsPerMonth !== null ? maxPatientsPerMonth : null,
-              maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined && maxAssignmentsPerMonth !== null ? maxAssignmentsPerMonth : null,
-              includesPremiumDoctors: includesPremiumDoctors !== undefined ? includesPremiumDoctors : false,
-              notes: notes || null,
-            });
+          if (existingHospitalFeatures.length > 0) {
+            await tx
+              .update(hospitalPlanFeatures)
+              .set({
+                maxPatientsPerMonth: maxPatientsPerMonth !== undefined ? maxPatientsPerMonth : existingHospitalFeatures[0].maxPatientsPerMonth,
+                maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined ? maxAssignmentsPerMonth : existingHospitalFeatures[0].maxAssignmentsPerMonth,
+                includesPremiumDoctors: includesPremiumDoctors !== undefined ? includesPremiumDoctors : existingHospitalFeatures[0].includesPremiumDoctors,
+                notes: notes !== undefined ? notes : existingHospitalFeatures[0].notes,
+              })
+              .where(eq(hospitalPlanFeatures.planId, planId));
+          } else {
+            await tx
+              .insert(hospitalPlanFeatures)
+              .values({
+                planId,
+                maxPatientsPerMonth: maxPatientsPerMonth !== undefined && maxPatientsPerMonth !== null ? maxPatientsPerMonth : null,
+                maxAssignmentsPerMonth: maxAssignmentsPerMonth !== undefined && maxAssignmentsPerMonth !== null ? maxAssignmentsPerMonth : null,
+                includesPremiumDoctors: includesPremiumDoctors !== undefined ? includesPremiumDoctors : false,
+                notes: notes || null,
+              });
+          }
         }
       }
-    }
+    });
 
     // Get request metadata
     const metadata = getRequestMetadata(req);

@@ -751,40 +751,39 @@ export class DoctorsRepository {
   }
 
   async addProfilePhoto(doctorId: string, fileId: string, isPrimary: boolean = false) {
-    // If setting as primary, unset all other primary photos
-    if (isPrimary) {
-      await this.db
-        .update(doctorProfilePhotos)
-        .set({ isPrimary: false })
-        .where(eq(doctorProfilePhotos.doctorId, doctorId));
-    }
+    return await this.db.transaction(async (tx) => {
+      // If setting as primary, unset all other primary photos first
+      if (isPrimary) {
+        await tx
+          .update(doctorProfilePhotos)
+          .set({ isPrimary: false })
+          .where(eq(doctorProfilePhotos.doctorId, doctorId));
+      }
 
-    return await this.db
-      .insert(doctorProfilePhotos)
-      .values({
-        doctorId,
-        fileId,
-        isPrimary,
-      })
-      .returning();
+      return await tx
+        .insert(doctorProfilePhotos)
+        .values({ doctorId, fileId, isPrimary })
+        .returning();
+    });
   }
 
   async setPrimaryPhoto(doctorId: string, photoId: string) {
-    // Unset all primary photos
-    await this.db
-      .update(doctorProfilePhotos)
-      .set({ isPrimary: false })
-      .where(eq(doctorProfilePhotos.doctorId, doctorId));
+    return await this.db.transaction(async (tx) => {
+      // Unset all primary photos, then set the selected one
+      await tx
+        .update(doctorProfilePhotos)
+        .set({ isPrimary: false })
+        .where(eq(doctorProfilePhotos.doctorId, doctorId));
 
-    // Set the selected photo as primary
-    return await this.db
-      .update(doctorProfilePhotos)
-      .set({ isPrimary: true })
-      .where(and(
-        eq(doctorProfilePhotos.id, photoId),
-        eq(doctorProfilePhotos.doctorId, doctorId)
-      ))
-      .returning();
+      return await tx
+        .update(doctorProfilePhotos)
+        .set({ isPrimary: true })
+        .where(and(
+          eq(doctorProfilePhotos.id, photoId),
+          eq(doctorProfilePhotos.doctorId, doctorId)
+        ))
+        .returning();
+    });
   }
 
   async deleteProfilePhoto(photoId: string, doctorId: string) {

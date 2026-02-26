@@ -222,28 +222,30 @@ async function patchHandler(
       );
     }
 
-    // Update payment status to completed
+    // Update payment status and assignment paidAt atomically
     const now = new Date().toISOString();
-    const updatedPayment = await db
-      .update(assignmentPayments)
-      .set({
-        paymentStatus: 'completed',
-        paidToDoctorAt: now,
-      })
-      .where(eq(assignmentPayments.assignmentId, assignmentId))
-      .returning();
+    let updatedPayment: any;
 
-    // Update assignment paidAt timestamp
-    await db
-      .update(assignments)
-      .set({
-        paidAt: now,
-      })
-      .where(eq(assignments.id, assignmentId));
+    await db.transaction(async (tx) => {
+      const [result] = await tx
+        .update(assignmentPayments)
+        .set({
+          paymentStatus: 'completed',
+          paidToDoctorAt: now,
+        })
+        .where(eq(assignmentPayments.assignmentId, assignmentId))
+        .returning();
+      updatedPayment = result;
+
+      await tx
+        .update(assignments)
+        .set({ paidAt: now })
+        .where(eq(assignments.id, assignmentId));
+    });
 
     return NextResponse.json({
       success: true,
-      data: updatedPayment[0],
+      data: updatedPayment,
       message: 'Payment marked as completed successfully',
     });
   } catch (error) {

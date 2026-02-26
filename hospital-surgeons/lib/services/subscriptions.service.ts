@@ -1,4 +1,7 @@
 import { SubscriptionsRepository, CreateSubscriptionPlanData, CreateSubscriptionData, UpdateSubscriptionData, SubscriptionQuery } from '@/lib/repositories/subscriptions.repository';
+import { getDb } from '@/lib/db';
+import { subscriptions, planPricing } from '@/src/db/drizzle/migrations/schema';
+import { eq, and, sql, lte } from 'drizzle-orm';
 
 export class SubscriptionsService {
   private repo = new SubscriptionsRepository();
@@ -302,10 +305,6 @@ export class SubscriptionsService {
       }
 
       // Get pricing details
-      const { getDb } = await import('@/lib/db');
-      const { planPricing } = await import('@/src/db/drizzle/migrations/schema');
-      const { eq, and } = await import('drizzle-orm');
-      
       const db = getDb();
       const pricingResult = await db
         .select()
@@ -333,29 +332,35 @@ export class SubscriptionsService {
       const endDate = new Date();
       endDate.setMonth(endDate.getMonth() + (pricing.billingPeriodMonths || 1));
 
-      // Create new subscription
-      const newSubscription = await this.repo.create({
-        userId: currentSub.userId,
-        planId: newPlanId,
-        pricingId: newPricingId,
-        status: 'active',
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        autoRenew: true,
-        previousSubscriptionId: currentSub.id,
-      });
+      // Create new subscription and cancel old one atomically
+      let newSubscription: any;
 
-      // Cancel old subscription and link to new one
-      const { subscriptions } = await import('@/src/db/drizzle/migrations/schema');
-      await db
-        .update(subscriptions)
-        .set({
-          status: 'cancelled',
-          replacedBySubscriptionId: newSubscription.id,
-          cancelledAt: new Date().toISOString(),
-          cancellationReason: 'upgraded',
-        })
-        .where(eq(subscriptions.id, currentSub.id));
+      await db.transaction(async (tx) => {
+        const [created] = (await tx
+          .insert(subscriptions)
+          .values({
+            userId: currentSub.userId,
+            planId: newPlanId,
+            pricingId: newPricingId,
+            status: 'active',
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            autoRenew: true,
+            previousSubscriptionId: currentSub.id,
+          })
+          .returning()) as any[];
+        newSubscription = created;
+
+        await tx
+          .update(subscriptions)
+          .set({
+            status: 'cancelled',
+            replacedBySubscriptionId: created.id,
+            cancelledAt: new Date().toISOString(),
+            cancellationReason: 'upgraded',
+          })
+          .where(eq(subscriptions.id, currentSub.id));
+      });
 
       return {
         success: true,
@@ -418,10 +423,6 @@ export class SubscriptionsService {
       }
 
       // Validate pricing
-      const { getDb } = await import('@/lib/db');
-      const { planPricing } = await import('@/src/db/drizzle/migrations/schema');
-      const { eq, and } = await import('drizzle-orm');
-      
       const db = getDb();
       const pricingResult = await db
         .select()
@@ -443,7 +444,6 @@ export class SubscriptionsService {
       }
 
       // Update subscription with next plan/pricing
-      const { subscriptions } = await import('@/src/db/drizzle/migrations/schema');
       const updated = await db
         .update(subscriptions)
         .set({
@@ -481,10 +481,6 @@ export class SubscriptionsService {
         };
       }
 
-      const { getDb } = await import('@/lib/db');
-      const { subscriptions } = await import('@/src/db/drizzle/migrations/schema');
-      const { eq } = await import('drizzle-orm');
-      
       const db = getDb();
       const updated = await db
         .update(subscriptions)
@@ -516,10 +512,6 @@ export class SubscriptionsService {
    */
   async processExpiredSubscriptionsWithPendingChanges() {
     try {
-      const { getDb } = await import('@/lib/db');
-      const { subscriptions, planPricing } = await import('@/src/db/drizzle/migrations/schema');
-      const { eq, and, sql, lte } = await import('drizzle-orm');
-      
       const db = getDb();
 
       // Find expired active subscriptions with pending plan changes
@@ -598,29 +590,36 @@ export class SubscriptionsService {
           const endDate = new Date(startDate);
           endDate.setMonth(endDate.getMonth() + (pricing.billingPeriodMonths || 1));
 
-          // Create new subscription
-          const newSubscription = await this.repo.create({
-            userId: oldSub.userId,
-            planId: oldSub.nextPlanId!,
-            pricingId: oldSub.nextPricingId!,
-            status: 'active',
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            autoRenew: true,
-            previousSubscriptionId: oldSub.id,
-          });
+          // Create new subscription and expire old one atomically
+          let newSubscription: any;
 
-          // Update old subscription
-          await db
-            .update(subscriptions)
-            .set({
-              status: 'expired',
-              replacedBySubscriptionId: newSubscription.id,
-              nextPlanId: null,
-              nextPricingId: null,
-              planChangeStatus: null,
-            })
-            .where(eq(subscriptions.id, oldSub.id));
+          await db.transaction(async (tx) => {
+            const [created] = (await tx
+              .insert(subscriptions)
+              .values({
+                userId: oldSub.userId,
+                planId: oldSub.nextPlanId!,
+                pricingId: oldSub.nextPricingId!,
+                status: 'active',
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString(),
+                autoRenew: true,
+                previousSubscriptionId: oldSub.id,
+              })
+              .returning()) as any[];
+            newSubscription = created;
+
+            await tx
+              .update(subscriptions)
+              .set({
+                status: 'expired',
+                replacedBySubscriptionId: created.id,
+                nextPlanId: null,
+                nextPricingId: null,
+                planChangeStatus: null,
+              })
+              .where(eq(subscriptions.id, oldSub.id));
+          });
 
           results.push({
             subscriptionId: oldSub.id,

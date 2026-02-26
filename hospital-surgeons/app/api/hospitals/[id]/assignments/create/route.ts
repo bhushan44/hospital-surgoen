@@ -242,16 +242,19 @@ export async function POST(
     }
 
     // Determine which slot to use (parent slot -> create sub-slot, or use existing sub-slot)
-    let finalAvailabilitySlotId: string;
+    // Phase 1: All reads and validations (before any writes)
     const { DoctorsRepository } = await import('@/lib/repositories/doctors.repository');
     const doctorsRepository = new DoctorsRepository();
 
-    if (parentSlotId && startTime && endTime) {
-      // NEW FLOW: Create sub-slot from parent slot
+    let useNewSlotFlow = false;
+    let parentSlotData: Awaited<ReturnType<typeof doctorsRepository.getParentSlot>> | null = null;
 
-      // 1. Get and validate parent slot
-      const parentSlot = await doctorsRepository.getParentSlot(parentSlotId);
-      if (!parentSlot) {
+    if (parentSlotId && startTime && endTime) {
+      useNewSlotFlow = true;
+
+      // 1. Get and validate parent slot (READ)
+      parentSlotData = await doctorsRepository.getParentSlot(parentSlotId);
+      if (!parentSlotData) {
         return NextResponse.json(
           {
             success: false,
@@ -262,24 +265,24 @@ export async function POST(
         );
       }
 
-      // 2. Validate time range fits within parent slot
+      // 2. Validate time range fits within parent slot (pure check)
       if (!doctorsRepository.fitsWithinParent(
-        parentSlot.startTime,
-        parentSlot.endTime,
+        parentSlotData.startTime,
+        parentSlotData.endTime,
         startTime,
         endTime
       )) {
         return NextResponse.json(
           {
             success: false,
-            message: `Selected time range (${startTime}-${endTime}) does not fit within parent slot (${parentSlot.startTime}-${parentSlot.endTime})`,
+            message: `Selected time range (${startTime}-${endTime}) does not fit within parent slot (${parentSlotData.startTime}-${parentSlotData.endTime})`,
             error: 'TIME_RANGE_OUT_OF_BOUNDS',
           },
           { status: 400 }
         );
       }
 
-      // 3. Check for overlapping sub-slots
+      // 3. Check for overlapping sub-slots (READ)
       const hasOverlap = await doctorsRepository.hasOverlappingSubSlots(
         parentSlotId,
         startTime,
@@ -297,45 +300,8 @@ export async function POST(
         );
       }
 
-      // 4. Create sub-slot
-      const subSlotResult = await doctorsRepository.createAvailability(
-        {
-          slotDate: parentSlot.slotDate,
-          startTime,
-          endTime,
-          parentSlotId: parentSlotId,
-          status: 'booked',
-          isManual: false,
-          notes: `Sub-slot created for assignment`,
-        },
-        doctorId
-      );
-
-      const subSlot = Array.isArray(subSlotResult) ? subSlotResult[0] : subSlotResult;
-      if (!subSlot || !subSlot.id) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'Failed to create sub-slot',
-            error: 'SUB_SLOT_CREATION_FAILED',
-          },
-          { status: 500 }
-        );
-      }
-
-      // 5. Update sub-slot with booking info
-      await db
-        .update(doctorAvailability)
-        .set({
-          bookedByHospitalId: hospitalId,
-          bookedAt: new Date().toISOString(),
-        })
-        .where(eq(doctorAvailability.id, subSlot.id));
-
-      finalAvailabilitySlotId = subSlot.id;
     } else if (availabilitySlotId) {
-      // OLD FLOW: Direct slot reference (backward compatibility)
-      // Check if it's a parent slot - if so, reject (must use parentSlotId flow)
+      // OLD FLOW: Read slot and validate (no writes yet)
       const slot = await db
         .select({ id: doctorAvailability.id, parentSlotId: doctorAvailability.parentSlotId, slotDate: doctorAvailability.slotDate, startTime: doctorAvailability.startTime })
         .from(doctorAvailability)
@@ -355,7 +321,6 @@ export async function POST(
 
       // Validate that the slot time is not in the past
       if (slot[0].slotDate && slot[0].startTime) {
-        // Use IST offset (+05:30) since slot times are stored in IST
         const slotStartDateTime = new Date(`${slot[0].slotDate}T${slot[0].startTime}+05:30`);
         const now = new Date();
         if (slotStartDateTime < now) {
@@ -382,17 +347,6 @@ export async function POST(
         );
       }
 
-      // It's a sub-slot, mark as booked
-      await db
-        .update(doctorAvailability)
-        .set({
-          status: 'booked',
-          bookedByHospitalId: hospitalId,
-          bookedAt: new Date().toISOString(),
-        })
-        .where(eq(doctorAvailability.id, availabilitySlotId));
-
-      finalAvailabilitySlotId = availabilitySlotId;
     } else {
       return NextResponse.json(
         {
@@ -404,24 +358,74 @@ export async function POST(
       );
     }
 
-    // Create assignment
-    const newAssignment = await db
-      .insert(assignments)
-      .values({
-        hospitalId,
-        doctorId,
-        patientId,
-        availabilitySlotId: finalAvailabilitySlotId,
-        priority,
-        status: 'pending',
-        expiresAt: expiresAt.toISOString(),
-        consultationFee: consultationFee ? String(consultationFee) : null,
-      })
-      .returning();
+    // Phase 2: All writes wrapped in a single transaction for atomicity
+    // Covers: sub-slot insert/update OR slot update, assignment insert, doctor usage increment
+    let finalAvailabilitySlotId: string;
+    let newAssignment: any;
 
-    // Increment assignment usage count for both hospital and doctor
+    await db.transaction(async (tx) => {
+      if (useNewSlotFlow) {
+        // NEW FLOW: Create sub-slot inline (avoids repository's own db instance)
+        const [subSlot] = await tx
+          .insert(doctorAvailability)
+          .values({
+            doctorId,
+            slotDate: parentSlotData!.slotDate,
+            startTime: startTime!,
+            endTime: endTime!,
+            parentSlotId: parentSlotId!,
+            status: 'booked',
+            isManual: false,
+            notes: 'Sub-slot created for assignment',
+          })
+          .returning();
+
+        await tx
+          .update(doctorAvailability)
+          .set({
+            bookedByHospitalId: hospitalId,
+            bookedAt: new Date().toISOString(),
+          })
+          .where(eq(doctorAvailability.id, subSlot.id));
+
+        finalAvailabilitySlotId = subSlot.id;
+      } else {
+        // OLD FLOW: Mark existing sub-slot as booked
+        await tx
+          .update(doctorAvailability)
+          .set({
+            status: 'booked',
+            bookedByHospitalId: hospitalId,
+            bookedAt: new Date().toISOString(),
+          })
+          .where(eq(doctorAvailability.id, availabilitySlotId!));
+
+        finalAvailabilitySlotId = availabilitySlotId!;
+      }
+
+      // Create assignment
+      const [created] = await tx
+        .insert(assignments)
+        .values({
+          hospitalId,
+          doctorId,
+          patientId,
+          availabilitySlotId: finalAvailabilitySlotId,
+          priority,
+          status: 'pending',
+          expiresAt: expiresAt.toISOString(),
+          consultationFee: consultationFee ? String(consultationFee) : null,
+        })
+        .returning();
+      newAssignment = created;
+
+      // Increment doctor assignment usage count (accepts db/tx parameter)
+      await incrementAssignmentUsage(doctorId, tx);
+    });
+
+    // Hospital usage increment is outside the transaction because the service
+    // uses its own internal db instance and cannot accept a tx parameter
     await hospitalUsageService.incrementAssignmentUsage(hospitalId);
-    await incrementAssignmentUsage(doctorId, db);
 
     // Get request metadata and entity names for audit log
     const metadata = getRequestMetadata(req);
@@ -444,7 +448,7 @@ export async function POST(
       actorType: 'user',
       action: 'create',
       entityType: 'assignment',
-      entityId: newAssignment[0].id,
+      entityId: newAssignment.id,
       entityName: `Assignment: ${doctorName} → ${patientName}`,
       httpMethod: 'POST',
       endpoint: `/api/hospitals/${hospitalId}/assignments/create`,
@@ -467,7 +471,7 @@ export async function POST(
     // Send push notification to doctor about new assignment
     try {
       console.log('📬 [ASSIGNMENT CREATE] Attempting to send push notification to doctor');
-      console.log(`📬 [ASSIGNMENT CREATE] Assignment ID: ${newAssignment[0].id}`);
+      console.log(`📬 [ASSIGNMENT CREATE] Assignment ID: ${newAssignment.id}`);
       console.log(`📬 [ASSIGNMENT CREATE] Doctor ID: ${doctorId}`);
 
       // Get doctor's userId
@@ -500,10 +504,10 @@ export async function POST(
           message: `You have a new assignment from ${hospitalName} - ${patientName}`,
           channel: 'push',
           priority: priority === 'emergency' ? 'urgent' : priority === 'urgent' ? 'high' : 'medium',
-          assignmentId: newAssignment[0].id,
+          assignmentId: newAssignment.id,
           payload: {
             notificationType: 'assignment_created',
-            assignmentId: newAssignment[0].id,
+            assignmentId: newAssignment.id,
             hospitalId: hospitalId,
             hospitalName: hospitalName,
             doctorId: doctorId,
@@ -517,7 +521,7 @@ export async function POST(
         });
 
         console.log(`✅ [ASSIGNMENT CREATE] Push notification process completed for doctor ${doctorId}`);
-        console.log(`✅ [ASSIGNMENT CREATE] Assignment ID: ${newAssignment[0].id}`);
+        console.log(`✅ [ASSIGNMENT CREATE] Assignment ID: ${newAssignment.id}`);
       } else {
         console.warn(`⚠️  [ASSIGNMENT CREATE] Doctor User ID not found for doctor ${doctorId}`);
         console.warn(`⚠️  [ASSIGNMENT CREATE] Push notification skipped`);
@@ -525,7 +529,7 @@ export async function POST(
     } catch (notificationError) {
       // Don't fail assignment creation if notification fails
       console.error('❌ [ASSIGNMENT CREATE] FAILURE: Exception while sending push notification to doctor');
-      console.error(`❌ [ASSIGNMENT CREATE] Assignment ID: ${newAssignment[0].id}`);
+      console.error(`❌ [ASSIGNMENT CREATE] Assignment ID: ${newAssignment.id}`);
       console.error(`❌ [ASSIGNMENT CREATE] Doctor ID: ${doctorId}`);
       console.error('❌ [ASSIGNMENT CREATE] Error:', notificationError instanceof Error ? notificationError.message : String(notificationError));
       console.error('❌ [ASSIGNMENT CREATE] Stack:', notificationError instanceof Error ? notificationError.stack : 'No stack trace');
@@ -533,7 +537,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      data: newAssignment[0],
+      data: newAssignment,
       message: 'Assignment created successfully',
     });
   } catch (error) {
