@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { assignments, doctors, patients, doctorAvailability, enumPriority } from '@/src/db/drizzle/migrations/schema';
+import { assignments, doctors, patients, doctorAvailability, enumPriority, assignmentPayments } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, or, sql, desc, asc } from 'drizzle-orm';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
@@ -206,6 +206,9 @@ async function getHandler(
         doctorState: sql<string>`(SELECT state FROM doctors WHERE id = ${assignments.doctorId})`,
         doctorPincode: sql<string>`(SELECT pincode FROM doctors WHERE id = ${assignments.doctorId})`,
         specialtyName: sql<string>`(SELECT name FROM specialties WHERE id = (SELECT specialty_id FROM doctor_specialties WHERE doctor_id = ${assignments.doctorId} LIMIT 1))`,
+        // Payment info
+        paymentStatus: sql<string>`(SELECT payment_status FROM assignment_payments WHERE assignment_id = ${assignments.id} LIMIT 1)`,
+        paymentMethod: sql<string>`(SELECT payment_method FROM assignment_payments WHERE assignment_id = ${assignments.id} LIMIT 1)`,
         // Slot info
         slotDate: sql<string>`${doctorAvailability.slotDate}::text`,
         slotTime: sql<string>`${doctorAvailability.startTime}::text`,
@@ -257,6 +260,8 @@ async function getHandler(
         declineReason: assignment.status === 'declined' ? assignment.cancellationReason : null,
         cancellationReason: assignment.status === 'cancelled' ? assignment.cancellationReason : null,
         treatmentNotes: assignment.treatmentNotes,
+        paymentStatus: assignment.paymentStatus || null,
+        paymentMethod: assignment.paymentMethod || null,
       };
     });
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { assignmentPayments, assignments, doctors, hospitals, patients, users } from '@/src/db/drizzle/migrations/schema';
+import { assignmentPayments, assignments, doctors, hospitals, patients, users, doctorAvailability } from '@/src/db/drizzle/migrations/schema';
 import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
 
@@ -211,11 +211,15 @@ async function getHandler(
         platformCommission: assignmentPayments.platformCommission,
         doctorPayout: assignmentPayments.doctorPayout,
         paymentStatus: assignmentPayments.paymentStatus,
+        paymentMethod: assignmentPayments.paymentMethod,
         paidToDoctorAt: assignmentPayments.paidToDoctorAt,
         createdAt: assignmentPayments.createdAt,
         // Assignment details
         assignmentCompletedAt: assignments.completedAt,
         assignmentStatus: assignments.status,
+        assignmentRequestedAt: assignments.requestedAt,
+        // Slot date (from doctor_availability if linked)
+        slotDate: doctorAvailability.slotDate,
         // Hospital details
         hospitalId: hospitals.id,
         hospitalName: hospitals.name,
@@ -227,6 +231,7 @@ async function getHandler(
       .innerJoin(assignments, eq(assignments.id, assignmentPayments.assignmentId))
       .innerJoin(hospitals, eq(hospitals.id, assignmentPayments.hospitalId))
       .innerJoin(patients, eq(patients.id, assignments.patientId))
+      .leftJoin(doctorAvailability, eq(doctorAvailability.id, assignments.availabilitySlotId))
       .where(and(...whereConditions))
       .orderBy(desc(assignmentPayments.createdAt))
       .limit(limit)
@@ -240,11 +245,13 @@ async function getHandler(
       platformCommission: payment.platformCommission ? parseFloat(payment.platformCommission.toString()) : 0,
       doctorPayout: payment.doctorPayout ? parseFloat(payment.doctorPayout.toString()) : 0,
       paymentStatus: payment.paymentStatus,
+      paymentMethod: payment.paymentMethod || null,
       paidToDoctorAt: payment.paidToDoctorAt,
       createdAt: payment.createdAt,
       assignment: {
         completedAt: payment.assignmentCompletedAt,
         status: payment.assignmentStatus,
+        date: payment.slotDate || (payment.assignmentRequestedAt ? new Date(payment.assignmentRequestedAt).toISOString().split('T')[0] : null),
       },
       hospital: {
         id: payment.hospitalId,

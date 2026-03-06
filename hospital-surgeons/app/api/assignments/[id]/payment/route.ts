@@ -222,17 +222,40 @@ async function patchHandler(
       );
     }
 
+    // Parse optional body for paymentMethod
+    let paymentMethod: string | undefined;
+    try {
+      const body = await req.json();
+      if (body.paymentMethod) {
+        const validMethods = ['upi', 'cash', 'online'];
+        if (!validMethods.includes(body.paymentMethod)) {
+          return NextResponse.json(
+            { success: false, message: `Invalid payment method. Must be one of: ${validMethods.join(', ')}` },
+            { status: 400 }
+          );
+        }
+        paymentMethod = body.paymentMethod;
+      }
+    } catch {
+      // No body or invalid JSON — paymentMethod stays undefined
+    }
+
     // Update payment status and assignment paidAt atomically
     const now = new Date().toISOString();
     let updatedPayment: any;
 
     await db.transaction(async (tx) => {
+      const updateData: any = {
+        paymentStatus: 'completed',
+        paidToDoctorAt: now,
+      };
+      if (paymentMethod) {
+        updateData.paymentMethod = paymentMethod;
+      }
+
       const [result] = await tx
         .update(assignmentPayments)
-        .set({
-          paymentStatus: 'completed',
-          paidToDoctorAt: now,
-        })
+        .set(updateData)
         .where(eq(assignmentPayments.assignmentId, assignmentId))
         .returning();
       updatedPayment = result;

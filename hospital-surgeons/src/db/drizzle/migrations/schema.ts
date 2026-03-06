@@ -712,6 +712,7 @@ export const assignmentPayments = pgTable("assignment_payments", {
 	platformCommission: numeric("platform_commission", { precision: 10, scale:  2 }).default('0.00').notNull(),
 	doctorPayout: numeric("doctor_payout", { precision: 10, scale:  2 }).notNull(),
 	paymentStatus: text("payment_status").default('pending').notNull(),
+	paymentMethod: text("payment_method"),
 	paidToDoctorAt: timestamp("paid_to_doctor_at", { mode: 'string' }),
 	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => [
@@ -732,6 +733,7 @@ export const assignmentPayments = pgTable("assignment_payments", {
 		}).onDelete("cascade"),
 	unique("assignment_payments_assignment_id_key").on(table.assignmentId),
 	check("assignment_payments_payment_status_check", sql`payment_status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'failed'::text])`),
+	check("assignment_payments_payment_method_check", sql`payment_method IS NULL OR payment_method = ANY (ARRAY['upi'::text, 'cash'::text, 'online'::text])`),
 ]);
 
 export const hospitalCancellationFlags = pgTable("hospital_cancellation_flags", {
