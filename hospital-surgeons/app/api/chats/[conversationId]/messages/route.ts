@@ -43,7 +43,7 @@ export const POST = withAuthAndContext<{ params: Promise<{ conversationId: strin
       const body = await req.json();
       const parsed = SendMessageDtoSchema.safeParse(body);
       if (!parsed.success) {
-        return NextResponse.json({ success: false, message: parsed.error.errors[0].message }, { status: 400 });
+        return NextResponse.json({ success: false, message: parsed.error.issues[0].message }, { status: 400 });
       }
 
       const message = await chatService.sendMessage(conversationId, userId, userRole, parsed.data);

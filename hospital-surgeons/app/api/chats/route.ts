@@ -35,7 +35,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
     const body = await req.json();
     const parsed = CreateConversationDtoSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ success: false, message: parsed.error.errors[0].message }, { status: 400 });
+      return NextResponse.json({ success: false, message: parsed.error.issues[0].message }, { status: 400 });
     }
 
     const { doctorId, hospitalId } = parsed.data;

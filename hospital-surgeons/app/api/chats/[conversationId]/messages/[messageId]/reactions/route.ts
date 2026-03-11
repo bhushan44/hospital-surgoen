@@ -23,7 +23,7 @@ export const POST = withAuthAndContext<Params>(
       const body = await req.json();
       const parsed = AddReactionDtoSchema.safeParse(body);
       if (!parsed.success) {
-        return NextResponse.json({ success: false, message: parsed.error.errors[0].message }, { status: 400 });
+        return NextResponse.json({ success: false, message: parsed.error.issues[0].message }, { status: 400 });
       }
 
       const reactions = await chatService.toggleReaction(conversationId, messageId, userId, userRole, parsed.data);

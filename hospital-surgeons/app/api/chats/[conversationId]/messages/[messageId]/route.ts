@@ -20,7 +20,7 @@ export const PATCH = withAuthAndContext<Params>(
       const body = await req.json();
       const parsed = EditMessageDtoSchema.safeParse(body);
       if (!parsed.success) {
-        return NextResponse.json({ success: false, message: parsed.error.errors[0].message }, { status: 400 });
+        return NextResponse.json({ success: false, message: parsed.error.issues[0].message }, { status: 400 });
       }
 
       const message = await chatService.editMessage(conversationId, messageId, parsed.data.content, userId, userRole);
