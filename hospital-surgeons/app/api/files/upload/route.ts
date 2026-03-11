@@ -52,6 +52,14 @@ async function postHandler(req: AuthenticatedRequest) {
       );
     }
 
+    const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { success: false, message: 'File too large. Maximum size is 25MB.' },
+        { status: 400 }
+      );
+    }
+
     // Convert File to Buffer
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);

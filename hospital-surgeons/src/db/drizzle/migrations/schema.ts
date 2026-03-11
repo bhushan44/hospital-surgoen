@@ -1150,6 +1150,123 @@ export const doctorLeaves = pgTable("doctor_leaves", {
 	check("doctor_leaves_check", sql`end_date >= start_date`),
 	check("doctor_leaves_leave_type_check", sql`leave_type = ANY (ARRAY['sick'::text, 'vacation'::text, 'personal'::text, 'emergency'::text, 'other'::text])`),
 ]);
+// ============================================================
+// Chat System Tables
+// ============================================================
+
+export const chatConversations = pgTable("chat_conversations", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	doctorId: uuid("doctor_id").notNull(),
+	hospitalId: uuid("hospital_id").notNull(),
+	lastMessageAt: timestamp("last_message_at", { mode: 'string' }),
+	doctorUnreadCount: integer("doctor_unread_count").default(0).notNull(),
+	hospitalUnreadCount: integer("hospital_unread_count").default(0).notNull(),
+	isActive: boolean("is_active").default(true).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	index("idx_chat_conversations_doctor_id").using("btree", table.doctorId.asc().nullsLast().op("uuid_ops")),
+	index("idx_chat_conversations_hospital_id").using("btree", table.hospitalId.asc().nullsLast().op("uuid_ops")),
+	index("idx_chat_conversations_updated_at").using("btree", table.updatedAt.desc().nullsFirst().op("timestamp_ops")),
+	foreignKey({
+			columns: [table.doctorId],
+			foreignColumns: [doctors.id],
+			name: "chat_conversations_doctor_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.hospitalId],
+			foreignColumns: [hospitals.id],
+			name: "chat_conversations_hospital_id_fkey"
+		}).onDelete("cascade"),
+	unique("chat_conversations_doctor_id_hospital_id_key").on(table.doctorId, table.hospitalId),
+]);
+
+export const chatMessages = pgTable("chat_messages", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	conversationId: uuid("conversation_id").notNull(),
+	senderType: text("sender_type").notNull(),
+	senderId: uuid("sender_id").notNull(),
+	content: text().notNull(),
+	messageType: text("message_type").default('text').notNull(),
+	replyToId: uuid("reply_to_id"),
+	isRead: boolean("is_read").default(false).notNull(),
+	readAt: timestamp("read_at", { mode: 'string' }),
+	isDeleted: boolean("is_deleted").default(false).notNull(),
+	deletedAt: timestamp("deleted_at", { mode: 'string' }),
+	isEdited: boolean("is_edited").default(false).notNull(),
+	editedAt: timestamp("edited_at", { mode: 'string' }),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	index("idx_chat_messages_conversation_id").using("btree", table.conversationId.asc().nullsLast().op("uuid_ops")),
+	index("idx_chat_messages_created_at").using("btree", table.createdAt.desc().nullsFirst().op("timestamp_ops")),
+	index("idx_chat_messages_sender_id").using("btree", table.senderId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.conversationId],
+			foreignColumns: [chatConversations.id],
+			name: "chat_messages_conversation_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.replyToId],
+			foreignColumns: [table.id],
+			name: "chat_messages_reply_to_id_fkey"
+		}).onDelete("set null"),
+	check("chat_messages_sender_type_check", sql`sender_type = ANY (ARRAY['doctor'::text, 'hospital'::text])`),
+	check("chat_messages_message_type_check", sql`message_type = ANY (ARRAY['text'::text, 'attachment'::text, 'system'::text])`),
+]);
+
+export const chatMessageAttachments = pgTable("chat_message_attachments", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	messageId: uuid("message_id").notNull(),
+	conversationId: uuid("conversation_id").notNull(),
+	fileId: uuid("file_id").notNull(),
+	uploadedBy: text("uploaded_by").notNull(),
+	uploadedAt: timestamp("uploaded_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	index("idx_chat_message_attachments_message_id").using("btree", table.messageId.asc().nullsLast().op("uuid_ops")),
+	index("idx_chat_message_attachments_conversation_id").using("btree", table.conversationId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.messageId],
+			foreignColumns: [chatMessages.id],
+			name: "chat_message_attachments_message_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.conversationId],
+			foreignColumns: [chatConversations.id],
+			name: "chat_message_attachments_conversation_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.fileId],
+			foreignColumns: [files.id],
+			name: "chat_message_attachments_file_id_fkey"
+		}).onDelete("cascade"),
+	check("chat_message_attachments_uploaded_by_check", sql`uploaded_by = ANY (ARRAY['doctor'::text, 'hospital'::text])`),
+]);
+
+export const chatMessageReactions = pgTable("chat_message_reactions", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	messageId: uuid("message_id").notNull(),
+	conversationId: uuid("conversation_id").notNull(),
+	reactorType: text("reactor_type").notNull(),
+	reactorId: uuid("reactor_id").notNull(),
+	emoji: varchar({ length: 10 }).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	index("idx_chat_message_reactions_message_id").using("btree", table.messageId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.messageId],
+			foreignColumns: [chatMessages.id],
+			name: "chat_message_reactions_message_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.conversationId],
+			foreignColumns: [chatConversations.id],
+			name: "chat_message_reactions_conversation_id_fkey"
+		}).onDelete("cascade"),
+	unique("chat_message_reactions_message_id_reactor_id_key").on(table.messageId, table.reactorId),
+	check("chat_message_reactions_reactor_type_check", sql`reactor_type = ANY (ARRAY['doctor'::text, 'hospital'::text])`),
+]);
+
 export const geographyColumns = pgView("geography_columns", {	// TODO: failed to parse database type 'name'
 	fTableCatalog: text("f_table_catalog"),
 	// TODO: failed to parse database type 'name'

@@ -306,7 +306,7 @@ export class PushNotificationService {
       console.log('📱 [PUSH NOTIFICATION] FCM Response received');
       console.log(`📱 [PUSH NOTIFICATION] Success Count: ${response.successCount}`);
       console.log(`📱 [PUSH NOTIFICATION] Failure Count: ${response.failureCount}`);
-
+console.log(response,"response")
       // Update last_used_at for successful tokens
       if (response.successCount > 0) {
         const successfulTokens = deviceTokens.filter(

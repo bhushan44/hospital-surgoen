@@ -14,6 +14,7 @@ import {
   ChevronRight,
   LogOut,
   Receipt,
+  MessageSquare,
 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -42,6 +43,7 @@ export function HospitalSidebar() {
     { id: "patients", label: "Patients", icon: Users, href: "/hospital/patients" },
     { id: "find-doctors", label: "Find Doctors", icon: UserSearch, href: "/hospital/find-doctors" },
     { id: "assignments", label: "Assignments", icon: ClipboardList, href: "/hospital/assignments" },
+    { id: "chat", label: "Messages", icon: MessageSquare, href: "/hospital/chat" },
     { id: "profile", label: "Hospital Profile", icon: Building2, href: "/hospital/profile" },
     { id: "subscription", label: "Subscription", icon: CreditCard, href: "/hospital/subscription" },
     { id: "transactions", label: "Payment Transactions", icon: Receipt, href: "/hospital/transactions" },
