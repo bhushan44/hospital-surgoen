@@ -325,8 +325,8 @@ export class ChatService {
 
     if (senderType === 'doctor') {
       // Sender is doctor → receiver is hospital
-      const [senderRow] = await db.select({ name: doctors.name }).from(doctors).where(eq(doctors.id, senderId)).limit(1);
-      if (senderRow) senderName = senderRow.name ?? 'Doctor';
+      const [senderRow] = await db.select({ firstName: doctors.firstName, lastName: doctors.lastName }).from(doctors).where(eq(doctors.id, senderId)).limit(1);
+      if (senderRow) senderName = `${senderRow.firstName} ${senderRow.lastName}`.trim() || 'Doctor';
 
       const [receiverRow] = await db.select({ userId: hospitals.userId }).from(hospitals).where(eq(hospitals.id, conversation.hospitalId)).limit(1);
       receiverUserId = receiverRow?.userId ?? null;

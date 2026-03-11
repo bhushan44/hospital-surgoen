@@ -5,7 +5,7 @@ import { eq, and, desc } from 'drizzle-orm';
 export interface CreateNotificationData {
   userId: string; // Maps to recipientId
   recipientType?: 'user' | 'role' | 'all'; // Defaults to 'user'
-  notificationType?: 'booking' | 'payment' | 'reminder' | 'system' | 'review'; // Store in payload
+  notificationType?: 'booking' | 'payment' | 'reminder' | 'system' | 'review' | 'chat'; // Store in payload
   title: string;
   message: string;
   channel: 'push' | 'email' | 'sms' | 'in_app';
