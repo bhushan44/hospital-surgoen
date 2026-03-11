@@ -21,6 +21,7 @@ import {
   ChevronRight,
   LogOut,
   Receipt,
+  MessageSquare,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "../_lib/utils";
@@ -184,14 +185,15 @@ export function DoctorSidebar({ collapsed: externalCollapsed, onToggleCollapse }
     {
       title: 'Professional Network',
       items: [
-        { 
-          id: 'hospitals', 
-          label: 'Affiliated Hospitals', 
-          icon: Building2, 
-          href: '/doctor/hospitals', 
-          badge: activeAffiliations !== null && activeAffiliations > 0 ? `${activeAffiliations}` : undefined 
+        {
+          id: 'hospitals',
+          label: 'Affiliated Hospitals',
+          icon: Building2,
+          href: '/doctor/hospitals',
+          badge: activeAffiliations !== null && activeAffiliations > 0 ? `${activeAffiliations}` : undefined
         },
         { id: 'specializations', label: 'Specializations', icon: Stethoscope, href: '/doctor/specializations' },
+        { id: 'chat', label: 'Messages', icon: MessageSquare, href: '/doctor/chat' },
       ]
     },
     {
