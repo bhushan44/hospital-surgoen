@@ -134,8 +134,7 @@ export default function ChatPage() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editingMsg, setEditingMsg] = useState<Message | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
-  const [pendingFileId, setPendingFileId] = useState<string | null>(null);
-  const [pendingFileName, setPendingFileName] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<{ id: string; name: string }[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null); // messageId
   const [sending, setSending] = useState(false);
   const [deletingConvId, setDeletingConvId] = useState<string | null>(null); // confirm dialog
@@ -313,23 +312,22 @@ export default function ChatPage() {
   };
 
   const sendMessage = async () => {
-    if ((!text.trim() && !pendingFileId) || !activeConv || sending) return;
+    if ((!text.trim() && pendingFiles.length === 0) || !activeConv || sending) return;
     try {
       setSending(true);
       const body: any = {
-        content: text.trim() || (pendingFileName ?? 'File attached'),
-        messageType: pendingFileId ? 'attachment' : 'text',
+        content: text.trim() || (pendingFiles.length > 0 ? `${pendingFiles.length} file(s) attached` : ''),
+        messageType: pendingFiles.length > 0 ? 'attachment' : 'text',
       };
       if (replyTo) body.replyToId = replyTo.id;
-      if (pendingFileId) body.attachmentIds = [pendingFileId];
+      if (pendingFiles.length > 0) body.attachmentIds = pendingFiles.map(f => f.id);
 
       const res = await apiClient.post(`/api/chats/${activeConv.id}/messages`, body);
       if (res.data.success) {
         setMessages(prev => [...prev, res.data.data]);
         setText('');
         setReplyTo(null);
-        setPendingFileId(null);
-        setPendingFileName(null);
+        setPendingFiles([]);
         // Refresh conversation list to update lastMessageAt
         fetchConversations();
       }
@@ -388,25 +386,41 @@ export default function ChatPage() {
     setShowEmojiPicker(null);
   };
 
-  const uploadFile = async (file: File) => {
-    const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error('File too large. Maximum size is 25MB.');
+  const uploadFiles = async (fileList: FileList) => {
+    if (!activeConv) return;
+    
+    const files = Array.from(fileList);
+    if (files.length > 10) {
+      toast.error('Maximum 10 files allowed');
       return;
     }
-    if (!activeConv) return;
+    
+    const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`File ${file.name} is too large. Maximum size is 25MB.`);
+        return;
+      }
+    }
+
     try {
       setUploadingFile(true);
       const formData = new FormData();
-      formData.append('file', file);
-      // Let the backend decide bucket and folder securely
+      files.forEach(f => formData.append('files', f));
+
       const res = await apiClient.post(`/api/chats/${activeConv.id}/attachments/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+
       if (res.data.success) {
-        setPendingFileId(res.data.data.fileId);
-        setPendingFileName(file.name);
-        toast.success('File ready to send');
+        // res.data.data is now just an array of IDs: ['id1', 'id2']
+        const uploadedIds: string[] = res.data.data;
+        const uploaded = uploadedIds.map((id, index) => ({
+          id,
+          name: files[index]?.name || `Attachment ${index + 1}`,
+        }));
+        setPendingFiles(prev => [...prev, ...uploaded]);
+        toast.success(`${files.length} file(s) ready to send`);
       }
     } catch {
       toast.error('Failed to upload file');
@@ -798,13 +812,20 @@ export default function ChatPage() {
             )}
 
             {/* Pending file indicator */}
-            {pendingFileId && (
-              <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-lg">
-                <Paperclip className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                <span className="text-xs text-slate-600 flex-1 truncate">{pendingFileName}</span>
-                <button onClick={() => { setPendingFileId(null); setPendingFileName(null); }} className="p-1 hover:bg-slate-200 rounded">
-                  <X className="w-3.5 h-3.5 text-slate-500" />
-                </button>
+            {pendingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 bg-slate-100 px-3 py-2 rounded-lg">
+                {pendingFiles.map(file => (
+                  <div key={file.id} className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">
+                    <Paperclip className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                    <span className="text-xs text-slate-600 max-w-[150px] truncate">{file.name}</span>
+                    <button 
+                      onClick={() => setPendingFiles(prev => prev.filter(f => f.id !== file.id))} 
+                      className="p-1 hover:bg-slate-100 text-slate-400 hover:text-red-500 rounded"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -822,8 +843,9 @@ export default function ChatPage() {
                 ref={fileInputRef}
                 type="file"
                 className="hidden"
+                multiple
                 accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"
-                onChange={e => { if (e.target.files?.[0]) uploadFile(e.target.files[0]); e.target.value = ''; }}
+                onChange={e => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ''; }}
               />
 
               {/* Text input */}
@@ -841,7 +863,7 @@ export default function ChatPage() {
               {/* Send button */}
               <button
                 onClick={editingMsg ? saveEdit : sendMessage}
-                disabled={sending || (!text.trim() && !pendingFileId)}
+                disabled={sending || (!text.trim() && pendingFiles.length === 0)}
                 className="p-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0 self-end"
                 title={editingMsg ? 'Save edit' : 'Send message'}
               >

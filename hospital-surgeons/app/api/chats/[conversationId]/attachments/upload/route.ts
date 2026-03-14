@@ -56,61 +56,70 @@ async function postHandler(req: AuthenticatedRequest, context: { params: Promise
 
     // 2. Parse form data
     const formData = await req.formData();
-    const file = formData.get('file') as File;
+    // Support either 'file' (single/array) or 'files' (array) in the FormData
+    const files = formData.getAll('file').concat(formData.getAll('files')) as File[];
 
-    if (!file) {
+    if (!files || files.length === 0) {
       return NextResponse.json(
-        { success: false, message: 'No file provided' },
+        { success: false, message: 'No files provided' },
         { status: 400 }
       );
     }
 
-    // 3. Size limit 25MB
+    if (files.length > 10) {
+      return NextResponse.json(
+        { success: false, message: 'Maximum 10 files allowed per request' },
+        { status: 400 }
+      );
+    }
+
+    // 3. Size limit 25MB per file
     const MAX_FILE_SIZE = 25 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { success: false, message: 'File too large. Maximum size is 25MB.' },
-        { status: 400 }
-      );
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        return NextResponse.json(
+          { success: false, message: `File ${file.name} is too large. Maximum size is 25MB.` },
+          { status: 400 }
+        );
+      }
     }
 
-    // 4. Determine bucket securely
-    const isImage = file.type.startsWith('image/');
-    const bucket = isImage ? 'images' : 'documents';
-    
-    // Determine folder securely based on conversation ID
+    const filesService = new FilesService();
     const folder = `chats/${conversationId}`;
 
-    // 5. Convert File to Buffer
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    // 4. Upload all files in parallel
+    const uploadPromises = files.map(async (file) => {
+      const isImage = file.type.startsWith('image/');
+      const bucket = isImage ? 'images' : 'documents';
+      
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
 
-    // 6. Upload file
-    const filesService = new FilesService();
-    const result = await filesService.uploadAndSave({
-      buffer,
-      filename: file.name,
-      folder,
-      mimetype: file.type,
-      size: file.size,
-      bucket,
-      isPublic: true,
+      const result = await filesService.uploadAndSave({
+        buffer,
+        filename: file.name,
+        folder,
+        mimetype: file.type,
+        size: file.size,
+        bucket,
+        isPublic: true,
+      });
+
+      // Return just the string ID for the mobile developer
+      return result.fileId;
     });
+
+    const uploadedFiles = await Promise.all(uploadPromises);
 
     return NextResponse.json({
       success: true,
-      message: 'Attachment uploaded successfully',
-      data: {
-        fileId: result.fileId,
-        url: result.url,
-        path: result.path,
-        filename: file.name,
-      },
+      message: `${uploadedFiles.length} file(s) uploaded successfully`,
+      data: uploadedFiles, // Return array of results
     });
   } catch (error: any) {
     console.error('Chat attachment upload error:', error);
     return NextResponse.json(
-      { success: false, message: error.message || 'Failed to upload attachment' },
+      { success: false, message: error.message || 'Failed to upload attachments' },
       { status: 500 }
     );
   }
