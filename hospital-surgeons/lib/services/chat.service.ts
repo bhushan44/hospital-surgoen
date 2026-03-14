@@ -56,6 +56,13 @@ export class ChatService {
     throw Object.assign(new Error('Invalid user role for chat'), { statusCode: 403 });
   }
 
+  async deleteConversation(conversationId: string, userId: string, userRole: string) {
+    const conversation = await this.chatRepo.findConversationById(conversationId);
+    if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 });
+    await this.verifyAccess(conversation, userId, userRole);
+    return this.chatRepo.deleteConversation(conversationId);
+  }
+
   // ─── Messages ────────────────────────────────────────────────────────────────
 
   async sendMessage(
@@ -313,7 +320,7 @@ export class ChatService {
   }
 
   private async sendChatPushNotification(
-    conversation: { doctorId: string; hospitalId: string },
+    conversation: { id: string; doctorId: string; hospitalId: string },
     senderType: 'doctor' | 'hospital',
     senderId: string,
     content: string
@@ -358,7 +365,7 @@ export class ChatService {
       payload: {
         notificationType: 'chat_message',
         deepLink,
-        conversationId: senderType === 'doctor' ? conversation.doctorId : conversation.hospitalId,
+        conversationId: conversation.id,
       },
     });
   }

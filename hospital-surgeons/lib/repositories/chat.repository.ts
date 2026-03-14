@@ -1,6 +1,6 @@
 import { getDb } from '@/lib/db';
 import { chatConversations, chatMessages, chatMessageAttachments, chatMessageReactions, files, doctors, hospitals } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, desc, lt, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, lt, sql, inArray, ne } from 'drizzle-orm';
 
 export class ChatRepository {
   private db = getDb();
@@ -39,8 +39,18 @@ export class ChatRepository {
   async getConversationsForDoctor(doctorId: string, limit: number, cursor?: string, tx?: any) {
     const db = tx ?? this.db;
     const conditions = cursor
-      ? and(eq(chatConversations.doctorId, doctorId), lt(chatConversations.updatedAt, cursor))
-      : eq(chatConversations.doctorId, doctorId);
+      ? and(eq(chatConversations.doctorId, doctorId), lt(chatConversations.updatedAt, cursor), eq(chatConversations.isActive, true))
+      : and(eq(chatConversations.doctorId, doctorId), eq(chatConversations.isActive, true));
+
+    // Subquery for last message content and type
+    const lastMsgSubquery = db
+      .select({ conversationId: chatMessages.conversationId, content: chatMessages.content, messageType: chatMessages.messageType, isDeleted: chatMessages.isDeleted })
+      .from(chatMessages)
+      .where(and(eq(chatMessages.conversationId, sql`chat_conversations.id`), ne(chatMessages.isDeleted, true)))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(1)
+      .as('last_msg');
+
     const rows = await db
       .select({
         id: chatConversations.id,
@@ -54,6 +64,26 @@ export class ChatRepository {
         updatedAt: chatConversations.updatedAt,
         hospitalName: hospitals.name,
         hospitalLogoId: hospitals.logoId,
+        lastMessageContent: sql<string | null>`(
+          SELECT CASE WHEN cm.is_deleted THEN NULL
+            WHEN cm.message_type = 'attachment' THEN '📎 Attachment'
+            ELSE cm.content END
+          FROM chat_messages cm
+          WHERE cm.conversation_id = chat_conversations.id AND cm.is_deleted = false
+          ORDER BY cm.created_at DESC LIMIT 1
+        )`,
+        lastMessageIsRead: sql<boolean | null>`(
+          SELECT cm.is_read
+          FROM chat_messages cm
+          WHERE cm.conversation_id = chat_conversations.id AND cm.is_deleted = false
+          ORDER BY cm.created_at DESC LIMIT 1
+        )`,
+        lastMessageSenderType: sql<string | null>`(
+          SELECT cm.sender_type
+          FROM chat_messages cm
+          WHERE cm.conversation_id = chat_conversations.id AND cm.is_deleted = false
+          ORDER BY cm.created_at DESC LIMIT 1
+        )`,
       })
       .from(chatConversations)
       .leftJoin(hospitals, eq(chatConversations.hospitalId, hospitals.id))
@@ -68,8 +98,8 @@ export class ChatRepository {
   async getConversationsForHospital(hospitalId: string, limit: number, cursor?: string, tx?: any) {
     const db = tx ?? this.db;
     const conditions = cursor
-      ? and(eq(chatConversations.hospitalId, hospitalId), lt(chatConversations.updatedAt, cursor))
-      : eq(chatConversations.hospitalId, hospitalId);
+      ? and(eq(chatConversations.hospitalId, hospitalId), lt(chatConversations.updatedAt, cursor), eq(chatConversations.isActive, true))
+      : and(eq(chatConversations.hospitalId, hospitalId), eq(chatConversations.isActive, true));
     const rows = await db
       .select({
         id: chatConversations.id,
@@ -84,6 +114,26 @@ export class ChatRepository {
         doctorFirstName: doctors.firstName,
         doctorLastName: doctors.lastName,
         doctorProfilePhotoId: doctors.profilePhotoId,
+        lastMessageContent: sql<string | null>`(
+          SELECT CASE WHEN cm.is_deleted THEN NULL
+            WHEN cm.message_type = 'attachment' THEN '📎 Attachment'
+            ELSE cm.content END
+          FROM chat_messages cm
+          WHERE cm.conversation_id = chat_conversations.id AND cm.is_deleted = false
+          ORDER BY cm.created_at DESC LIMIT 1
+        )`,
+        lastMessageIsRead: sql<boolean | null>`(
+          SELECT cm.is_read
+          FROM chat_messages cm
+          WHERE cm.conversation_id = chat_conversations.id AND cm.is_deleted = false
+          ORDER BY cm.created_at DESC LIMIT 1
+        )`,
+        lastMessageSenderType: sql<string | null>`(
+          SELECT cm.sender_type
+          FROM chat_messages cm
+          WHERE cm.conversation_id = chat_conversations.id AND cm.is_deleted = false
+          ORDER BY cm.created_at DESC LIMIT 1
+        )`,
       })
       .from(chatConversations)
       .leftJoin(doctors, eq(chatConversations.doctorId, doctors.id))
@@ -114,6 +164,16 @@ export class ChatRepository {
       ? { doctorUnreadCount: 0, updatedAt: new Date().toISOString() }
       : { hospitalUnreadCount: 0, updatedAt: new Date().toISOString() };
     await db.update(chatConversations).set(patch).where(eq(chatConversations.id, conversationId));
+  }
+
+  async deleteConversation(conversationId: string, tx?: any) {
+    const db = tx ?? this.db;
+    const [conv] = await db
+      .update(chatConversations)
+      .set({ isActive: false, updatedAt: new Date().toISOString() })
+      .where(eq(chatConversations.id, conversationId))
+      .returning();
+    return conv;
   }
 
   // ─── Messages ────────────────────────────────────────────────────────────────

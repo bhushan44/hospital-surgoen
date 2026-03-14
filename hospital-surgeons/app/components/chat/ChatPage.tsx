@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Send, Paperclip, X, Reply, Smile, Trash2, Edit2, Check, ChevronLeft,
-  MessageSquare, Search, Loader2, Download, Plus,
+  Send, Paperclip, X, Reply, Smile, Trash2, Edit2, Check, CheckCheck, ChevronLeft,
+  MessageSquare, Search, Loader2, Download, Plus, AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -22,6 +22,9 @@ interface Conversation {
   doctorUnreadCount: number;
   hospitalUnreadCount: number;
   updatedAt: string;
+  lastMessageContent?: string | null;
+  lastMessageIsRead?: boolean | null;
+  lastMessageSenderType?: string | null;
   // enriched fields
   hospitalName?: string | null;
   doctorFirstName?: string | null;
@@ -135,6 +138,7 @@ export default function ChatPage() {
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null); // messageId
   const [sending, setSending] = useState(false);
+  const [deletingConvId, setDeletingConvId] = useState<string | null>(null); // confirm dialog
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -360,12 +364,25 @@ export default function ChatPage() {
     }
   };
 
+  const deleteConversation = async (conv: Conversation) => {
+    try {
+      await apiClient.delete(`/api/chats/${conv.id}`);
+      setConversations(prev => prev.filter(c => c.id !== conv.id));
+      if (activeConv?.id === conv.id) setActiveConv(null);
+      toast.success('Conversation deleted');
+    } catch {
+      toast.error('Failed to delete conversation');
+    } finally {
+      setDeletingConvId(null);
+    }
+  };
+
   const toggleReaction = async (msg: Message, emoji: string) => {
     if (!activeConv) return;
     try {
       const res = await apiClient.post(`/api/chats/${activeConv.id}/messages/${msg.id}/reactions`, { emoji });
       if (res.data.success) {
-        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: res.data.data.reactions } : m));
+        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: res.data.data.reactions ?? [] } : m));
       }
     } catch { /* silent */ }
     setShowEmojiPicker(null);
@@ -466,6 +483,41 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-48px)] bg-white rounded-xl shadow-sm overflow-hidden border border-slate-200">
+
+      {/* ── Delete Conversation Confirmation Dialog ───────────────────────────── */}
+      {deletingConvId && (() => {
+        const conv = conversations.find(c => c.id === deletingConvId);
+        if (!conv) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 mx-4 max-w-sm w-full">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-red-500" />
+                </div>
+                <h3 className="font-semibold text-slate-800">Delete Conversation</h3>
+              </div>
+              <p className="text-sm text-slate-500 mb-5">
+                Are you sure you want to delete your conversation with <span className="font-medium text-slate-700">{convName(conv)}</span>? This cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeletingConvId(null)}
+                  className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => deleteConversation(conv)}
+                  className="flex-1 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Left: Conversations List ─────────────────────────────────────────── */}
       <div className={`flex flex-col border-r border-slate-200 bg-slate-50 ${activeConv ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 flex-shrink-0`}>
@@ -577,11 +629,14 @@ export default function ChatPage() {
             filteredConvs.map(conv => {
               const unread = myUnread(conv);
               const isActive = activeConv?.id === conv.id;
+              const preview = conv.lastMessageContent
+                ? (conv.lastMessageContent.length > 40 ? conv.lastMessageContent.slice(0, 40) + '…' : conv.lastMessageContent)
+                : (conv.lastMessageAt ? 'Tap to view messages' : 'No messages yet');
               return (
-                <button
+                <div
                   key={conv.id}
+                  className={`group relative flex items-center gap-3 px-4 py-3 hover:bg-white border-b border-slate-100 transition-colors cursor-pointer ${isActive ? 'bg-white shadow-sm' : ''}`}
                   onClick={() => openConversation(conv)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-white border-b border-slate-100 transition-colors text-left ${isActive ? 'bg-white shadow-sm' : ''}`}
                 >
                   <div className="w-10 h-10 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
                     {convInitial(conv)}
@@ -598,9 +653,17 @@ export default function ChatPage() {
                       )}
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-0.5">
-                      <span className="text-xs text-slate-400 truncate">
-                        {conv.lastMessageAt ? 'Tap to view messages' : 'No messages yet'}
-                      </span>
+                      <div className="flex items-center gap-1 min-w-0 flex-1">
+                        {/* Tick for MY last message: ✓✓ read, ✓ unread */}
+                        {conv.lastMessageSenderType === myParty && conv.lastMessageContent && (
+                          conv.lastMessageIsRead
+                            ? <CheckCheck className="w-3.5 h-3.5 text-teal-500 flex-shrink-0" />
+                            : <Check className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                        )}
+                        <span className={`text-xs truncate ${unread > 0 ? 'text-slate-600 font-medium' : 'text-slate-400'}`}>
+                          {preview}
+                        </span>
+                      </div>
                       {unread > 0 && (
                         <span className="bg-teal-500 text-white text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
                           {unread}
@@ -608,7 +671,15 @@ export default function ChatPage() {
                       )}
                     </div>
                   </div>
-                </button>
+                  {/* Delete button — appears on hover */}
+                  <button
+                    onClick={e => { e.stopPropagation(); setDeletingConvId(conv.id); }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-50 text-red-400 transition-all"
+                    title="Delete conversation"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               );
             })
           )}
@@ -633,6 +704,13 @@ export default function ChatPage() {
               <div className="font-medium text-slate-800 text-sm">{convName(activeConv)}</div>
               <div className="text-xs text-slate-400 capitalize">{otherParty}</div>
             </div>
+            <button
+              onClick={() => setDeletingConvId(activeConv.id)}
+              className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 transition-colors"
+              title="Delete conversation"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Messages */}
@@ -921,8 +999,10 @@ function MessageBubble({ msg, isMine, messages, onReply, onEdit, onDelete, onRea
               {msg.isEdited && (
                 <span className={`text-xs ${isMine ? 'text-teal-200' : 'text-slate-400'}`}>(edited)</span>
               )}
-              {isMine && msg.isRead && (
-                <Check className={`w-3 h-3 ${isMine ? 'text-teal-100' : 'text-slate-400'}`} />
+              {isMine && (
+                msg.isRead
+                  ? <CheckCheck className={`w-3.5 h-3.5 text-teal-100`} />
+                  : <Check className={`w-3 h-3 text-teal-200 opacity-70`} />
               )}
             </div>
           </div>
