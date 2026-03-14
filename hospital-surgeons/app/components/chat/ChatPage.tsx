@@ -394,14 +394,13 @@ export default function ChatPage() {
       toast.error('File too large. Maximum size is 25MB.');
       return;
     }
+    if (!activeConv) return;
     try {
       setUploadingFile(true);
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('folder', 'chat');
-      const bucket = file.type.startsWith('image/') ? 'images' : 'documents';
-      formData.append('bucket', bucket);
-      const res = await apiClient.post('/api/files/upload', formData, {
+      // Let the backend decide bucket and folder securely
+      const res = await apiClient.post(`/api/chats/${activeConv.id}/attachments/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       if (res.data.success) {
