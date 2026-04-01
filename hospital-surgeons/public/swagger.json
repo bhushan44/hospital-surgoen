@@ -1342,6 +1342,264 @@
         }
       }
     },
+    "/api/chats/{conversationId}/messages/{messageId}/reactions": {
+      "post": {
+        "summary": "Toggle a message reaction",
+        "description": "Add, replace, or remove an emoji reaction on a specific message.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ID of the conversation"
+          },
+          {
+            "in": "path",
+            "name": "messageId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ID of the message to react to"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "emoji"
+                ],
+                "properties": {
+                  "emoji": {
+                    "type": "string",
+                    "example": "❤️",
+                    "description": "The emoji character to use for reaction"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reaction toggled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "messageId": {
+                          "type": "string"
+                        },
+                        "reactions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or validation error"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Message or conversation not found"
+          }
+        }
+      }
+    },
+    "/api/chats/{conversationId}/messages/{messageId}/read": {
+      "patch": {
+        "summary": "Mark a message as read",
+        "description": "Mark a specific message as read and reset the unread message count for the authenticated user in this conversation.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ID of the conversation"
+          },
+          {
+            "in": "path",
+            "name": "messageId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ID of the message to mark as read"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message marked as read successfully"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Not a participant of the conversation"
+          },
+          "404": {
+            "description": "Message or conversation not found"
+          }
+        }
+      }
+    },
+    "/api/chats/{conversationId}/messages/{messageId}": {
+      "patch": {
+        "summary": "Edit a message",
+        "description": "Modify the content of an existing message. Only the sender can edit their own messages. Cannot edit deleted messages.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ID of the conversation"
+          },
+          {
+            "in": "path",
+            "name": "messageId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ID of the message to edit"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "example": "Updated message content"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message updated successfully"
+          },
+          "400": {
+            "description": "Validation error or cannot edit deleted message"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Not the sender of the message"
+          },
+          "404": {
+            "description": "Message or conversation not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a message",
+        "description": "Soft-delete a message by marking it as deleted and clearing its content. Only the sender can delete their own messages.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ID of the conversation"
+          },
+          {
+            "in": "path",
+            "name": "messageId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ID of the message to delete"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message deleted successfully"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Not the sender of the message"
+          },
+          "404": {
+            "description": "Message or conversation not found"
+          }
+        }
+      }
+    },
     "/api/chats/{conversationId}/messages": {
       "get": {
         "summary": "List messages in conversation",

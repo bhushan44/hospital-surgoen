@@ -8,8 +8,50 @@ const chatService = new ChatService();
 type Params = { params: Promise<{ conversationId: string; messageId: string }> };
 
 /**
- * PATCH /api/chats/[conversationId]/messages/[messageId]
- * Edit a message (only the sender can edit, cannot edit deleted messages).
+ * @swagger
+ * /api/chats/{conversationId}/messages/{messageId}:
+ *   patch:
+ *     summary: Edit a message
+ *     description: Modify the content of an existing message. Only the sender can edit their own messages. Cannot edit deleted messages.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the conversation
+ *       - in: path
+ *         name: messageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the message to edit
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - content
+ *             properties:
+ *               content:
+ *                 type: string
+ *                 example: "Updated message content"
+ *     responses:
+ *       200:
+ *         description: Message updated successfully
+ *       400:
+ *         description: Validation error or cannot edit deleted message
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Not the sender of the message
+ *       404:
+ *         description: Message or conversation not found
  */
 export const PATCH = withAuthAndContext<Params>(
   async (req: AuthenticatedRequest, context) => {
@@ -36,8 +78,36 @@ export const PATCH = withAuthAndContext<Params>(
 );
 
 /**
- * DELETE /api/chats/[conversationId]/messages/[messageId]
- * Soft-delete a message (only the sender can delete).
+ * @swagger
+ * /api/chats/{conversationId}/messages/{messageId}:
+ *   delete:
+ *     summary: Delete a message
+ *     description: Soft-delete a message by marking it as deleted and clearing its content. Only the sender can delete their own messages.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the conversation
+ *       - in: path
+ *         name: messageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the message to delete
+ *     responses:
+ *       200:
+ *         description: Message deleted successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Not the sender of the message
+ *       404:
+ *         description: Message or conversation not found
  */
 export const DELETE = withAuthAndContext<Params>(
   async (req: AuthenticatedRequest, context) => {

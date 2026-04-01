@@ -8,11 +8,65 @@ const chatService = new ChatService();
 type Params = { params: Promise<{ conversationId: string; messageId: string }> };
 
 /**
- * POST /api/chats/[conversationId]/messages/[messageId]/reactions
- * Toggle an emoji reaction on a message.
- * - Same emoji from same user → removes the reaction
- * - Different emoji from same user → replaces the reaction
- * - New emoji from user → adds the reaction
+ * @swagger
+ * /api/chats/{conversationId}/messages/{messageId}/reactions:
+ *   post:
+ *     summary: Toggle a message reaction
+ *     description: Add, replace, or remove an emoji reaction on a specific message.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the conversation
+ *       - in: path
+ *         name: messageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the message to react to
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - emoji
+ *             properties:
+ *               emoji:
+ *                 type: string
+ *                 example: "❤️"
+ *                 description: The emoji character to use for reaction
+ *     responses:
+ *       200:
+ *         description: Reaction toggled successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     messageId:
+ *                       type: string
+ *                     reactions:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *       400:
+ *         description: Invalid request or validation error
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Message or conversation not found
  */
 export const POST = withAuthAndContext<Params>(
   async (req: AuthenticatedRequest, context) => {

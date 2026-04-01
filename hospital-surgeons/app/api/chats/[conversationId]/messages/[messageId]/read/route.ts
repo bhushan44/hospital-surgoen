@@ -7,8 +7,36 @@ const chatService = new ChatService();
 type Params = { params: Promise<{ conversationId: string; messageId: string }> };
 
 /**
- * PATCH /api/chats/[conversationId]/messages/[messageId]/read
- * Mark a message as read and reset conversation unread count for the reader.
+ * @swagger
+ * /api/chats/{conversationId}/messages/{messageId}/read:
+ *   patch:
+ *     summary: Mark a message as read
+ *     description: Mark a specific message as read and reset the unread message count for the authenticated user in this conversation.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the conversation
+ *       - in: path
+ *         name: messageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the message to mark as read
+ *     responses:
+ *       200:
+ *         description: Message marked as read successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Not a participant of the conversation
+ *       404:
+ *         description: Message or conversation not found
  */
 export const PATCH = withAuthAndContext<Params>(
   async (req: AuthenticatedRequest, context) => {
