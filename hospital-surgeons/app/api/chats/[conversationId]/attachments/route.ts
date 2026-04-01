@@ -9,12 +9,41 @@ const chatRepo = new ChatRepository();
 type Params = { params: Promise<{ conversationId: string }> };
 
 /**
- * GET /api/chats/[conversationId]/attachments
- * Get all file attachments in a conversation (media gallery).
- *
- * To send attachments:
- *   1. Upload file via POST /api/files/upload → get fileId
- *   2. Send message via POST /api/chats/[conversationId]/messages with attachmentIds: [fileId]
+ * @swagger
+ * /api/chats/{conversationId}/attachments:
+ *   get:
+ *     summary: List conversation attachments
+ *     description: Retrieve all file attachments shared in the specified conversation (media gallery).
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the conversation
+ *     responses:
+ *       200:
+ *         description: List of attachments retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Not a participant of the conversation
+ *       404:
+ *         description: Conversation not found
  */
 export const GET = withAuthAndContext<Params>(
   async (req: AuthenticatedRequest, context) => {
