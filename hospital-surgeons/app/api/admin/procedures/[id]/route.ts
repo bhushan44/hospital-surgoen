@@ -4,6 +4,26 @@ import { validateRequest } from '@/lib/utils/validate-request';
 import { UpdateProcedureDtoSchema } from '@/lib/validations/procedure.dto';
 import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
 
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  try {
+    const service = new ProceduresService();
+    const result = await service.getProcedureById(id);
+
+    if (result.success) {
+      return NextResponse.json(result);
+    }
+
+    return NextResponse.json(result, { status: 404 });
+  } catch (error) {
+    console.error('Error in GET /api/admin/procedures/[id]:', error);
+    return NextResponse.json({ success: false, message: 'Internal server error' }, { status: 500 });
+  }
+}
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

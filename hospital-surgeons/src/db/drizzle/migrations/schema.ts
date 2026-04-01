@@ -1,4 +1,4 @@
-import { pgTable, foreignKey, uuid, integer, text, check, boolean, timestamp, index, unique, varchar, bigint, numeric, type AnyPgColumn, json, time, date, jsonb, pgView } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, uuid, integer, text, check, boolean, timestamp, index, unique, varchar, bigint, numeric, type AnyPgColumn, json, time, date, jsonb, pgView, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -650,6 +650,25 @@ export const procedures = pgTable("procedures", {
 			name: "procedures_specialty_id_fkey"
 		}).onDelete("cascade"),
 	unique("procedures_specialty_id_name_key").on(table.specialtyId, table.name),
+]);
+
+export const procedureTypeMappings = pgTable("procedure_type_mappings", {
+	procedureId: uuid("procedure_id").notNull(),
+	typeId: uuid("type_id").notNull(),
+	isActive: boolean("is_active").default(true).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.procedureId, table.typeId] }),
+	foreignKey({
+		columns: [table.procedureId],
+		foreignColumns: [procedures.id],
+		name: "procedure_type_mappings_procedure_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.typeId],
+		foreignColumns: [procedureTypes.id],
+		name: "procedure_type_mappings_type_id_fkey"
+	}).onDelete("cascade")
 ]);
 
 export const patients = pgTable("patients", {

@@ -8,8 +8,37 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
 /**
- * GET /api/chats/contacts?limit=20&page=1&search=
- * Returns all hospitals (for doctors) or all doctors (for hospitals).
+ * @swagger
+ * /api/chats/contacts:
+ *   get:
+ *     summary: List chat contacts
+ *     description: Returns hospitals if the user is a doctor, or doctors if the user is a hospital.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by name or city
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: Contacts retrieved successfully
+ *       403:
+ *         description: Invalid role
+ *       500:
+ *         description: Internal server error
  */
 export const GET = withAuth(async (req: AuthenticatedRequest) => {
   try {

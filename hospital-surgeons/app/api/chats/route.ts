@@ -6,8 +6,63 @@ import { CreateConversationDtoSchema } from '@/lib/validations/chat.dto';
 const chatService = new ChatService();
 
 /**
- * GET /api/chats
- * List conversations for the authenticated user (doctor or hospital).
+ * @swagger
+ * /api/chats:
+ *   get:
+ *     summary: List user conversations
+ *     description: Retrieve a paginated list of chat conversations for the authenticated doctor or hospital.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Number of conversations to retrieve
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *         description: Cursor for pagination
+ *     responses:
+ *       200:
+ *         description: Conversations retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ *
+ *   post:
+ *     summary: Create or retrieve conversation
+ *     description: Start a new conversation or get the existing one between a doctor and a hospital.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - doctorId
+ *               - hospitalId
+ *             properties:
+ *               doctorId: { type: string, format: uuid }
+ *               hospitalId: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Existing conversation retrieved
+ *       201:
+ *         description: New conversation created
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Unauthorized to create conversation for these parties
+ *       500:
+ *         description: Internal server error
  */
 export const GET = withAuth(async (req: AuthenticatedRequest) => {
   try {

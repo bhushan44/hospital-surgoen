@@ -61,6 +61,7 @@ export function ProceduresManagement({ specialtyId, specialtyName, hideHeader = 
   );
   const [categories, setCategories] = useState<Category[]>([]);
   const [procedures, setProcedures] = useState<Procedure[]>([]);
+  const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([]);
   
   // View modes
   const [viewMode, setViewMode] = useState<'list' | 'form'>('list');
@@ -68,11 +69,18 @@ export function ProceduresManagement({ specialtyId, specialtyName, hideHeader = 
   const [submitting, setSubmitting] = useState(false);
   
   // Form Data
-  const [procedureForm, setProcedureForm] = useState({
+  const [procedureForm, setProcedureForm] = useState<{
+    name: string;
+    description: string;
+    specialtyId: string;
+    categoryId: string;
+    typeIds: string[];
+  }>({
     name: '',
     description: '',
     specialtyId: specialtyId || '',
     categoryId: '',
+    typeIds: [],
   });
   
   const [categoryForm, setCategoryForm] = useState({
@@ -96,7 +104,8 @@ export function ProceduresManagement({ specialtyId, specialtyName, hideHeader = 
       await Promise.all([
         fetchSpecialties(),
         fetchCategories(),
-        fetchProcedures()
+        fetchProcedures(),
+        fetchProcedureTypes()
       ]);
     } catch (error) {
       console.error('Error fetching initial data:', error);
@@ -146,8 +155,13 @@ export function ProceduresManagement({ specialtyId, specialtyName, hideHeader = 
     if (data.success) setProcedures(data.data);
   };
 
+  const fetchProcedureTypes = async () => {
+    const res = await fetch('/api/admin/procedures/types');
+    const data = await res.json();
+    if (data.success) setProcedureTypes(data.data);
+  };
 
-  const handleOpenForm = (item?: any) => {
+  const handleOpenForm = async (item?: any) => {
     if (item) {
       setEditingItem(item);
       if (item.type === 'specialty') {
@@ -163,11 +177,16 @@ export function ProceduresManagement({ specialtyId, specialtyName, hideHeader = 
           specialtyId: item.specialtyId,
         });
       } else {
+        // Need to fetch full procedure info to get typeIds when editing
+        const res = await fetch(`/api/admin/procedures/${item.id}`);
+        const data = await res.json();
+        const fullItem = data.success ? data.data : item;
         setProcedureForm({
-          name: item.name,
-          description: item.description || '',
-          specialtyId: item.specialtyId,
-          categoryId: item.categoryId || '',
+          name: fullItem.name || item.name,
+          description: fullItem.description || item.description || '',
+          specialtyId: fullItem.specialtyId || item.specialtyId,
+          categoryId: fullItem.categoryId || item.categoryId || '',
+          typeIds: fullItem.typeIds || [],
         });
       }
     } else {
@@ -175,7 +194,7 @@ export function ProceduresManagement({ specialtyId, specialtyName, hideHeader = 
       if (activeTab === 'categories') {
         setCategoryForm({ name: '', description: '', specialtyId: specialtyId || '' });
       } else if (activeTab === 'procedures') {
-        setProcedureForm({ name: '', description: '', specialtyId: specialtyId || '', categoryId: '' });
+        setProcedureForm({ name: '', description: '', specialtyId: specialtyId || '', categoryId: '', typeIds: [] });
       } else if (activeTab === 'specialty') {
           // Editing current specialty
           const current = specialties.find(s => s.id === specialtyId);
@@ -266,7 +285,7 @@ export function ProceduresManagement({ specialtyId, specialtyName, hideHeader = 
           title="Procedures Hierarchy" 
           description="Manage medical procedures and therapeutic categories"
           actions={viewMode === 'list' && !readOnly && (
-            <Button onClick={() => handleOpenForm()} className="bg-navy-600 hover:bg-navy-700">
+            <Button onClick={() => handleOpenForm()}>
               <Plus className="w-4 h-4 mr-2" />
               Add {activeTab.slice(0, -1)}
             </Button>
@@ -304,14 +323,14 @@ export function ProceduresManagement({ specialtyId, specialtyName, hideHeader = 
                     </div>
                   )}
                   {hideHeader && !readOnly && (
-                    <Button size="sm" onClick={() => handleOpenForm()} className="bg-navy-600 hover:bg-navy-700 whitespace-nowrap px-3">
+                    <Button size="sm" onClick={() => handleOpenForm()} className="whitespace-nowrap px-3 shadow-sm border border-slate-200">
                       <Plus className="w-4 h-4 mr-1 ml-0" />
                       Add {activeTab.slice(0, -1)}
                     </Button>
                   )}
                 </>
               ) : (
-                <Button variant="ghost" size="sm" onClick={() => setViewMode('list')} className="text-slate-600">
+                <Button variant="outline" size="sm" onClick={() => setViewMode('list')} className="text-slate-600 shadow-sm bg-slate-50/50 border-slate-200">
                   Cancel & Return to List
                 </Button>
               )}
@@ -474,6 +493,7 @@ export function ProceduresManagement({ specialtyId, specialtyName, hideHeader = 
                         onClose={() => setViewMode('list')}
                         specialtyForm={specialtyForm}
                         setSpecialtyForm={setSpecialtyForm}
+                        procedureTypes={procedureTypes}
                     />
                 </div>
               </div>
@@ -528,7 +548,8 @@ function HierarchyForm({
   specialtyForm, setSpecialtyForm,
   specialtyId,
   onCategoriesUpdate,
-  onClose
+  onClose,
+  procedureTypes
 }: any) {
   const [showQuickAddCat, setShowQuickAddCat] = useState(false);
   const [quickCatName, setQuickCatName] = useState('');
@@ -641,6 +662,30 @@ function HierarchyForm({
                <Label>Procedure Name</Label>
                <Input value={procedureForm.name} onChange={(e) => setProcedureForm({ ...procedureForm, name: e.target.value })} required />
              </div>
+             <div className="space-y-2 mt-4 mb-4">
+                <Label>Required Procedure Types (Pricing Options)</Label>
+                <div className="grid grid-cols-2 gap-2 mt-2 p-3 bg-slate-50 border border-slate-100 rounded-md">
+                  {procedureTypes?.map((pt: any) => (
+                    <label key={pt.id} className="flex items-center space-x-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={procedureForm.typeIds.includes(pt.id)}
+                        onChange={(e) => {
+                          const newTypeIds = e.target.checked 
+                            ? [...procedureForm.typeIds, pt.id]
+                            : procedureForm.typeIds.filter((id: string) => id !== pt.id);
+                          setProcedureForm({...procedureForm, typeIds: newTypeIds});
+                        }}
+                        className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-sm text-slate-700">{pt.displayName}</span>
+                    </label>
+                  ))}
+                  {(!procedureTypes || procedureTypes.length === 0) && (
+                    <div className="text-sm text-slate-500 col-span-2">No procedure types found. Please seed them.</div>
+                  )}
+                </div>
+              </div>
              <div className="space-y-2">
                <Label>Description</Label>
                <Textarea value={procedureForm.description} onChange={(e) => setProcedureForm({ ...procedureForm, description: e.target.value })} />
@@ -673,10 +718,10 @@ function HierarchyForm({
           )}
 
           <div className="flex items-center justify-end gap-3 pt-6 border-t border-slate-100">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={submitting} className="shadow-sm border-slate-200 bg-slate-50/50 text-slate-600">
                 Cancel
             </Button>
-            <Button type="submit" className="bg-navy-600 hover:bg-navy-700 min-w-[100px]" disabled={submitting}>
+            <Button type="submit" className="min-w-[100px] shadow-sm" disabled={submitting}>
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (editingItem ? 'Update' : 'Create')}
             </Button>
           </div>

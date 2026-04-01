@@ -6,6 +6,7 @@ export const CreateProcedureDtoSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional(),
   isActive: z.boolean().optional(),
+  typeIds: z.array(z.string().uuid()).optional(),
 });
 
 export const UpdateProcedureDtoSchema = CreateProcedureDtoSchema.partial();

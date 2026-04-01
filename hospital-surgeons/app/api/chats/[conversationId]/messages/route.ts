@@ -6,8 +6,70 @@ import { SendMessageDtoSchema } from '@/lib/validations/chat.dto';
 const chatService = new ChatService();
 
 /**
- * GET /api/chats/[conversationId]/messages
- * Get paginated messages for a conversation.
+ * @swagger
+ * /api/chats/{conversationId}/messages:
+ *   get:
+ *     summary: List messages in conversation
+ *     description: Retrieve a paginated list of messages for the specified conversation.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Messages retrieved successfully
+ *       403:
+ *         description: Not a participant
+ *       500:
+ *         description: Internal server error
+ *
+ *   post:
+ *     summary: Send message
+ *     description: Send a new message or attachment in a conversation.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - content
+ *             properties:
+ *               content: { type: string }
+ *               attachmentId: { type: string, format: uuid }
+ *               attachmentType: { type: string, enum: [image, document, video] }
+ *     responses:
+ *       201:
+ *         description: Message sent successfully
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Not a participant
+ *       500:
+ *         description: Internal server error
  */
 export const GET = withAuthAndContext<{ params: Promise<{ conversationId: string }> }>(
   async (req: AuthenticatedRequest, context) => {

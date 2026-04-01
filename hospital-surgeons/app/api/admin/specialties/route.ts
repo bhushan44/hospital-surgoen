@@ -5,6 +5,109 @@ import { eq, like, sql, desc, asc, count, inArray } from 'drizzle-orm';
 import { validateRequest } from '@/lib/utils/validate-request';
 import { CreateSpecialtyDtoSchema } from '@/lib/validations/specialty.dto';
 import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
+/**
+ * @swagger
+ * /api/admin/specialties:
+ *   get:
+ *     summary: List all specialties (Admin)
+ *     description: Retrieve a paginated list of all medical specialties with usage counts.
+ *     tags: [Admin, Specialties]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of items per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by specialty name
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [name, id]
+ *           default: name
+ *         description: Field to sort by
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: asc
+ *         description: Sort order
+ *     responses:
+ *       200:
+ *         description: Paginated list of specialties
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       name: { type: string }
+ *                       description: { type: string, nullable: true }
+ *                       activeDoctors: { type: integer }
+ *                       activeHospitals: { type: integer }
+ *                       status: { type: string }
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page: { type: integer }
+ *                     limit: { type: integer }
+ *                     total: { type: integer }
+ *                     totalPages: { type: integer }
+ *       500:
+ *         description: Internal server error
+ *
+ *   post:
+ *     summary: Create a new specialty (Admin)
+ *     description: Add a new medical specialty to the system.
+ *     tags: [Admin, Specialties]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Cardiology
+ *               description:
+ *                 type: string
+ *                 example: Diseases and abnormalities of the heart.
+ *     responses:
+ *       201:
+ *         description: Specialty created successfully
+ *       400:
+ *         description: Validation error
+ *       409:
+ *         description: Specialty already exists
+ *       500:
+ *         description: Internal server error
+ */
 
 export async function GET(req: NextRequest) {
   try {

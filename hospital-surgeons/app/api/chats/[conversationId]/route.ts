@@ -5,8 +5,58 @@ import { ChatService } from '@/lib/services/chat.service';
 const chatService = new ChatService();
 
 /**
- * GET /api/chats/[conversationId]
- * Get a single conversation's details and messages.
+ * @swagger
+ * /api/chats/{conversationId}:
+ *   get:
+ *     summary: Get conversation details
+ *     description: Retrieve conversation details and a paginated list of its messages.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Conversation details retrieved successfully
+ *       403:
+ *         description: Not a participant
+ *       404:
+ *         description: Conversation not found
+ *       500:
+ *         description: Internal server error
+ *
+ *   delete:
+ *     summary: Delete/Archive conversation
+ *     description: Soft-delete a conversation by marking it as inactive. Only participants can archive.
+ *     tags: [Chats]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Conversation archived successfully
+ *       403:
+ *         description: Not a participant
+ *       500:
+ *         description: Internal server error
  */
 export const GET = withAuthAndContext<{ params: Promise<{ conversationId: string }> }>(
   async (req: AuthenticatedRequest, context) => {

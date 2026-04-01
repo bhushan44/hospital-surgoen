@@ -5,6 +5,85 @@ import { eq, sql, count } from 'drizzle-orm';
 import { validateRequest } from '@/lib/utils/validate-request';
 import { UpdateSpecialtyDtoSchema } from '@/lib/validations/specialty.dto';
 import { createAuditLog, getRequestMetadata, buildChangesObject } from '@/lib/utils/audit-logger';
+/**
+ * @swagger
+ * /api/admin/specialties/{id}:
+ *   get:
+ *     summary: Get specialty details (Admin)
+ *     description: Retrieve detailed information for a specific specialty, including usage statistics.
+ *     tags: [Admin, Specialties]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique specialty ID
+ *     responses:
+ *       200:
+ *         description: Specialty details retrieved successfully
+ *       404:
+ *         description: Specialty not found
+ *       500:
+ *         description: Internal server error
+ *
+ *   put:
+ *     summary: Update specialty (Admin)
+ *     description: Modify details of an existing specialty.
+ *     tags: [Admin, Specialties]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique specialty ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *     responses:
+ *       200:
+ *         description: Specialty updated successfully
+ *       404:
+ *         description: Specialty not found
+ *       409:
+ *         description: Specialty name already in use
+ *       500:
+ *         description: Internal server error
+ *
+ *   delete:
+ *     summary: Delete specialty (Admin)
+ *     description: Remove a specialty if it is not currently associated with any doctors or hospitals.
+ *     tags: [Admin, Specialties]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique specialty ID
+ *     responses:
+ *       200:
+ *         description: Specialty deleted successfully
+ *       404:
+ *         description: Specialty not found
+ *       409:
+ *         description: Cannot delete specialty as it is currently in use
+ *       500:
+ *         description: Internal server error
+ */
 
 export async function GET(
   req: NextRequest,

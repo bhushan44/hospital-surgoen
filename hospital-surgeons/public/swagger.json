@@ -351,6 +351,320 @@
         }
       }
     },
+    "/api/admin/specialties/{id}": {
+      "get": {
+        "summary": "Get specialty details (Admin)",
+        "description": "Retrieve detailed information for a specific specialty, including usage statistics.",
+        "tags": [
+          "Admin",
+          "Specialties"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique specialty ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Specialty details retrieved successfully"
+          },
+          "404": {
+            "description": "Specialty not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update specialty (Admin)",
+        "description": "Modify details of an existing specialty.",
+        "tags": [
+          "Admin",
+          "Specialties"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique specialty ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Specialty updated successfully"
+          },
+          "404": {
+            "description": "Specialty not found"
+          },
+          "409": {
+            "description": "Specialty name already in use"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete specialty (Admin)",
+        "description": "Remove a specialty if it is not currently associated with any doctors or hospitals.",
+        "tags": [
+          "Admin",
+          "Specialties"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique specialty ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Specialty deleted successfully"
+          },
+          "404": {
+            "description": "Specialty not found"
+          },
+          "409": {
+            "description": "Cannot delete specialty as it is currently in use"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/admin/specialties": {
+      "get": {
+        "summary": "List all specialties (Admin)",
+        "description": "Retrieve a paginated list of all medical specialties with usage counts.",
+        "tags": [
+          "Admin",
+          "Specialties"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "description": "Page number"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            },
+            "description": "Number of items per page"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search by specialty name"
+          },
+          {
+            "in": "query",
+            "name": "sortBy",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "id"
+              ],
+              "default": "name"
+            },
+            "description": "Field to sort by"
+          },
+          {
+            "in": "query",
+            "name": "sortOrder",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "description": "Sort order"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of specialties",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "activeDoctors": {
+                            "type": "integer"
+                          },
+                          "activeHospitals": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new specialty (Admin)",
+        "description": "Add a new medical specialty to the system.",
+        "tags": [
+          "Admin",
+          "Specialties"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Cardiology"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "Diseases and abnormalities of the heart."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Specialty created successfully"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "409": {
+            "description": "Specialty already exists"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/api/admin/users": {
       "get": {
         "summary": "Get all users with filters (Admin only)",
@@ -969,6 +1283,411 @@
         "responses": {
           "201": {
             "description": "Booking created successfully"
+          }
+        }
+      }
+    },
+    "/api/chats/{conversationId}/attachments/upload": {
+      "post": {
+        "summary": "Upload an attachment for a chat conversation",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Conversation ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded successfully"
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
+        }
+      }
+    },
+    "/api/chats/{conversationId}/messages": {
+      "get": {
+        "summary": "List messages in conversation",
+        "description": "Retrieve a paginated list of messages for the specified conversation.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages retrieved successfully"
+          },
+          "403": {
+            "description": "Not a participant"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "post": {
+        "summary": "Send message",
+        "description": "Send a new message or attachment in a conversation.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "attachmentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "attachmentType": {
+                    "type": "string",
+                    "enum": [
+                      "image",
+                      "document",
+                      "video"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Message sent successfully"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "403": {
+            "description": "Not a participant"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/chats/{conversationId}": {
+      "get": {
+        "summary": "Get conversation details",
+        "description": "Retrieve conversation details and a paginated list of its messages.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation details retrieved successfully"
+          },
+          "403": {
+            "description": "Not a participant"
+          },
+          "404": {
+            "description": "Conversation not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete/Archive conversation",
+        "description": "Soft-delete a conversation by marking it as inactive. Only participants can archive.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation archived successfully"
+          },
+          "403": {
+            "description": "Not a participant"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/chats/contacts": {
+      "get": {
+        "summary": "List chat contacts",
+        "description": "Returns hospitals if the user is a doctor, or doctors if the user is a hospital.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search by name or city"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contacts retrieved successfully"
+          },
+          "403": {
+            "description": "Invalid role"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/chats": {
+      "get": {
+        "summary": "List user conversations",
+        "description": "Retrieve a paginated list of chat conversations for the authenticated doctor or hospital.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "description": "Number of conversations to retrieve"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Cursor for pagination"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversations retrieved successfully"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create or retrieve conversation",
+        "description": "Start a new conversation or get the existing one between a doctor and a hospital.",
+        "tags": [
+          "Chats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "doctorId",
+                  "hospitalId"
+                ],
+                "properties": {
+                  "doctorId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "hospitalId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing conversation retrieved"
+          },
+          "201": {
+            "description": "New conversation created"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "403": {
+            "description": "Unauthorized to create conversation for these parties"
+          },
+          "500": {
+            "description": "Internal server error"
           }
         }
       }
@@ -2579,6 +3298,14 @@
                   "profilePhotoId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Optional - Only used if provided by frontend"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "description": "Optional - Only used if provided by frontend"
                   }
                 }
               }
@@ -3935,6 +4662,14 @@
                   },
                   "name": {
                     "type": "string"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Optional - Only used if provided by frontend"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "description": "Optional - Only used if provided by frontend"
                   }
                 }
               }
@@ -5237,6 +5972,103 @@
         }
       }
     },
+    "/api/hospitals/{id}/patients/{patientId}/assigned-doctors": {
+      "get": {
+        "summary": "Get assigned doctors and their slots for a specific patient",
+        "tags": [
+          "Hospitals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Hospital ID"
+          },
+          {
+            "in": "path",
+            "name": "patientId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Patient ID"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "description": "Page number"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assigned doctors retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid hospital or patient ID"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
     "/api/hospitals/{id}/patients": {
       "get": {
         "summary": "Get all patients for a hospital",
@@ -5472,6 +6304,14 @@
                   },
                   "numberOfBeds": {
                     "type": "number"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Optional - Only used if provided by frontend"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "description": "Optional - Only used if provided by frontend"
                   }
                 }
               }
@@ -6167,6 +7007,14 @@
                   },
                   "city": {
                     "type": "string"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Optional - Only used if provided by frontend"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "description": "Optional - Only used if provided by frontend"
                   }
                 }
               }
@@ -8905,8 +9753,7 @@
                 "type": "object",
                 "required": [
                   "email",
-                  "password",
-                  "device"
+                  "password"
                 ],
                 "properties": {
                   "email": {
@@ -8928,26 +9775,6 @@
                     ],
                     "description": "Optional. Expected account type for validation. If provided, must match user's actual role.",
                     "example": "doctor"
-                  },
-                  "device": {
-                    "type": "object",
-                    "required": [
-                      "device_token",
-                      "device_type"
-                    ],
-                    "properties": {
-                      "device_token": {
-                        "type": "string"
-                      },
-                      "device_type": {
-                        "type": "string",
-                        "enum": [
-                          "ios",
-                          "android",
-                          "web"
-                        ]
-                      }
-                    }
                   }
                 }
               }
@@ -9141,7 +9968,7 @@
     },
     "/api/users/reset-password-otp": {
       "post": {
-        "summary": "Reset password using OTP code",
+        "summary": "Reset password using token (no OTP required)",
         "tags": [
           "Users"
         ],
@@ -9153,7 +9980,6 @@
                 "type": "object",
                 "required": [
                   "token",
-                  "otpCode",
                   "password"
                 ],
                 "properties": {
@@ -9161,11 +9987,6 @@
                     "type": "string",
                     "description": "Password reset token from email link",
                     "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                  },
-                  "otpCode": {
-                    "type": "string",
-                    "description": "6-digit OTP code received via email",
-                    "example": "123456"
                   },
                   "password": {
                     "type": "string",
@@ -9192,7 +10013,7 @@
                     },
                     "message": {
                       "type": "string",
-                      "example": "Password has been reset successfully"
+                      "example": "Password has been reset successfully! You can now login with your new password."
                     }
                   }
                 }
@@ -9200,7 +10021,7 @@
             }
           },
           "400": {
-            "description": "Bad request (invalid OTP, expired OTP, or weak password)",
+            "description": "Bad request (invalid token, expired token, or weak password)",
             "content": {
               "application/json": {
                 "schema": {
@@ -9212,7 +10033,7 @@
                     },
                     "message": {
                       "type": "string",
-                      "example": "Invalid or expired OTP. Please request a new password reset code."
+                      "example": "Password reset link has expired. Please request a new one."
                     }
                   }
                 }

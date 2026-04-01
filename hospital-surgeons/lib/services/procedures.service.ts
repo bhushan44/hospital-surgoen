@@ -19,6 +19,16 @@ export class ProceduresService {
     }
   }
 
+  async getProcedureById(id: string) {
+    try {
+      const data = await this.repository.findProcedureById(id);
+      if (!data) return { success: false, message: 'Procedure not found' };
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, message: 'Failed to fetch procedure', error };
+    }
+  }
+
   async createProcedure(data: CreateProcedureData) {
     try {
       const result = await this.repository.createProcedure(data);

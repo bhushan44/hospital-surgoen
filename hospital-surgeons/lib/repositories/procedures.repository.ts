@@ -3,7 +3,8 @@ import {
   procedures, 
   procedureCategories, 
   procedureTypes, 
-  specialties 
+  specialties,
+  procedureTypeMappings
 } from '@/src/db/drizzle/migrations/schema';
 import { eq, desc, asc, sql, and, ilike } from 'drizzle-orm';
 
@@ -13,6 +14,7 @@ export interface CreateProcedureData {
   name: string;
   description?: string;
   isActive?: boolean;
+  typeIds?: string[];
 }
 
 export interface CreateCategoryData {
@@ -32,16 +34,29 @@ export class ProceduresRepository {
   // --- Procedures ---
 
   async createProcedure(data: CreateProcedureData) {
-    return await this.db
-      .insert(procedures)
-      .values({
-        specialtyId: data.specialtyId,
-        categoryId: data.categoryId || null,
-        name: data.name,
-        description: data.description || null,
-        isActive: data.isActive !== undefined ? data.isActive : true,
-      })
-      .returning();
+    return await this.db.transaction(async (tx) => {
+      const [procedure] = await tx
+        .insert(procedures)
+        .values({
+          specialtyId: data.specialtyId,
+          categoryId: data.categoryId || null,
+          name: data.name,
+          description: data.description || null,
+          isActive: data.isActive !== undefined ? data.isActive : true,
+        })
+        .returning();
+
+      if (data.typeIds && data.typeIds.length > 0) {
+        await tx.insert(procedureTypeMappings).values(
+          data.typeIds.map(typeId => ({
+            procedureId: procedure.id,
+            typeId,
+          }))
+        );
+      }
+
+      return procedure;
+    });
   }
 
   async findProcedures(filters: { specialtyId?: string; categoryId?: string; search?: string } = {}) {
@@ -71,23 +86,57 @@ export class ProceduresRepository {
   }
 
   async findProcedureById(id: string) {
-    const result = await this.db
+    const procedure = await this.db
       .select()
       .from(procedures)
       .where(eq(procedures.id, id))
-      .limit(1);
-    return result[0] || null;
+      .limit(1)
+      .then(res => res[0] || null);
+
+    if (procedure) {
+      const mappings = await this.db
+        .select({ typeId: procedureTypeMappings.typeId })
+        .from(procedureTypeMappings)
+        .where(eq(procedureTypeMappings.procedureId, id));
+
+      return {
+        ...procedure,
+        typeIds: mappings.map(m => m.typeId)
+      };
+    }
+
+    return null;
   }
 
   async updateProcedure(id: string, data: Partial<CreateProcedureData>) {
-    return await this.db
-      .update(procedures)
-      .set({
-        ...data,
-        updatedAt: undefined, // Field doesn't exist in schema
-      } as any)
-      .where(eq(procedures.id, id))
-      .returning();
+    return await this.db.transaction(async (tx) => {
+      const procedureData = { ...data };
+      delete procedureData.typeIds;
+      delete (procedureData as any).updatedAt;
+
+      const [procedure] = await tx
+        .update(procedures)
+        .set(procedureData as any)
+        .where(eq(procedures.id, id))
+        .returning();
+
+      if (data.typeIds !== undefined) {
+        // Delete all existing mappings
+        await tx.delete(procedureTypeMappings).where(eq(procedureTypeMappings.procedureId, id));
+        
+        // Insert new mappings if any
+        if (data.typeIds.length > 0) {
+          await tx.insert(procedureTypeMappings).values(
+            data.typeIds.map(typeId => ({
+              procedureId: id,
+              typeId,
+            }))
+          );
+        }
+      }
+
+      return procedure;
+    });
   }
 
   async deleteProcedure(id: string) {
