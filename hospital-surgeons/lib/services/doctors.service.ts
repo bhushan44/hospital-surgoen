@@ -265,6 +265,22 @@ export class DoctorsService {
       };
     }
   }
+  async getDoctorHospitals(doctorId: string) {
+    try {
+      const hospitals = await this.doctorsRepository.getDoctorAffiliatedHospitals(doctorId);
+      return {
+        success: true,
+        message: 'Hospitals retrieved successfully',
+        data: hospitals,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to retrieve affiliated hospitals',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 
   async createDoctorProfile(
     userId: string,

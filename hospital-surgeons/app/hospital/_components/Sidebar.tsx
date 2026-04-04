@@ -41,6 +41,7 @@ export function HospitalSidebar() {
   const menuItems: MenuItem[] = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/hospital/dashboard" },
     { id: "patients", label: "Patients", icon: Users, href: "/hospital/patients" },
+    { id: "fees", label: "Doctor Proposals", icon: ClipboardList, href: "/hospital/fees" },
     { id: "find-doctors", label: "Find Doctors", icon: UserSearch, href: "/hospital/find-doctors" },
     { id: "assignments", label: "Assignments", icon: ClipboardList, href: "/hospital/assignments" },
     { id: "chat", label: "Messages", icon: MessageSquare, href: "/hospital/chat" },

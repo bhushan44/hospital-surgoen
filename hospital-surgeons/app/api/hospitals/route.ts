@@ -1,101 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { HospitalsService } from '@/lib/services/hospitals.service';
+import { withAuth } from '@/lib/auth/middleware';
 
 /**
  * @swagger
  * /api/hospitals:
  *   get:
- *     summary: Get all hospitals
+ *     summary: Get all hospitals (Generic)
+ *     description: Returns a list of all hospitals in the system. Used for testing and general lookup.
  *     tags: [Hospitals]
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
  *     responses:
  *       200:
- *         description: List of hospitals
- *   post:
- *     summary: Create a new hospital
- *     tags: [Hospitals]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - phone
- *               - password
- *               - name
- *               - registrationNumber
- *               - address
- *               - city
- *             properties:
- *               email:
- *                 type: string
- *               phone:
- *                 type: string
- *               password:
- *                 type: string
- *               name:
- *                 type: string
- *               registrationNumber:
- *                 type: string
- *               address:
- *                 type: string
- *               city:
- *                 type: string
- *               latitude:
- *                 type: number
- *                 description: Optional - Only used if provided by frontend
- *               longitude:
- *                 type: number
- *                 description: Optional - Only used if provided by frontend
- *     responses:
- *       201:
- *         description: Hospital created successfully
+ *         description: Hospitals retrieved successfully
+ *       500:
+ *         description: Internal server error
  */
-export async function GET(req: NextRequest) {
+async function handler(req: NextRequest) {
   try {
-    const searchParams = req.nextUrl.searchParams;
-    const query = {
-      page: searchParams.get('page') ? parseInt(searchParams.get('page')!) : 1,
-      limit: searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 10,
-      sortBy: searchParams.get('sortBy') as 'name' | 'rating' | 'beds' | 'createdAt' | undefined,
-      sortOrder: searchParams.get('sortOrder') as 'asc' | 'desc' | undefined,
-    };
-
     const hospitalsService = new HospitalsService();
-    const result = await hospitalsService.findHospitals(query);
+    // Fetch with a large limit for the generic lookup
+    const result = await hospitalsService.findHospitals({ limit: 100 });
     
-    return NextResponse.json(result, { status: result.success ? 200 : 400 });
+    if (result.success && result.data) {
+      // Flatten the result to just return the hospital objects
+      const formatted = (result.data as any[]).map(item => item.hospital);
+      return NextResponse.json({ success: true, data: formatted });
+    }
+    
+    return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      { success: false, message: 'Internal server error', error: String(error) },
-      { status: 500 }
-    );
+    console.error('Error in GET /api/hospitals:', error);
+    return NextResponse.json({ success: false, message: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const hospitalsService = new HospitalsService();
-    const result = await hospitalsService.createHospital(body);
-    
-    return NextResponse.json(result, { status: result.success ? 201 : 400 });
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, message: 'Internal server error', error: String(error) },
-      { status: 500 }
-    );
-  }
-}
+export const GET = handler; // Public or use withAuth if needed, but user said "generic"

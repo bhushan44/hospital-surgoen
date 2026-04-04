@@ -185,7 +185,21 @@ export class ProceduresRepository {
 
   // --- Procedure Types ---
 
-  async findProcedureTypes() {
+  async findProcedureTypes(procedureId?: string) {
+    if (procedureId) {
+      return await this.db
+        .select({
+          id: procedureTypes.id,
+          name: procedureTypes.name,
+          displayName: procedureTypes.displayName,
+          createdAt: procedureTypes.createdAt,
+        })
+        .from(procedureTypes)
+        .innerJoin(procedureTypeMappings, eq(procedureTypeMappings.typeId, procedureTypes.id))
+        .where(eq(procedureTypeMappings.procedureId, procedureId))
+        .orderBy(asc(procedureTypes.displayName));
+    }
+
     return await this.db
       .select()
       .from(procedureTypes)

@@ -621,11 +621,10 @@ export async function GET(
       // Use doctor's actual subscription tier from database (not calculated)
       const subscriptionTier = (doctor as any).subscriptionTier || 'free';
 
-      const specialtiesArray = Array.isArray(doctor.specialties)
-        ? doctor.specialties
-        : typeof doctor.specialties === 'string' && doctor.specialties
-          ? doctor.specialties.split(',').map((s: string) => s.trim()).filter(Boolean)
-          : [];
+      // Specialties are now returned as an array of objects via json_agg
+      const specialtiesRaw = Array.isArray(doctor.specialties) ? doctor.specialties : [];
+      const specialtiesArray = specialtiesRaw.map((s: any) => typeof s === 'string' ? s : s.name);
+      const fullSpecialties = specialtiesRaw.filter((s: any) => s && typeof s === 'object');
 
       // Format parent slots - these are the main availability windows
       // The UI will fetch detailed availability (with booked sub-slots) when user selects a slot
@@ -660,6 +659,7 @@ export async function GET(
         name: `Dr. ${doctor.firstName} ${doctor.lastName}`,
         specialty: specialtiesArray[0] || 'General Medicine',
         specialties: specialtiesArray,
+        fullSpecialties: fullSpecialties,
         subscriptionTier: subscriptionTier, // Doctor's actual subscription tier from database
         experience,
         rating: rating || 0,

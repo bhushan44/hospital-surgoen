@@ -58,10 +58,18 @@ export function PatientSelectionModal({
   const [selectedStartTime, setSelectedStartTime] = useState<string>('');
   const [selectedEndTime, setSelectedEndTime] = useState<string>('');
   const [availableRanges, setAvailableRanges] = useState<Array<{start: string, end: string}>>([]);
+  
+  // Fee lookup state
+  const [roomTypes, setRoomTypes] = useState<any[]>([]);
+  const [effectiveFee, setEffectiveFee] = useState<number | null>(null);
+  const [feeLoading, setFeeLoading] = useState(false);
+  const [feeError, setFeeError] = useState<string | null>(null);
+  const [selectedSpecialtyId, setSelectedSpecialtyId] = useState<string>('');
 
   useEffect(() => {
     if (open && hospitalId) {
       fetchPatients();
+      fetchRoomTypes();
       // Reset form when modal opens
       setSelectedPatientId('');
       setPriority('routine');
@@ -69,13 +77,89 @@ export function PatientSelectionModal({
       setError(null);
       setSelectedStartTime('');
       setSelectedEndTime('');
+      setEffectiveFee(null);
+      setFeeError(null);
+      setSelectedSpecialtyId('');
       calculateAvailableRanges();
     }
   }, [open, hospitalId, selectedSlot]);
 
+  // Set initial specialty when doctor is selected
+  useEffect(() => {
+    if (selectedDoctor?.fullSpecialties?.length > 0 && !selectedSpecialtyId) {
+      setSelectedSpecialtyId(selectedDoctor.fullSpecialties[0].id);
+    }
+  }, [selectedDoctor, open]);
+
+  const fetchRoomTypes = async () => {
+    try {
+      const response = await apiClient.get('/api/room-types');
+      if (response.data.success) {
+        setRoomTypes(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching room types:', err);
+    }
+  };
+
+  // Dynamic Fee Lookup Effect
+  useEffect(() => {
+    const lookupFee = async () => {
+      // We need doctor, specialty, and a selected patient (whose roomType we'll use)
+      if (!selectedDoctor?.id || !selectedSpecialtyId || !selectedPatientId || roomTypes.length === 0) {
+        setEffectiveFee(null);
+        return;
+      }
+
+      const patient = patients.find(p => p.id.toString() === selectedPatientId);
+      if (!patient?.roomType) {
+        setFeeError('Selected patient does not have a assigned room type.');
+        return;
+      }
+
+      // Map patient.roomType string to roomType.id
+      const roomTypeObj = roomTypes.find(rt => 
+        rt.name.toLowerCase() === patient.roomType.toLowerCase() || 
+        rt.displayName.toLowerCase() === patient.roomType.toLowerCase()
+      );
+
+      if (!roomTypeObj) {
+        setFeeError(`Room type "${patient.roomType}" not recognized by system.`);
+        return;
+      }
+
+      setFeeLoading(true);
+      setFeeError(null);
+      try {
+        const response = await apiClient.get('/api/hospitals/fees/lookup', {
+          params: {
+            doctorId: selectedDoctor.id,
+            specialtyId: selectedSpecialtyId,
+            roomTypeId: roomTypeObj.id,
+          }
+        });
+
+        if (response.data.success && response.data.data) {
+          setEffectiveFee(Number(response.data.data.effectiveFee));
+        } else {
+          setEffectiveFee(null);
+          setFeeError('No fee found for this combination of doctor, specialty, and room type.');
+        }
+      } catch (err: any) {
+        console.error('Error looking up fee:', err);
+        setEffectiveFee(null);
+        setFeeError(err.response?.data?.message || 'Failed to lookup fee. Please ensure doctor has MRP or negotiated fee.');
+      } finally {
+        setFeeLoading(false);
+      }
+    }
+
+    lookupFee();
+  }, [selectedDoctor, selectedSpecialtyId, selectedPatientId, roomTypes]);
+
   // Calculate available time ranges from parent slot minus booked sub-slots
   const calculateAvailableRanges = () => {
-    if (!selectedSlot?.parentSlot) {
+    if (!selectedSlot || !selectedSlot.parentSlot) {
       setAvailableRanges([]);
       return;
     }
@@ -217,12 +301,12 @@ export function PatientSelectionModal({
       setCreatingAssignment(true);
       setError(null);
       
-      // Use new parent slot flow or legacy flow
+      // Use hierarchical fee lookup result
       const requestBody: any = {
         patientId: selectedPatientId,
         doctorId: selectedDoctor.id,
         priority: priority,
-        consultationFee: selectedDoctor.fee,
+        consultationFee: effectiveFee || undefined, // Use snapshotted effective fee
       };
 
       if (selectedSlot.parentSlot) {
@@ -312,6 +396,13 @@ export function PatientSelectionModal({
             </Alert>
           )}
 
+          {feeError && selectedPatientId && (
+            <Alert variant="default" className="mb-4 bg-amber-50 border-amber-200 text-amber-800">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertDescription>{feeError}</AlertDescription>
+            </Alert>
+          )}
+
           {/* Doctor & Schedule Info Card */}
           <div className="bg-gradient-to-br from-teal-50 to-blue-50 rounded-xl border border-teal-200/50 p-5 shadow-sm">
             <div className="flex items-start gap-5">
@@ -343,7 +434,7 @@ export function PatientSelectionModal({
                   </div>
                   <Badge className="bg-teal-600 text-white px-3 py-1 text-sm font-semibold">
                     <DollarSign className="w-3 h-3 mr-1" />
-                    ₹{selectedDoctor?.fee || 0}
+                    ₹{effectiveFee !== null ? effectiveFee : (selectedDoctor?.fee || 0)}
                   </Badge>
                 </div>
                 
@@ -491,6 +582,30 @@ export function PatientSelectionModal({
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Specialty Selection if multiple exist */}
+                {selectedDoctor?.fullSpecialties?.length > 1 && (
+                  <div className="mt-4 pt-4 border-t border-teal-200/50">
+                    <Label className="text-sm font-semibold text-slate-900 mb-2 block">
+                      Select Booking Specialty
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedDoctor.fullSpecialties.map((spec: any) => (
+                        <Badge
+                          key={spec.id}
+                          variant={selectedSpecialtyId === spec.id ? "default" : "outline"}
+                          className={cn(
+                            "cursor-pointer px-3 py-1 text-xs",
+                            selectedSpecialtyId === spec.id ? "bg-teal-600" : "hover:bg-teal-50"
+                          )}
+                          onClick={() => setSelectedSpecialtyId(spec.id)}
+                        >
+                          {spec.name}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -724,9 +839,15 @@ export function PatientSelectionModal({
               Assignment Summary
             </h3>
             <div className="grid grid-cols-3 gap-4">
-              <div className="bg-white rounded-lg p-3 border border-slate-200">
+              <div className="bg-white rounded-lg p-3 border border-slate-200 relative">
                 <p className="text-xs text-slate-500 mb-1">Consultation Fee</p>
-                <p className="text-lg font-bold text-slate-900">₹{selectedDoctor?.fee || 0}</p>
+                {feeLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
+                ) : effectiveFee !== null ? (
+                  <p className="text-lg font-bold text-slate-900">₹{effectiveFee}</p>
+                ) : (
+                  <p className="text-sm font-bold text-red-500">Not Available</p>
+                )}
               </div>
               <div className="bg-white rounded-lg p-3 border border-slate-200">
                 <p className="text-xs text-slate-500 mb-1">Priority</p>
@@ -752,7 +873,7 @@ export function PatientSelectionModal({
           </Button>
           <Button
             onClick={handleCreateAssignment}
-            disabled={!selectedPatientId || creatingAssignment}
+            disabled={!selectedPatientId || creatingAssignment || effectiveFee === null || feeLoading}
             className="bg-teal-600 hover:bg-teal-700 text-white px-6 min-w-[160px]"
           >
             {creatingAssignment ? (

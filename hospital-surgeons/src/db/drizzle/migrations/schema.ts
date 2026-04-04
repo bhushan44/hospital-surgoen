@@ -1,4 +1,4 @@
-import { pgTable, foreignKey, uuid, integer, text, check, boolean, timestamp, index, unique, varchar, bigint, numeric, type AnyPgColumn, json, time, date, jsonb, pgView, primaryKey } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, uuid, integer, text, check, boolean, timestamp, index, unique, varchar, bigint, numeric, type AnyPgColumn, json, time, date, jsonb, primaryKey, pgView } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -636,6 +636,7 @@ export const procedures = pgTable("procedures", {
 	isActive: boolean("is_active").default(true).notNull(),
 	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
 	categoryId: uuid("category_id"),
+	mrp: numeric({ precision: 10, scale:  2 }).default('0'),
 }, (table) => [
 	index("idx_procedures_is_active").using("btree", table.isActive.asc().nullsLast().op("bool_ops")),
 	index("idx_procedures_specialty_id").using("btree", table.specialtyId.asc().nullsLast().op("uuid_ops")),
@@ -650,25 +651,6 @@ export const procedures = pgTable("procedures", {
 			name: "procedures_specialty_id_fkey"
 		}).onDelete("cascade"),
 	unique("procedures_specialty_id_name_key").on(table.specialtyId, table.name),
-]);
-
-export const procedureTypeMappings = pgTable("procedure_type_mappings", {
-	procedureId: uuid("procedure_id").notNull(),
-	typeId: uuid("type_id").notNull(),
-	isActive: boolean("is_active").default(true).notNull(),
-	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => [
-	primaryKey({ columns: [table.procedureId, table.typeId] }),
-	foreignKey({
-		columns: [table.procedureId],
-		foreignColumns: [procedures.id],
-		name: "procedure_type_mappings_procedure_id_fkey"
-	}).onDelete("cascade"),
-	foreignKey({
-		columns: [table.typeId],
-		foreignColumns: [procedureTypes.id],
-		name: "procedure_type_mappings_type_id_fkey"
-	}).onDelete("cascade")
 ]);
 
 export const patients = pgTable("patients", {
@@ -987,13 +969,18 @@ export const roomTypes = pgTable("room_types", {
 export const doctorProcedureFees = pgTable("doctor_procedure_fees", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	doctorId: uuid("doctor_id").notNull(),
-	procedureId: uuid("procedure_id").notNull(),
+	procedureId: uuid("procedure_id"),
 	roomTypeId: uuid("room_type_id").notNull(),
 	fee: numeric({ precision: 10, scale:  2 }).notNull(),
 	isActive: boolean("is_active").default(true).notNull(),
 	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
 	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
 	procedureTypeId: uuid("procedure_type_id"),
+	hospitalId: uuid("hospital_id"),
+	discountPercentage: numeric("discount_percentage", { precision: 5, scale:  2 }).default('0'),
+	status: text().default('pending'),
+	notes: text(),
+	specialtyId: uuid("specialty_id"),
 }, (table) => [
 	index("idx_doctor_procedure_fees_doctor_id").using("btree", table.doctorId.asc().nullsLast().op("uuid_ops")),
 	index("idx_doctor_procedure_fees_procedure_id").using("btree", table.procedureId.asc().nullsLast().op("uuid_ops")),
@@ -1002,6 +989,11 @@ export const doctorProcedureFees = pgTable("doctor_procedure_fees", {
 			columns: [table.doctorId],
 			foreignColumns: [doctors.id],
 			name: "doctor_procedure_fees_doctor_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.hospitalId],
+			foreignColumns: [hospitals.id],
+			name: "doctor_procedure_fees_hospital_id_fkey"
 		}).onDelete("cascade"),
 	foreignKey({
 			columns: [table.procedureId],
@@ -1018,7 +1010,13 @@ export const doctorProcedureFees = pgTable("doctor_procedure_fees", {
 			foreignColumns: [roomTypes.id],
 			name: "doctor_procedure_fees_room_type_id_fkey"
 		}).onDelete("cascade"),
-	unique("doctor_procedure_fees_doctor_procedure_room_key").on(table.doctorId, table.procedureId, table.roomTypeId),
+	foreignKey({
+			columns: [table.specialtyId],
+			foreignColumns: [specialties.id],
+			name: "doctor_procedure_fees_specialty_id_fkey"
+		}).onDelete("cascade"),
+	unique("doctor_fee_unique_idx").on(table.doctorId, table.procedureId, table.roomTypeId, table.procedureTypeId, table.hospitalId, table.specialtyId),
+	check("doctor_procedure_fees_status_check", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])`),
 ]);
 
 export const analyticsEvents = pgTable("analytics_events", {
@@ -1100,6 +1098,28 @@ export const notificationPreferences = pgTable("notification_preferences", {
 			name: "notification_preferences_user_id_fkey"
 		}).onDelete("cascade"),
 	unique("notification_preferences_user_id_key").on(table.userId),
+]);
+
+export const doctorHospitalDiscounts = pgTable("doctor_hospital_discounts", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	doctorId: uuid("doctor_id").notNull(),
+	hospitalId: uuid("hospital_id").notNull(),
+	discountPercentage: numeric("discount_percentage", { precision: 5, scale:  2 }).default('0.00').notNull(),
+	isActive: boolean("is_active").default(true).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.doctorId],
+			foreignColumns: [doctors.id],
+			name: "doctor_hospital_discounts_doctor_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.hospitalId],
+			foreignColumns: [hospitals.id],
+			name: "doctor_hospital_discounts_hospital_id_fkey"
+		}).onDelete("cascade"),
+	unique("doctor_hospital_discounts_unique").on(table.doctorId, table.hospitalId),
 ]);
 
 export const subscriptionPlans = pgTable("subscription_plans", {
@@ -1378,6 +1398,25 @@ export const doctorLeaves = pgTable("doctor_leaves", {
 		}).onDelete("cascade"),
 	check("doctor_leaves_check", sql`end_date >= start_date`),
 	check("doctor_leaves_leave_type_check", sql`leave_type = ANY (ARRAY['sick'::text, 'vacation'::text, 'personal'::text, 'emergency'::text, 'other'::text])`),
+]);
+
+export const procedureTypeMappings = pgTable("procedure_type_mappings", {
+	procedureId: uuid("procedure_id").notNull(),
+	typeId: uuid("type_id").notNull(),
+	isActive: boolean("is_active").default(true).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.procedureId],
+			foreignColumns: [procedures.id],
+			name: "procedure_type_mappings_procedure_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.typeId],
+			foreignColumns: [procedureTypes.id],
+			name: "procedure_type_mappings_type_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.procedureId, table.typeId], name: "procedure_type_mappings_procedure_id_type_id_pk"}),
 ]);
 export const geographyColumns = pgView("geography_columns", {	// TODO: failed to parse database type 'name'
 	fTableCatalog: text("f_table_catalog"),

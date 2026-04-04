@@ -10,6 +10,8 @@ import {
   users,
   availabilityTemplates,
   files,
+  doctorHospitalAffiliations,
+  hospitals
 } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, desc, asc, sql, lte, gte, or, isNull, lt, gt, ne } from 'drizzle-orm';
 
@@ -172,6 +174,22 @@ export class DoctorsRepository {
       .limit(1);
 
     return result[0] || null;
+  }
+
+  async getDoctorAffiliatedHospitals(doctorId: string) {
+    return await this.db
+      .select({
+        id: hospitals.id,
+        name: hospitals.name,
+      })
+      .from(doctorHospitalAffiliations)
+      .innerJoin(hospitals, eq(doctorHospitalAffiliations.hospitalId, hospitals.id))
+      .where(
+        and(
+          eq(doctorHospitalAffiliations.doctorId, doctorId),
+          eq(doctorHospitalAffiliations.status, 'active')
+        )
+      );
   }
 
   async findDoctors(query: DoctorQuery) {

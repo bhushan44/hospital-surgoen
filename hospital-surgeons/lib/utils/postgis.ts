@@ -119,8 +119,8 @@ export async function fetchDoctorsInFixedRadius(
         d.latitude,
         d.longitude,
         (${distanceExpr}) as distance,
-        ARRAY(
-          SELECT s.name 
+        (
+          SELECT json_agg(json_build_object('id', s.id, 'name', s.name))
           FROM specialties s 
           INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
           WHERE ds.doctor_id = d.id
@@ -164,8 +164,8 @@ export async function fetchDoctorsInFixedRadius(
         d.latitude,
         d.longitude,
         (${distanceExpr}) as distance,
-        ARRAY(
-          SELECT s.name 
+        (
+          SELECT json_agg(json_build_object('id', s.id, 'name', s.name))
           FROM specialties s 
           INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
           WHERE ds.doctor_id = d.id
