@@ -281,10 +281,12 @@ export class ChatService {
 
     const allIds = messages.map(m => m.id);
     const attachmentMsgIds = messages.filter(m => m.messageType === 'attachment').map(m => m.id);
+    const replyToIds = messages.map(m => m.replyToId).filter(Boolean) as string[];
 
-    const [allAttachments, allReactions] = await Promise.all([
+    const [allAttachments, allReactions, allReplies] = await Promise.all([
       this.chatRepo.getAttachmentsForMessages(attachmentMsgIds),
       this.chatRepo.getReactionsForMessages(allIds),
+      replyToIds.length > 0 ? this.chatRepo.getMessagesByIds(replyToIds) : Promise.resolve([]),
     ]);
 
     // Group by messageId
@@ -302,10 +304,22 @@ export class ChatService {
       reactionsByMsg.set(r.messageId, list);
     }
 
+    const repliesById = new Map<string, any>();
+    for (const reply of allReplies) {
+      repliesById.set(reply.id, {
+        id: reply.id,
+        content: reply.content,
+        senderId: reply.senderId,
+        senderType: reply.senderType,
+        messageType: reply.messageType,
+      });
+    }
+
     return messages.map(msg => ({
       ...msg,
       attachments: attachmentsByMsg.get(msg.id) || [],
       reactions: this.groupReactions(reactionsByMsg.get(msg.id) || []),
+      replyTo: msg.replyToId ? (repliesById.get(msg.replyToId) || null) : null,
     }));
   }
 

@@ -211,6 +211,16 @@ export class ChatRepository {
     return msg || null;
   }
 
+  async getMessagesByIds(ids: string[], tx?: any) {
+    if (ids.length === 0) return [];
+    const db = tx ?? this.db;
+    return db
+      .select()
+      .from(chatMessages)
+      .where(inArray(chatMessages.id, ids));
+  }
+
+
   async getMessages(conversationId: string, limit: number, cursor?: string, tx?: any) {
     const db = tx ?? this.db;
     const conditions = cursor
