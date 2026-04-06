@@ -17,7 +17,7 @@ export const CreateAssignmentDtoSchema = z.object({
   // Option 2: Direct availability slot (backward compatibility)
   availabilitySlotId: z.string().uuid('Invalid availability slot ID format').optional(),
   priority: z.enum(['routine', 'urgent', 'emergency']).optional().default('routine'),
-  consultationFee: z.number().min(0, 'Consultation fee must be non-negative').optional(),
+  consultationFee: z.coerce.number().optional(),
 }).refine(
   (data) => {
     // Either parentSlotId + time range OR availabilitySlotId must be provided

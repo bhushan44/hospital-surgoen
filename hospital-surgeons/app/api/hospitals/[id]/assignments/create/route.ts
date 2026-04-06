@@ -414,7 +414,7 @@ export async function POST(
           priority,
           status: 'pending',
           expiresAt: expiresAt.toISOString(),
-          consultationFee: consultationFee ? String(consultationFee) : null,
+          consultationFee: (consultationFee !== undefined && consultationFee !== null) ? String(consultationFee) : null,
         })
         .returning();
       newAssignment = created;
@@ -462,7 +462,7 @@ export async function POST(
         patientId,
         patientName,
         priority,
-        consultationFee: consultationFee || null,
+        consultationFee: (consultationFee !== undefined && consultationFee !== null) ? consultationFee : null,
         expiresAt: expiresAt.toISOString(),
         createdAt: new Date().toISOString(),
       },
@@ -515,7 +515,7 @@ export async function POST(
             patientName: patientName,
             priority: priority,
             scheduledTime: startTime || endTime || new Date().toISOString(),
-            consultationFee: consultationFee || null,
+            consultationFee: (consultationFee !== undefined && consultationFee !== null) ? consultationFee : null,
             deepLink: deepLink,
           },
         });
