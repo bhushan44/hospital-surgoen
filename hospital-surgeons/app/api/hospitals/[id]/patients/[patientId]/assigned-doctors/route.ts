@@ -3,6 +3,10 @@ import { getDb } from '@/lib/db';
 import {
   assignments,
   doctorAvailability,
+  procedures,
+  procedureTypes,
+  roomTypes,
+  specialties,
 } from '@/src/db/drizzle/migrations/schema';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware';
@@ -54,6 +58,15 @@ import { withAuthAndContext, AuthenticatedRequest } from '@/lib/auth/middleware'
  *                   type: array
  *                   items:
  *                     type: object
+ *                     properties:
+ *                       procedure:
+ *                         type: object
+ *                       procedureType:
+ *                         type: object
+ *                       roomType:
+ *                         type: object
+ *                       specialty:
+ *                         type: object
  *                 pagination:
  *                   type: object
  *                   properties:
@@ -145,6 +158,15 @@ async function getHandler(
           JOIN specialties s ON s.id = ds.specialty_id
           WHERE ds.doctor_id = ${assignments.doctorId}
         )`,
+        // Procedure info
+        procedureId: assignments.procedureId,
+        procedureName: procedures.name,
+        procedureTypeId: assignments.procedureTypeId,
+        procedureTypeName: procedureTypes.displayName,
+        roomTypeId: assignments.roomTypeId,
+        roomTypeName: roomTypes.displayName,
+        specialtyId: assignments.specialtyId,
+        specialtyName: specialties.name,
         // Slot info from joined doctor_availability
         slotId: doctorAvailability.id,
         slotDate: sql<string>`${doctorAvailability.slotDate}::text`,
@@ -154,6 +176,10 @@ async function getHandler(
       })
       .from(assignments)
       .leftJoin(doctorAvailability, eq(assignments.availabilitySlotId, doctorAvailability.id))
+      .leftJoin(procedures, eq(assignments.procedureId, procedures.id))
+      .leftJoin(procedureTypes, eq(assignments.procedureTypeId, procedureTypes.id))
+      .leftJoin(roomTypes, eq(assignments.roomTypeId, roomTypes.id))
+      .leftJoin(specialties, eq(assignments.specialtyId, specialties.id))
       .where(whereClause)
       .orderBy(desc(assignments.requestedAt))
       .limit(limit)
@@ -190,6 +216,22 @@ async function getHandler(
             status: row.slotStatus,
           }
         : null,
+      procedure: row.procedureId ? {
+        id: row.procedureId,
+        name: row.procedureName,
+      } : null,
+      procedureType: row.procedureTypeId ? {
+        id: row.procedureTypeId,
+        name: row.procedureTypeName,
+      } : null,
+      roomType: row.roomTypeId ? {
+        id: row.roomTypeId,
+        name: row.roomTypeName,
+      } : null,
+      specialty: row.specialtyId ? {
+        id: row.specialtyId,
+        name: row.specialtyName,
+      } : null,
     }));
 
     return NextResponse.json({

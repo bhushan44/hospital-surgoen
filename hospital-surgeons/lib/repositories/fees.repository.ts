@@ -210,12 +210,33 @@ export class FeesRepository {
       .returning();
   }
 
-  async findFeesForHospital(hospitalId: string) {
-    return await this.db
+  async findFeesForHospital(hospitalId: string, status?: string | null, page: number = 1, limit: number = 50) {
+    const conditions = [eq(doctorProcedureFees.hospitalId, hospitalId)];
+    if (status && status !== 'all') {
+      conditions.push(eq(doctorProcedureFees.status, status));
+    }
+
+    const whereClause = and(...conditions);
+
+    const countResult = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(doctorProcedureFees)
+      .where(whereClause);
+      
+    const total = Number(countResult[0]?.count || 0);
+    const offset = (page - 1) * limit;
+
+    const data = await this.db
       .select({
         id: doctorProcedureFees.id,
         doctorId: doctorProcedureFees.doctorId,
         doctorName: sql<string>`concat(${doctors.firstName}, ' ', ${doctors.lastName})`,
+        doctorCity: doctors.city,
+        doctorState: doctors.state,
+        doctorPincode: doctors.pincode,
+        doctorFullAddress: doctors.fullAddress,
+        doctorYearsOfExperience: doctors.yearsOfExperience,
+        doctorMedicalLicenseNumber: doctors.medicalLicenseNumber,
         specialtyId: doctorProcedureFees.specialtyId,
         specialtyName: specialties.name,
         procedureId: doctorProcedureFees.procedureId,
@@ -236,8 +257,12 @@ export class FeesRepository {
       .leftJoin(procedureTypes, eq(doctorProcedureFees.procedureTypeId, procedureTypes.id))
       .leftJoin(roomTypes, eq(doctorProcedureFees.roomTypeId, roomTypes.id))
       .leftJoin(doctors, eq(doctorProcedureFees.doctorId, doctors.id))
-      .where(eq(doctorProcedureFees.hospitalId, hospitalId))
-      .orderBy(doctorProcedureFees.createdAt);
+      .where(whereClause)
+      .orderBy(doctorProcedureFees.createdAt)
+      .limit(limit)
+      .offset(offset);
+
+    return { data, total };
   }
 
   async updateFeeStatus(id: string, hospitalId: string, status: string, reason?: string) {

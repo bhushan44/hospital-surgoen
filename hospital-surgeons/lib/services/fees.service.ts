@@ -92,10 +92,19 @@ export class FeesService {
     }
   }
 
-  async getHospitalFees(hospitalId: string) {
+  async getHospitalFees(hospitalId: string, status?: string | null, page: number = 1, limit: number = 50) {
     try {
-      const data = await this.repository.findFeesForHospital(hospitalId);
-      return { success: true, data };
+      const { data, total } = await this.repository.findFeesForHospital(hospitalId, status, page, limit);
+      return { 
+        success: true, 
+        data,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
     } catch (error) {
       console.error('Error fetching hospital fees:', error);
       return { success: false, message: 'Failed to fetch hospital fees', error };

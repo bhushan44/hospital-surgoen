@@ -6789,7 +6789,21 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "type": "object"
+                        "type": "object",
+                        "properties": {
+                          "procedure": {
+                            "type": "object"
+                          },
+                          "procedureType": {
+                            "type": "object"
+                          },
+                          "roomType": {
+                            "type": "object"
+                          },
+                          "specialty": {
+                            "type": "object"
+                          }
+                        }
                       }
                     },
                     "pagination": {
@@ -7652,6 +7666,41 @@
             "bearerAuth": []
           }
         ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "all"
+              ],
+              "default": "all"
+            },
+            "description": "Filter proposed fees by their status"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "description": "Page number for pagination"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            },
+            "description": "Items per page"
+          }
+        ],
         "responses": {
           "200": {
             "description": "List of proposed hospital fees",
@@ -7677,6 +7726,24 @@
                             "format": "uuid"
                           },
                           "doctorName": {
+                            "type": "string"
+                          },
+                          "doctorCity": {
+                            "type": "string"
+                          },
+                          "doctorState": {
+                            "type": "string"
+                          },
+                          "doctorPincode": {
+                            "type": "string"
+                          },
+                          "doctorFullAddress": {
+                            "type": "string"
+                          },
+                          "doctorYearsOfExperience": {
+                            "type": "integer"
+                          },
+                          "doctorMedicalLicenseNumber": {
                             "type": "string"
                           },
                           "specialtyId": {
@@ -7719,6 +7786,23 @@
                           "statusReason": {
                             "type": "string"
                           }
+                        }
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
                         }
                       }
                     }
