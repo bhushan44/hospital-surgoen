@@ -240,11 +240,12 @@ export class FeesRepository {
       .orderBy(doctorProcedureFees.createdAt);
   }
 
-  async updateFeeStatus(id: string, hospitalId: string, status: string) {
+  async updateFeeStatus(id: string, hospitalId: string, status: string, reason?: string) {
     return await this.db
       .update(doctorProcedureFees)
       .set({ 
         status: status as any,
+        statusReason: reason || null,
         updatedAt: new Date().toISOString()
       })
       .where(

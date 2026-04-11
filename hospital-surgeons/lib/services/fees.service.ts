@@ -102,9 +102,9 @@ export class FeesService {
     }
   }
 
-  async updateProposalStatus(id: string, hospitalId: string, status: string) {
+  async updateProposalStatus(id: string, hospitalId: string, status: string, reason?: string) {
     try {
-      const result = await this.repository.updateFeeStatus(id, hospitalId, status);
+      const result = await this.repository.updateFeeStatus(id, hospitalId, status, reason);
       if (result.length === 0) {
         return { success: false, message: 'Proposal not found or unauthorized' };
       }

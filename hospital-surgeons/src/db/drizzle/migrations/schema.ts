@@ -1004,6 +1004,7 @@ export const doctorProcedureFees = pgTable("doctor_procedure_fees", {
 	hospitalId: uuid("hospital_id"),
 	discountPercentage: numeric("discount_percentage", { precision: 5, scale:  2 }).default('0'),
 	status: text().default('pending'),
+    statusReason: text("status_reason"),
 	notes: text(),
 	specialtyId: uuid("specialty_id"),
 }, (table) => [

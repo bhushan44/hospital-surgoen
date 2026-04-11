@@ -7,6 +7,7 @@ import { z } from 'zod';
 const statusSchema = z.object({
   id: z.string().uuid(),
   status: z.enum(['approved', 'rejected']),
+  reason: z.string().optional(),
 });
 
 /**
@@ -33,6 +34,9 @@ const statusSchema = z.object({
  *               status:
  *                 type: string
  *                 enum: [approved, rejected]
+ *               reason:
+ *                 type: string
+ *                 description: Reason for acceptance or rejection
  *     responses:
  *       200:
  *         description: Status updated successfully
@@ -62,7 +66,7 @@ async function handler(req: AuthenticatedRequest) {
 
     const hospitalId = (hospitalResult.data as any).id;
     const feesService = new FeesService();
-    const result = await feesService.updateProposalStatus(validated.data.id, hospitalId, validated.data.status);
+    const result = await feesService.updateProposalStatus(validated.data.id, hospitalId, validated.data.status, validated.data.reason);
 
     return NextResponse.json(result, { status: result.success ? 200 : 400 });
   } catch (error) {
