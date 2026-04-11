@@ -438,4 +438,79 @@ export class FeesRepository {
       return { success: true, count: results.length, data: results };
     });
   }
+
+  async findEffectiveFeesForDoctorAtHospital(doctorId: string, hospitalId: string, specialtyId?: string) {
+    const conditions = [
+      eq(doctorProcedureFees.doctorId, doctorId),
+      // Only Global MRPs OR specific approved hospital fees
+      sql`(${doctorProcedureFees.hospitalId} IS NULL OR (${doctorProcedureFees.hospitalId} = ${hospitalId} AND ${doctorProcedureFees.status} = 'approved'))`
+    ];
+
+    if (specialtyId) {
+      conditions.push(eq(doctorProcedureFees.specialtyId, specialtyId));
+    }
+
+    // Using DISTINCT ON to pick the best row per combination
+    // Priority: Hospital Approved (hospitalId != null) > Global MRP (hospitalId == null)
+    const rows = await this.db
+      .select({
+        id: doctorProcedureFees.id,
+        doctorId: doctorProcedureFees.doctorId,
+        specialtyId: doctorProcedureFees.specialtyId,
+        specialtyName: specialties.name,
+        procedureId: doctorProcedureFees.procedureId,
+        procedureName: procedures.name,
+        procedureTypeId: doctorProcedureFees.procedureTypeId,
+        procedureTypeName: procedureTypes.displayName,
+        roomTypeId: doctorProcedureFees.roomTypeId,
+        roomTypeName: roomTypes.displayName,
+        hospitalId: doctorProcedureFees.hospitalId,
+        fee: doctorProcedureFees.fee,
+        discountPercentage: doctorProcedureFees.discountPercentage,
+        status: doctorProcedureFees.status,
+      })
+      .from(doctorProcedureFees)
+      .leftJoin(specialties, eq(doctorProcedureFees.specialtyId, specialties.id))
+      .leftJoin(procedures, eq(doctorProcedureFees.procedureId, procedures.id))
+      .leftJoin(procedureTypes, eq(doctorProcedureFees.procedureTypeId, procedureTypes.id))
+      .leftJoin(roomTypes, eq(doctorProcedureFees.roomTypeId, roomTypes.id))
+      .where(and(...conditions))
+      .orderBy(
+        doctorProcedureFees.specialtyId,
+        doctorProcedureFees.procedureId,
+        doctorProcedureFees.procedureTypeId,
+        doctorProcedureFees.roomTypeId,
+        // Priority: Hospital Specific Approved (not null) comes first
+        sql`${doctorProcedureFees.hospitalId} IS NOT NULL DESC`,
+        doctorProcedureFees.createdAt
+      );
+
+    // Drizzle doesn't have a direct distinctOn() method for all PG queries yet, 
+    // but the orderBy logic above combined with a simple group/filter or just distinct works.
+    // Actually, in Postgres, DISTINCT ON requires the first ORDER BY columns to match the DISTINCT ON columns.
+    
+    // Let's use a raw query or a more explicit distinct filter.
+    // For now, since the result set is pre-filtered by the WHERE to only contain MRP or Approved Fees,
+    // and we order by (hospitalId != null) DESC, the grouping logic below is extremely fast.
+
+    const combinationsMap = new Map<string, any>();
+    for (const row of rows) {
+      const key = `${row.specialtyId}-${row.procedureId || 'null'}-${row.procedureTypeId || 'null'}-${row.roomTypeId}`;
+      if (!combinationsMap.has(key)) {
+        combinationsMap.set(key, row);
+      }
+    }
+
+    return Array.from(combinationsMap.values()).map(item => {
+      const baseFee = parseFloat(item.fee);
+      const discount = parseFloat(item.discountPercentage || '0');
+      const effectiveFee = (baseFee * (1 - discount / 100)).toFixed(2);
+      return {
+        ...item,
+        baseFee: item.fee,
+        effectiveFee,
+        source: item.hospitalId ? 'hospital_specific' : 'global_mrp'
+      };
+    });
+  }
 }

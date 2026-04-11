@@ -141,6 +141,40 @@ export class FeesService {
     } catch (error: any) {
       console.error('Error in bulkPropose:', error);
       return { success: false, message: error.message || 'Failed to perform bulk proposal' };
+  }
+  }
+
+  async getDoctorCatalogForHospital(doctorId: string, hospitalId: string, specialtyId?: string) {
+    try {
+      const flatFees = await this.repository.findEffectiveFeesForDoctorAtHospital(doctorId, hospitalId, specialtyId);
+      
+      // Group by specialty
+      const specialtyGroups = new Map<string, any>();
+      
+      for (const fee of flatFees) {
+        const specId = fee.specialtyId || 'unknown';
+        if (!specialtyGroups.has(specId)) {
+          specialtyGroups.set(specId, {
+            specialtyId: specId,
+            specialtyName: fee.specialtyName || 'Unknown Specialty',
+            combinations: []
+          });
+        }
+        
+        const { specialtyId: _, specialtyName: __, ...combination } = fee;
+        specialtyGroups.get(specId).combinations.push(combination);
+      }
+      
+      return { 
+        success: true, 
+        data: {
+          doctorId,
+          specialties: Array.from(specialtyGroups.values())
+        }
+      };
+    } catch (error) {
+      console.error('Error fetching doctor catalog:', error);
+      return { success: false, message: 'Failed to fetch doctor catalog', error };
     }
   }
 }
