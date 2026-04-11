@@ -128,7 +128,7 @@ export async function fetchDoctorsInFixedRadius(
         (
           SELECT f.url
           FROM files f
-          WHERE f.id = d.profilePhotoId
+          WHERE f.id = d.profile_photo_id
         ) as photo
       FROM doctors d
         WHERE 1=1 ${baseWhereClause}
@@ -178,7 +178,7 @@ export async function fetchDoctorsInFixedRadius(
         (
           SELECT f.url
           FROM files f
-          WHERE f.id = d.profilePhotoId
+          WHERE f.id = d.profile_photo_id
         ) as photo
       FROM doctors d
         WHERE 1=1 ${baseWhereClause}
