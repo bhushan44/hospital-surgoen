@@ -18,6 +18,10 @@ export const CreateAssignmentDtoSchema = z.object({
   availabilitySlotId: z.string().uuid('Invalid availability slot ID format').optional(),
   priority: z.enum(['routine', 'urgent', 'emergency']).optional().default('routine'),
   consultationFee: z.coerce.number().optional(),
+  procedureId: z.string().uuid('Invalid procedure ID format').optional(),
+  procedureTypeId: z.string().uuid('Invalid procedure type ID format').optional(),
+  roomTypeId: z.string().uuid('Invalid room type ID format').optional(),
+  specialtyId: z.string().uuid('Invalid specialty ID format').optional(),
 }).refine(
   (data) => {
     // Either parentSlotId + time range OR availabilitySlotId must be provided

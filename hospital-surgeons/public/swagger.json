@@ -5646,6 +5646,128 @@
         }
       }
     },
+    "/api/hospitals/{id}/assignments/create": {
+      "post": {
+        "summary": "Create a new assignment",
+        "tags": [
+          "Hospitals",
+          "Assignments"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Hospital ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "patientId",
+                  "doctorId"
+                ],
+                "properties": {
+                  "patientId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "ID of the patient"
+                  },
+                  "doctorId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "ID of the doctor"
+                  },
+                  "parentSlotId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Parent availability slot ID"
+                  },
+                  "startTime": {
+                    "type": "string",
+                    "example": "10:00",
+                    "description": "Assignment start time (HH:mm format)"
+                  },
+                  "endTime": {
+                    "type": "string",
+                    "example": "11:00",
+                    "description": "Assignment end time (HH:mm format)"
+                  },
+                  "availabilitySlotId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Pre-existing slot ID (backward compatibility)"
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "routine",
+                      "urgent",
+                      "emergency"
+                    ],
+                    "default": "routine"
+                  },
+                  "consultationFee": {
+                    "type": "number",
+                    "description": "Agreed upon fee for the assignment"
+                  },
+                  "procedureId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "ID of the associated procedure"
+                  },
+                  "procedureTypeId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "ID of the specific procedure type"
+                  },
+                  "roomTypeId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "ID of the assigned room type"
+                  },
+                  "specialtyId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "ID of the doctor's specialty related to this assignment"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Assignment created successfully"
+          },
+          "400": {
+            "description": "Invalid input or missing parameters"
+          },
+          "403": {
+            "description": "Assignment limit reached"
+          },
+          "404": {
+            "description": "Hospital or doctor slot not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/api/hospitals/{id}/assignments": {
       "get": {
         "summary": "Get all assignments for a hospital",

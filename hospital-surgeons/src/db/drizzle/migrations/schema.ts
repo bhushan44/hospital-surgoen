@@ -683,6 +683,10 @@ export const assignments = pgTable("assignments", {
 	hospitalId: uuid("hospital_id").notNull(),
 	doctorId: uuid("doctor_id").notNull(),
 	patientId: uuid("patient_id").notNull(),
+	procedureId: uuid("procedure_id"),
+	procedureTypeId: uuid("procedure_type_id"),
+	roomTypeId: uuid("room_type_id"),
+	specialtyId: uuid("specialty_id"),
 	availabilitySlotId: uuid("availability_slot_id"),
 	priority: text().default('medium').notNull(),
 	status: text().default('pending').notNull(),
@@ -723,6 +727,26 @@ export const assignments = pgTable("assignments", {
 			foreignColumns: [patients.id],
 			name: "assignments_patient_id_fkey"
 		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.procedureId],
+			foreignColumns: [procedures.id],
+			name: "assignments_procedure_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.procedureTypeId],
+			foreignColumns: [procedureTypes.id],
+			name: "assignments_procedure_type_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.roomTypeId],
+			foreignColumns: [roomTypes.id],
+			name: "assignments_room_type_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.specialtyId],
+			foreignColumns: [specialties.id],
+			name: "assignments_specialty_id_fkey"
+		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.priority],
 			foreignColumns: [enumPriority.priority],

@@ -6,8 +6,89 @@ import { getMaxAssignmentsForDoctor, DEFAULT_ASSIGNMENT_LIMIT } from '@/lib/conf
 import { createAuditLog, getRequestMetadata } from '@/lib/utils/audit-logger';
 
 /**
- * Create a new assignment
- * POST /api/hospitals/[id]/assignments/create
+ * @swagger
+ * /api/hospitals/{id}/assignments/create:
+ *   post:
+ *     summary: Create a new assignment
+ *     tags: [Hospitals, Assignments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Hospital ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - patientId
+ *               - doctorId
+ *             properties:
+ *               patientId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the patient
+ *               doctorId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the doctor
+ *               parentSlotId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Parent availability slot ID
+ *               startTime:
+ *                 type: string
+ *                 example: "10:00"
+ *                 description: "Assignment start time (HH:mm format)"
+ *               endTime:
+ *                 type: string
+ *                 example: "11:00"
+ *                 description: "Assignment end time (HH:mm format)"
+ *               availabilitySlotId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Pre-existing slot ID (backward compatibility)
+ *               priority:
+ *                 type: string
+ *                 enum: [routine, urgent, emergency]
+ *                 default: routine
+ *               consultationFee:
+ *                 type: number
+ *                 description: Agreed upon fee for the assignment
+ *               procedureId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the associated procedure
+ *               procedureTypeId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the specific procedure type
+ *               roomTypeId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the assigned room type
+ *               specialtyId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the doctor's specialty related to this assignment
+ *     responses:
+ *       200:
+ *         description: Assignment created successfully
+ *       400:
+ *         description: Invalid input or missing parameters
+ *       403:
+ *         description: Assignment limit reached
+ *       404:
+ *         description: Hospital or doctor slot not found
+ *       500:
+ *         description: Internal server error
  */
 export async function POST(
   req: NextRequest,
@@ -40,7 +121,7 @@ export async function POST(
       return validation.response;
     }
 
-    const { patientId, doctorId, parentSlotId, startTime, endTime, availabilitySlotId, priority = 'routine', consultationFee } = validation.data;
+    const { patientId, doctorId, parentSlotId, startTime, endTime, availabilitySlotId, priority = 'routine', consultationFee, procedureId, procedureTypeId, roomTypeId, specialtyId } = validation.data;
 
     // Check hospital assignment limit first
     const { HospitalUsageService } = await import('@/lib/services/hospital-usage.service');
@@ -415,6 +496,10 @@ export async function POST(
           status: 'pending',
           expiresAt: expiresAt.toISOString(),
           consultationFee: (consultationFee !== undefined && consultationFee !== null) ? String(consultationFee) : null,
+          procedureId: procedureId || null,
+          procedureTypeId: procedureTypeId || null,
+          roomTypeId: roomTypeId || null,
+          specialtyId: specialtyId || null,
         })
         .returning();
       newAssignment = created;
