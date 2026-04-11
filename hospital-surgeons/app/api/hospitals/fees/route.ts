@@ -3,6 +3,71 @@ import { FeesService } from '@/lib/services/fees.service';
 import { HospitalsService } from '@/lib/services/hospitals.service';
 import { withAuth, AuthenticatedRequest } from '@/lib/auth/middleware';
 
+/**
+ * @swagger
+ * /api/hospitals/fees:
+ *   get:
+ *     summary: Get all proposed doctor fees for the hospital
+ *     description: Retrieves a list of doctor-proposed fees that are specifically meant for the authenticated hospital. Ignore base MRP fees.
+ *     tags: [Hospital Fees]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of proposed hospital fees
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         format: uuid
+ *                       doctorId:
+ *                         type: string
+ *                         format: uuid
+ *                       doctorName:
+ *                         type: string
+ *                       specialtyId:
+ *                         type: string
+ *                         format: uuid
+ *                       specialtyName:
+ *                         type: string
+ *                       procedureId:
+ *                         type: string
+ *                         format: uuid
+ *                       procedureName:
+ *                         type: string
+ *                       procedureTypeId:
+ *                         type: string
+ *                         format: uuid
+ *                       procedureTypeName:
+ *                         type: string
+ *                       roomTypeId:
+ *                         type: string
+ *                         format: uuid
+ *                       roomTypeName:
+ *                         type: string
+ *                       fee:
+ *                         type: string
+ *                       discountPercentage:
+ *                         type: string
+ *                       status:
+ *                         type: string
+ *                       statusReason:
+ *                         type: string
+ *       404:
+ *         description: Hospital profile not found
+ *       500:
+ *         description: Internal server error
+ */
 async function handler(req: AuthenticatedRequest) {
   try {
     const user = req.user!;

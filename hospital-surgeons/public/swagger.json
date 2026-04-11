@@ -7640,6 +7640,102 @@
         }
       }
     },
+    "/api/hospitals/fees": {
+      "get": {
+        "summary": "Get all proposed doctor fees for the hospital",
+        "description": "Retrieves a list of doctor-proposed fees that are specifically meant for the authenticated hospital. Ignore base MRP fees.",
+        "tags": [
+          "Hospital Fees"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of proposed hospital fees",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "doctorId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "doctorName": {
+                            "type": "string"
+                          },
+                          "specialtyId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "specialtyName": {
+                            "type": "string"
+                          },
+                          "procedureId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "procedureName": {
+                            "type": "string"
+                          },
+                          "procedureTypeId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "procedureTypeName": {
+                            "type": "string"
+                          },
+                          "roomTypeId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "roomTypeName": {
+                            "type": "string"
+                          },
+                          "fee": {
+                            "type": "string"
+                          },
+                          "discountPercentage": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "statusReason": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Hospital profile not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/api/hospitals/fees/status": {
       "post": {
         "summary": "Approve or reject a fee proposal",
@@ -7674,6 +7770,10 @@
                       "approved",
                       "rejected"
                     ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Reason for acceptance or rejection"
                   }
                 }
               }
