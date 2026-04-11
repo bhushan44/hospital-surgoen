@@ -665,7 +665,7 @@ export async function GET(
         rating: rating || 0,
         reviews: doctor.totalRatings || 0,
         completedAssignments: completed,
-        photo: null,
+        photo: doctor.photo ?? null,
         availableSlots: slots.length > 0 ? slots : [], // Return empty array if no slots
         fee: 1000 + (experience * 100), // Calculate fee based on experience
         score: doctor.score?.totalScore || 0, // Include score in response for sorting/ranking

@@ -124,7 +124,12 @@ export async function fetchDoctorsInFixedRadius(
           FROM specialties s 
           INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
           WHERE ds.doctor_id = d.id
-        ) as specialties
+        ) as specialties,
+        (
+          SELECT f.url
+          FROM files f
+          WHERE f.id = d.profilePhotoId
+        ) as photo
       FROM doctors d
         WHERE 1=1 ${baseWhereClause}
       AND d.latitude IS NOT NULL
@@ -169,7 +174,12 @@ export async function fetchDoctorsInFixedRadius(
           FROM specialties s 
           INNER JOIN doctor_specialties ds ON s.id = ds.specialty_id 
           WHERE ds.doctor_id = d.id
-        ) as specialties
+        ) as specialties,
+        (
+          SELECT f.url
+          FROM files f
+          WHERE f.id = d.profilePhotoId
+        ) as photo
       FROM doctors d
         WHERE 1=1 ${baseWhereClause}
       AND d.latitude IS NOT NULL
