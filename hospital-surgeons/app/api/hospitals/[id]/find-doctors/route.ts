@@ -601,6 +601,7 @@ export async function GET(
         score, // Include score for sorting
         subscriptionTier: subscription?.tier || 'free', // Store doctor's actual subscription tier
         distance, // Distance in kilometers, or null if coordinates are missing
+        photo: row.photo || null,
       };
     });
     console.log(formattedDoctorsList,"formated",formattedDoctorsList.length)
@@ -711,6 +712,7 @@ export async function GET(
         return scoreB - scoreA;
       });
     }
+
 
     return NextResponse.json({
       success: true,
