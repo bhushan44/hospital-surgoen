@@ -73,6 +73,7 @@ export const chatMessages = pgTable("chat_messages", {
 	replyToId: uuid("reply_to_id"),
 	isRead: boolean("is_read").default(false).notNull(),
 	readAt: timestamp("read_at", { mode: 'string' }),
+	status: integer("status").default(1).notNull(),
 	isDeleted: boolean("is_deleted").default(false).notNull(),
 	deletedAt: timestamp("deleted_at", { mode: 'string' }),
 	isEdited: boolean("is_edited").default(false).notNull(),

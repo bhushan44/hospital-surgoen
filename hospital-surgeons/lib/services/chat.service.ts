@@ -31,7 +31,13 @@ export class ChatService {
   async getOrCreateConversation(doctorId: string, hospitalId: string) {
     return withTransaction(async (tx) => {
       const existing = await this.chatRepo.findConversationByDoctorAndHospital(doctorId, hospitalId, tx);
-      if (existing) return { conversation: existing, created: false };
+      if (existing) {
+        if (!existing.isActive) {
+          await this.chatRepo.activateConversation(existing.id, tx);
+          existing.isActive = true;
+        }
+        return { conversation: existing, created: false };
+      }
 
       const conversation = await this.chatRepo.createConversation(doctorId, hospitalId, tx);
       return { conversation, created: true };
@@ -56,6 +62,17 @@ export class ChatService {
     throw Object.assign(new Error('Invalid user role for chat'), { statusCode: 403 });
   }
 
+  async getTotalUnreadCount(userId: string, userRole: string) {
+    if (userRole === 'doctor') {
+      const doctorId = await this.resolveDoctorId(userId);
+      return this.chatRepo.getTotalUnreadCount(doctorId, 'doctor');
+    } else if (userRole === 'hospital') {
+      const hospitalId = await this.resolveHospitalId(userId);
+      return this.chatRepo.getTotalUnreadCount(hospitalId, 'hospital');
+    }
+    throw Object.assign(new Error('Invalid user role for chat'), { statusCode: 403 });
+  }
+
   async deleteConversation(conversationId: string, userId: string, userRole: string) {
     const conversation = await this.chatRepo.findConversationById(conversationId);
     if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 });
@@ -73,6 +90,12 @@ export class ChatService {
   ) {
     const conversation = await this.chatRepo.findConversationById(conversationId);
     if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 });
+
+    // Re-activate if deleted
+    if (!conversation.isActive) {
+      await this.chatRepo.activateConversation(conversationId);
+      conversation.isActive = true;
+    }
 
     const { senderId, senderType } = await this.resolveParty(userId, userRole, conversation);
     const receiverParty: 'doctor' | 'hospital' = senderType === 'doctor' ? 'hospital' : 'doctor';
@@ -131,8 +154,40 @@ export class ChatService {
     const conversation = await this.chatRepo.findConversationById(conversationId);
     if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 });
     await this.verifyAccess(conversation, userId, userRole);
+
     const result = await this.chatRepo.getMessages(conversationId, limit, cursor);
     const enriched = await this.enrichMessages(result.messages);
+
+    // Side effect: Update statuses on fetch
+    try {
+      const { senderType: currentUserType } = await this.resolveParty(userId, userRole, conversation);
+      const otherPartyType = currentUserType === 'doctor' ? 'hospital' : 'doctor';
+
+      // 1. Current batch -> Delivered (if from other party)
+      const otherMessagesIds = result.messages
+        .filter((m: any) => m.senderType === otherPartyType && m.status < 2)
+        .map((m: any) => m.id);
+      
+      // 2. Mark everything "delivered" and everything "older" as read
+      await withTransaction(async (tx) => {
+        if (otherMessagesIds.length > 0) {
+          await this.chatRepo.markMessagesAsDelivered(otherMessagesIds, tx);
+        }
+
+        // Mark all messages before/including the latest one in this batch as read
+        if (result.messages.length > 0) {
+          const latestBatchDate = result.messages[0].createdAt;
+          await this.chatRepo.markMessagesAsReadUpTo(conversationId, currentUserType, latestBatchDate, tx);
+        }
+
+        // Reset unread count for the current user
+        await this.chatRepo.resetUnreadCount(conversationId, currentUserType, tx);
+      });
+    } catch (err) {
+      console.error('Error updating status on fetch:', err);
+      // Don't fail the GET request if status update fails
+    }
+
     return { ...result, messages: enriched };
   }
 
@@ -192,6 +247,22 @@ export class ChatService {
     }
 
     return this.chatRepo.editMessage(messageId, content);
+  }
+
+  async updateMessagesStatus(conversationId: string, messageIds: string[], status: number, userId: string, userRole: string) {
+    const conversation = await this.chatRepo.findConversationById(conversationId);
+    if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 });
+
+    await this.resolveParty(userId, userRole, conversation);
+
+    return withTransaction(async (tx) => {
+      const updated = await this.chatRepo.updateMessagesStatus(messageIds, status, tx);
+      if (status === 3) {
+        const { senderType } = await this.resolveParty(userId, userRole, conversation);
+        await this.chatRepo.resetUnreadCount(conversationId, senderType, tx);
+      }
+      return updated;
+    });
   }
 
   // ─── Reactions ───────────────────────────────────────────────────────────────
@@ -279,9 +350,9 @@ export class ChatService {
   private async enrichMessages(messages: any[]) {
     if (messages.length === 0) return [];
 
-    const allIds = messages.map(m => m.id);
-    const attachmentMsgIds = messages.filter(m => m.messageType === 'attachment').map(m => m.id);
-    const replyToIds = messages.map(m => m.replyToId).filter(Boolean) as string[];
+    const allIds = messages.map((m: any) => m.id);
+    const attachmentMsgIds = messages.filter((m: any) => m.messageType === 'attachment').map((m: any) => m.id);
+    const replyToIds = messages.map((m: any) => m.replyToId).filter(Boolean) as string[];
 
     const [allAttachments, allReactions, allReplies] = await Promise.all([
       this.chatRepo.getAttachmentsForMessages(attachmentMsgIds),
@@ -315,7 +386,7 @@ export class ChatService {
       });
     }
 
-    return messages.map(msg => ({
+    return messages.map((msg: any) => ({
       ...msg,
       attachments: attachmentsByMsg.get(msg.id) || [],
       reactions: this.groupReactions(reactionsByMsg.get(msg.id) || []),

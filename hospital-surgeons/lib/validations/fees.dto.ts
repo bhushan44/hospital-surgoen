@@ -18,4 +18,5 @@ export const BulkMrpFeeDtoSchema = z.array(CreateMrpFeeDtoSchema);
 export const BulkProposeDtoSchema = z.object({
   hospitalId: z.string().uuid(),
   specialtyId: z.string().uuid(),
+  discountPercentage: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Invalid discount format').optional(),
 });

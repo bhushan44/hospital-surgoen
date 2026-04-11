@@ -59,8 +59,9 @@ const chatService = new ChatService();
  *               - content
  *             properties:
  *               content: { type: string }
- *               attachmentId: { type: string, format: uuid }
- *               attachmentType: { type: string, enum: [image, document, video] }
+ *               messageType: { type: string, enum: [text, attachment], default: text }
+ *               replyToId: { type: string, format: uuid, description: ID of the message being replied to }
+ *               attachmentIds: { type: array, items: { type: string, format: uuid }, description: List of file IDs to attach }
  *     responses:
  *       201:
  *         description: Message sent successfully

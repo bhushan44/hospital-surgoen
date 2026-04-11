@@ -342,8 +342,9 @@ export class FeesRepository {
     doctorId: string;
     hospitalId: string;
     specialtyId: string;
+    discountPercentage?: string;
   }) {
-    const { doctorId, hospitalId, specialtyId } = params;
+    const { doctorId, hospitalId, specialtyId, discountPercentage } = params;
 
     return await this.db.transaction(async (tx) => {
       // 1. Enforce 5-hospital limit check (similar to createOrUpdateFee)
@@ -383,7 +384,7 @@ export class FeesRepository {
       const results = [];
       for (const mrp of mrpFees) {
         const newFee = mrp.fee;
-        const newDiscount = mrp.discountPercentage;
+        const newDiscount = discountPercentage ?? mrp.discountPercentage;
 
         const conditions = [
           eq(doctorProcedureFees.doctorId, doctorId),

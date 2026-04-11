@@ -20,7 +20,13 @@ export const AddReactionDtoSchema = z.object({
   emoji: z.string().min(1).max(10, 'Emoji too long'),
 });
 
+export const UpdateMessagesStatusDtoSchema = z.object({
+  messageIds: z.array(z.string().uuid()),
+  status: z.number().int().min(1).max(3),
+});
+
 export type CreateConversationDto = z.infer<typeof CreateConversationDtoSchema>;
 export type SendMessageDto = z.infer<typeof SendMessageDtoSchema>;
 export type EditMessageDto = z.infer<typeof EditMessageDtoSchema>;
 export type AddReactionDto = z.infer<typeof AddReactionDtoSchema>;
+export type UpdateMessagesStatusDto = z.infer<typeof UpdateMessagesStatusDtoSchema>;

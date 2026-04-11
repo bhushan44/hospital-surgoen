@@ -1,6 +1,6 @@
 import { getDb } from '@/lib/db';
 import { chatConversations, chatMessages, chatMessageAttachments, chatMessageReactions, files, doctors, hospitals } from '@/src/db/drizzle/migrations/schema';
-import { eq, and, desc, lt, sql, inArray, ne } from 'drizzle-orm';
+import { eq, and, desc, lt, lte, sql, inArray, ne } from 'drizzle-orm';
 
 export class ChatRepository {
   private db = getDb();
@@ -36,10 +36,11 @@ export class ChatRepository {
     return conv;
   }
 
-  async getConversationsForDoctor(doctorId: string, limit: number, cursor?: string, tx?: any) {
+  async getConversationsForDoctor(doctorId: string, limit: number, cursor?: string | Date | null, tx?: any) {
     const db = tx ?? this.db;
-    const conditions = cursor
-      ? and(eq(chatConversations.doctorId, doctorId), lt(chatConversations.updatedAt, cursor), eq(chatConversations.isActive, true))
+    const cursorStr = cursor instanceof Date ? cursor.toISOString() : cursor;
+    const conditions = cursorStr
+      ? and(eq(chatConversations.doctorId, doctorId), lt(chatConversations.updatedAt, cursorStr), eq(chatConversations.isActive, true))
       : and(eq(chatConversations.doctorId, doctorId), eq(chatConversations.isActive, true));
 
     // Subquery for last message content and type
@@ -95,10 +96,11 @@ export class ChatRepository {
     return { conversations: data, hasMore, nextCursor: hasMore ? data[data.length - 1].updatedAt : null };
   }
 
-  async getConversationsForHospital(hospitalId: string, limit: number, cursor?: string, tx?: any) {
+  async getConversationsForHospital(hospitalId: string, limit: number, cursor?: string | Date | null, tx?: any) {
     const db = tx ?? this.db;
-    const conditions = cursor
-      ? and(eq(chatConversations.hospitalId, hospitalId), lt(chatConversations.updatedAt, cursor), eq(chatConversations.isActive, true))
+    const cursorStr = cursor instanceof Date ? cursor.toISOString() : cursor;
+    const conditions = cursorStr
+      ? and(eq(chatConversations.hospitalId, hospitalId), lt(chatConversations.updatedAt, cursorStr), eq(chatConversations.isActive, true))
       : and(eq(chatConversations.hospitalId, hospitalId), eq(chatConversations.isActive, true));
     const rows = await db
       .select({
@@ -176,6 +178,15 @@ export class ChatRepository {
     return conv;
   }
 
+  async activateConversation(conversationId: string, tx?: any) {
+    const db = tx ?? this.db;
+    return db
+      .update(chatConversations)
+      .set({ isActive: true, updatedAt: new Date().toISOString() })
+      .where(eq(chatConversations.id, conversationId))
+      .returning();
+  }
+
   // ─── Messages ────────────────────────────────────────────────────────────────
 
   async createMessage(data: {
@@ -196,6 +207,7 @@ export class ChatRepository {
         content: data.content,
         messageType: data.messageType ?? 'text',
         replyToId: data.replyToId ?? null,
+        status: 1,
       })
       .returning();
     return msg;
@@ -221,10 +233,11 @@ export class ChatRepository {
   }
 
 
-  async getMessages(conversationId: string, limit: number, cursor?: string, tx?: any) {
+  async getMessages(conversationId: string, limit: number, cursor?: string | Date | null, tx?: any) {
     const db = tx ?? this.db;
-    const conditions = cursor
-      ? and(eq(chatMessages.conversationId, conversationId), lt(chatMessages.createdAt, cursor))
+    const cursorStr = cursor instanceof Date ? cursor.toISOString() : cursor;
+    const conditions = cursorStr
+      ? and(eq(chatMessages.conversationId, conversationId), lt(chatMessages.createdAt, cursorStr))
       : eq(chatMessages.conversationId, conversationId);
     const rows = await db
       .select()
@@ -241,7 +254,7 @@ export class ChatRepository {
     const db = tx ?? this.db;
     const [msg] = await db
       .update(chatMessages)
-      .set({ isRead: true, readAt: new Date().toISOString() })
+      .set({ isRead: true, readAt: new Date().toISOString(), status: 3 })
       .where(eq(chatMessages.id, messageId))
       .returning();
     return msg;
@@ -411,5 +424,64 @@ export class ChatRepository {
       .select()
       .from(chatMessageReactions)
       .where(eq(chatMessageReactions.messageId, messageId));
+  }
+
+  async updateMessagesStatus(messageIds: string[], status: number, tx?: any) {
+    if (messageIds.length === 0) return [];
+    const db = tx ?? this.db;
+    const patch: any = { status, updatedAt: new Date().toISOString() };
+    if (status === 3) {
+      patch.isRead = true;
+      patch.readAt = new Date().toISOString();
+    }
+    return db
+      .update(chatMessages)
+      .set(patch)
+      .where(inArray(chatMessages.id, messageIds))
+      .returning();
+  }
+
+  async markMessagesAsDelivered(messageIds: string[], tx?: any) {
+    if (messageIds.length === 0) return;
+    const db = tx ?? this.db;
+    await db
+      .update(chatMessages)
+      .set({ status: 2, updatedAt: new Date().toISOString() })
+      .where(and(inArray(chatMessages.id, messageIds), lt(chatMessages.status, 2)));
+  }
+
+  async markMessagesAsReadUpTo(conversationId: string, receiverType: 'doctor' | 'hospital', beforeDate: string | Date, tx?: any) {
+    const db = tx ?? this.db;
+    const senderType = receiverType === 'doctor' ? 'hospital' : 'doctor';
+    
+    const beforeDateStr = beforeDate instanceof Date ? beforeDate.toISOString() : beforeDate;
+    
+    await db
+      .update(chatMessages)
+      .set({ 
+        status: 3, 
+        isRead: true, 
+        readAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString() 
+      })
+      .where(and(
+        eq(chatMessages.conversationId, conversationId),
+        eq(chatMessages.senderType, senderType),
+        lte(chatMessages.createdAt, beforeDateStr),
+        lt(chatMessages.status, 3)
+      ));
+  }
+
+  async getTotalUnreadCount(entityId: string, role: 'doctor' | 'hospital', tx?: any) {
+    const db = tx ?? this.db;
+    const field = role === 'doctor' ? chatConversations.doctorUnreadCount : chatConversations.hospitalUnreadCount;
+    const condition = role === 'doctor' ? eq(chatConversations.doctorId, entityId) : eq(chatConversations.hospitalId, entityId);
+    
+    const [result] = await db
+      .select({ total: sql<number>`SUM(${field})` })
+      .from(chatConversations)
+      .where(and(condition, eq(chatConversations.isActive, true)));
+    
+    return Number(result?.total || 0);
   }
 }

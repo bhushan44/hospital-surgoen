@@ -27,6 +27,7 @@ const doctorsService = new DoctorsService();
  *             properties:
  *               hospitalId: { type: string, format: uuid }
  *               specialtyId: { type: string, format: uuid }
+ *               discountPercentage: { type: string, example: "10.00" }
  *     responses:
  *       201:
  *         description: Fees proposed successfully

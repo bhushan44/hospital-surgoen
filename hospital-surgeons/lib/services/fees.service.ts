@@ -134,6 +134,7 @@ export class FeesService {
     doctorId: string;
     hospitalId: string;
     specialtyId: string;
+    discountPercentage?: string;
   }) {
     try {
       return await this.repository.bulkProposeFromMrp(params);
